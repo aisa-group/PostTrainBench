@@ -1,0 +1,6 @@
+[projects."/home/"]
+trust_level = "trusted"
+
+[shell_environment_policy]
+inherit = "all"
+set = { CI = "1", NV_CUDA_LIB_VERSION = "12.9.1-1", NV_LIBNCCL_PACKAGE = "libnccl2=2.27.3-1+cuda12.9", LD_LIBRARY_PATH = "/usr/local/cuda/lib64:/.singularity.d/libs", PATH = "/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/bin", VLLM_API_KEY = "inspectai", HF_HOME_NEW = "/home/ben/hf_cache", PYTHONNOUSERSITE = "1", HOME = "/home/ben" }

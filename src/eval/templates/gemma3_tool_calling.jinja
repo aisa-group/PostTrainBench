@@ -1,0 +1,143 @@
+{{ bos_token }}
+{# ------------------------------------------------------------
+   1) TOOLS / SYSTEM BLOCK
+   If tools are provided, we emit a system turn that:
+   - includes the original system message (if any)
+   - appends tool signatures inside <tools>...</tools>
+   - explains how to return tool calls
+   ------------------------------------------------------------ #}
+{%- set has_system = messages and messages[0]['role'] == 'system' -%}
+{%- if tools %}
+<start_of_turn>system
+{%- if has_system -%}
+{{ messages[0]['content'] }}
+
+{%- endif -%}
+# Tools
+
+You may call one or more functions to assist with the user query.
+
+You are provided with function signatures within <tools></tools> XML tags:
+<tools>
+{%- for tool in tools %}
+{{ tool | tojson }}
+{%- if not loop.last %}
+
+{%- endif %}
+{%- endfor %}
+</tools>
+
+For each function call, return a JSON object with the function name and arguments
+inside <tool_call></tool_call> tags, like:
+
+<tool_call>
+{"name": "<function-name>", "arguments": { ... }}
+</tool_call>
+<end_of_turn>
+{%- endif %}
+
+{# ------------------------------------------------------------
+   2) DETERMINE WHICH MESSAGES TO LOOP OVER
+   - If we already consumed the system message in the tools block, skip it.
+   - Otherwise, keep Gemma's original "first_user_prefix" behavior.
+   ------------------------------------------------------------ #}
+{%- if tools %}
+    {# tools block already printed system, so skip the first system (if present) #}
+    {%- if has_system -%}
+        {%- set first_user_prefix = "" -%}
+        {%- set loop_messages = messages[1:] -%}
+    {%- else -%}
+        {%- set first_user_prefix = "" -%}
+        {%- set loop_messages = messages -%}
+    {%- endif -%}
+{%- else %}
+    {# original Gemma behavior #}
+    {%- if has_system -%}
+        {%- if messages[0]['content'] is string -%}
+            {%- set first_user_prefix = messages[0]['content'] + '
+
+' -%}
+        {%- else -%}
+            {%- set first_user_prefix = messages[0]['content'][0]['text'] + '
+
+' -%}
+        {%- endif -%}
+        {%- set loop_messages = messages[1:] -%}
+    {%- else -%}
+        {%- set first_user_prefix = "" -%}
+        {%- set loop_messages = messages -%}
+    {%- endif -%}
+{%- endif %}
+
+{# ------------------------------------------------------------
+   3) MESSAGE LOOP
+   We keep Gemma's <start_of_turn> / <end_of_turn> format,
+   but relax strict alternation to allow 'tool' turns.
+   - user -> <start_of_turn>user ... <end_of_turn>
+   - assistant -> <start_of_turn>model ... <end_of_turn>
+   - tool -> wrapped as a user turn with <tool_response>...</tool_response>
+     (this is the pattern Qwen uses, and it lets the model read tool outputs)
+   ------------------------------------------------------------ #}
+{%- for message in loop_messages -%}
+    {# determine role text #}
+    {%- if message['role'] == 'assistant' -%}
+        {%- set role = 'model' -%}
+    {%- else -%}
+        {%- set role = message['role'] -%}
+    {%- endif -%}
+
+    {# TOOL RESPONSE MESSAGES
+       We render tool messages as a user turn that contains <tool_response>...</tool_response>
+       so the model can consume the tool outputs on the next assistant turn.
+    #}
+    {%- if message['role'] == 'tool' -%}
+<start_of_turn>user
+<tool_response>
+{%- if message['content'] is string -%}
+{{ message['content'] | trim }}
+{%- else -%}
+{{ message['content'] | tojson }}
+{%- endif -%}
+</tool_response>
+<end_of_turn>
+    {%- else -%}
+        {# NORMAL USER / ASSISTANT / SYSTEM (non-initial) MESSAGE #}
+<start_of_turn>{{ role }}
+{%- if loop.first and first_user_prefix -%}
+{{ first_user_prefix }}
+{%- endif -%}
+        {%- if message['content'] is string -%}
+{{ message['content'] | trim }}
+        {%- elif message['content'] is iterable -%}
+            {%- for item in message['content'] -%}
+                {%- if item['type'] == 'image' -%}
+<start_of_image>
+                {%- elif item['type'] == 'text' -%}
+{{ item['text'] | trim }}
+                {%- endif -%}
+            {%- endfor -%}
+        {%- else -%}
+{{ raise_exception("Invalid content type") }}
+        {%- endif -%}
+
+        {# If this assistant message includes tool calls, append them here #}
+        {%- if message['role'] == 'assistant' and message.get('tool_calls') -%}
+            {%- for tool_call in message['tool_calls'] -%}
+                {# unify format: tool_call.function may exist #}
+                {%- set tc = tool_call.function if tool_call.get('function') else tool_call -%}
+
+<tool_call>
+{"name": "{{ tc.name }}", "arguments": {{ tc.arguments if tc.arguments is string else (tc.arguments | tojson) }}}
+</tool_call>
+            {%- endfor -%}
+        {%- endif -%}
+<end_of_turn>
+    {%- endif -%}
+{%- endfor -%}
+
+{# ------------------------------------------------------------
+   4) GENERATION PROMPT
+   ------------------------------------------------------------ #}
+{%- if add_generation_prompt -%}
+<start_of_turn>model
+{%- endif -%}

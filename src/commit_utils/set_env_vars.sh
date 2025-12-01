@@ -1,0 +1,14 @@
+export HF_HOME_NEW="/home/ben/hf_cache"
+
+export POST_TRAIN_BENCH_RESULTS_DIR=${POST_TRAIN_BENCH_RESULTS_DIR:-results}
+export POST_TRAIN_BENCH_CONTAINERS_DIR=${POST_TRAIN_BENCH_CONTAINERS_DIR:-containers}
+export POST_TRAIN_BENCH_CONTAINER_NAME=${POST_TRAIN_BENCH_CONTAINER_NAME:-standard}
+export POST_TRAIN_BENCH_PROMPT=${POST_TRAIN_BENCH_PROMPT:-prompt}
+export PYTHONNOUSERSITE=1
+
+if [ "${POST_TRAIN_BENCH_JOB_SCHEDULER}" = "htcondor_mpi-is" ]; then
+    SAVE_PATH="$PATH"
+    module load cuda/12.1
+    export PATH="$PATH:$SAVE_PATH"
+    hash -r
+fi

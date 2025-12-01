@@ -33,32 +33,10 @@ See `agents/codex/` and `agents/claude/` for examples.
 ## Requirements
 - `apptainer`
 
-## Installation
-
-```bash
-git clone ...
-
-```
-
-## Usage
-Export your api keys.
-```bash
-export OPENAI_API_KEY="Your API key"
-export ANTHROPIC_API_KEY="Your API key"
-export GEMINI_API_KEY="Your API key"
-```
-
-## Configuration
-todo
-
-Download the huggingface cache
-todo
-```bash
-bash containers/download_hf_cache/download_hf_cache.sh
-```
+## Installation & Usage
+Coming soon.
 
 ## Code structure
-todo
 `agents`: agents live here
 
 `containers`: container definition, download of cache
@@ -126,4 +104,3 @@ For Claude Code, we further add the following line, because it can run tasks in 
 ```
 You are running in a non-interactive mode. So make sure every process you are running finishes before you write your last message.
 ```
-
