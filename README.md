@@ -5,6 +5,15 @@ We introduce PostTrainBench, a benchmark which measures the ability of AI agents
 
 **We are actively looking for collaborators to gather more tasks and agent scaffolds. Collaborators can become co-authors or our paper. More information below.**
 
+## Current Results
+| benchmark          | Average Score    | AIME 2025 | BFCL  | GPQA (Main) | GSM8K  | HumanEval |
+|--------------------|---------|----------|-------|----------|--------|-----------|
+| Base model         | 0.08976 | 0.0167   | 0.015 | 0.0848   | 0.2043 | 0.128     |
+| Claude Sonnet 4.5  | 0.09122 | 0.0083   | 0.015 | 0.0597   | 0.2481 | 0.125     |
+| Codex 5.1          | 0.26864 | 0.0083   | 0.55  | 0.2193   | 0.2866 | 0.279     |
+| Human post-trained | 0.62888 | 0.3556   | 0.85  | 0.3622   | 0.8815 | 0.6951    |
+
+
 ## Roadmap
 - Mid of December: release v0.1 of the benchmark
 - Mid / End of January: release v1.0 of the benchmark
