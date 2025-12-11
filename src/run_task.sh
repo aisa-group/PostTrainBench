@@ -92,23 +92,12 @@ with_record_the_time() {
 
 solve_task() {
     SOLVE_OUT="${EVAL_DIR}/solve_out.txt"
-    bash agents/${AGENT}/solve.sh "$NUM_HOURS" "$PROMPT" "$AGENT_CONFIG" "$JOB_DIR" "$JOB_TMP" "$EVAL_DIR" "$HF_MERGED" > "${SOLVE_OUT}" 2>&1
-}
-
-solve_task_aa() { # todo rm
-    echo HF_HOME $HF_HOME
-    echo ls $HF_MERGED
-    ls $HF_MERGED
-    echo ls $HF_MERGED/hub
-    ls $HF_MERGED/hub
-    exit 0
+    bash agents/${AGENT}/solve.sh "$NUM_HOURS" "$PROMPT" "$AGENT_CONFIG" "$JOB_DIR" "$JOB_TMP" "$HF_MERGED" > "${SOLVE_OUT}" 2>&1
 }
 
 echo "================================"
 echo "========= RUNNING TASK ========="
 echo "================================"
-# with_huggingface_overlay solve_task_aa # todo rm
-# exit 0 # todo rm
 
 with_huggingface_overlay with_record_the_time solve_task
 
