@@ -1,3 +1,5 @@
+import os
+
 import argparse
 
 def main():
@@ -5,6 +7,11 @@ def main():
     parser.add_argument("--benchmark", type=str, required=True)
     parser.add_argument("--model", type=str, required=True)
     args = parser.parse_args()
+
+    base_prompt = os.environ.get('POST_TRAIN_BENCH_PROMPT', 'prompt')
+    if "mock" in base_prompt:
+        print("Just do nothing and return.")
+        return
 
     with open('src/disallowed_usage_judge/prompt.txt', 'r') as f:
         prompt = f.read()

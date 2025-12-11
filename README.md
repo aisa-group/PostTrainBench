@@ -47,7 +47,9 @@ See `agents/codex/` and `agents/claude/` for examples.
 It makes sense to add agents in a way that they can access the web, e.g. by a web-search tool.
 
 ## Requirements
+The following programs need to be installed:
 - `apptainer`
+- `fuse-overlayfs`
 
 ## Installation & Usage
 Coming soon.

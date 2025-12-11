@@ -1,0 +1,83 @@
+Bootstrap: docker
+From: nvidia/cuda:12.9.1-cudnn-devel-ubuntu22.04
+
+%post
+    chmod 1777 /tmp
+    # Set environment variables
+    export DEBIAN_FRONTEND=noninteractive
+
+    # Update and install system dependencies
+    apt-get update && apt-get install -y \
+        python3.10 \
+        python3-dev \
+        git \
+        wget \
+        curl \
+        build-essential \
+        && rm -rf /var/lib/apt/lists/*
+
+    # Create python3 symlink
+    ln -sf /usr/bin/python3.10 /usr/bin/python3
+    ln -sf /usr/bin/python3.10 /usr/bin/python
+    
+    # Install Node.js (LTS version 22.x) for npm
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+    apt-get install -y nodejs
+    
+    # Install uv
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    export PATH="/root/.local/bin:$PATH"
+    
+    uv pip install --system --no-cache vllm==0.11.0 --torch-backend=auto
+    
+    # Install AI CLI tools via npm
+    npm install -g \
+        @anthropic-ai/claude-code \
+        @openai/codex \
+        @google/gemini-cli
+    
+    uv pip install --system --no-cache ninja packaging
+    
+    # Install the required packages
+    uv pip install --system --no-cache \
+        accelerate \
+        bitsandbytes \
+        datasets \
+        evaluate \
+        lm-eval \
+        scikit-learn \
+        tokenizers \
+        transformers \
+        trl \
+        peft \
+        inspect-ai \
+        matplotlib \
+        certifi
+
+    uv pip install --system --no-cache flash_attn --no-build-isolation
+    
+    # install inspect evals
+    mkdir -p /opt
+    cd /opt
+    git clone --depth=1 https://github.com/UKGovernmentBEIS/inspect_evals.git
+    cd /opt/inspect_evals
+    uv pip install --system --no-cache .
+
+    cd /opt
+    git clone https://github.com/rank-and-file/filelock_workarounds.git
+    
+%environment
+    export PATH="/root/.local/bin:$PATH"
+    export NO_PROXY="localhost,127.0.0.1"
+    export no_proxy="localhost,127.0.0.1"
+    export PYTHONPATH="/opt/filelock_workarounds/soft_file_locks:$PYTHONPATH"
+
+%runscript
+    exec python3 "$@"
+
+%labels
+    Version v1.0
+    Description Python ML container with CUDA support for transformers and LLM training (using uv) + AI CLI tools
+
+%help
+    Note: Use the --nv flag to enable NVIDIA GPU support when running the container.
