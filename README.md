@@ -10,7 +10,7 @@ Benchmark scores are computed after post-training, for all but the "base model" 
 
 All scores are averages over 4 models (Qwen-3-1.7B, Qwen-3-4B, SmolLM3-3B and Gemma-3-4B).
 
-| benchmark          | Average Score    | AIME 2025 | BFCL  | GPQA (Main) | GSM8K  | HumanEval |
+| Method          | Average Score    | AIME 2025 | BFCL  | GPQA (Main) | GSM8K  | HumanEval |
 |--------------------|---------|----------|-------|----------|--------|-----------|
 | Base model         | 0.08976 | 0.0167   | 0.015 | 0.0848   | 0.2043 | 0.128     |
 | Claude Sonnet 4.5  | 0.09122 | 0.0083   | 0.015 | 0.0597   | 0.2481 | 0.125     |
