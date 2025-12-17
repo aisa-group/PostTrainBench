@@ -12,7 +12,7 @@ We introduce PostTrainBench, a benchmark that measures the ability of CLI agents
 
 Benchmark scores are computed after post-training, for all but the "base model" score.
 
-All scores are averages over 4 models (Qwen3-1.7B, Qwen3-4B, SmolLM3-3B, and Gemma-3-4B-IT).
+All scores are averages over 4 models (Qwen3-1.7B, Qwen3-4B, SmolLM3-3B, and Gemma-3-4B).
 
 | Method              | Average Score | AIME 2025 | BFCL | GPQA (Main) | GSM8K | HumanEval |
 |---------------------|---------------|-----------|------|-------------|-------|-----------|
@@ -92,8 +92,7 @@ Requirements for new tasks:
 
 ### Adding Agents
 
-Add your code to `agents/<agent_name>/` with:
-1. `solve.sh` - Script that calls the agent
+Add your code to `agents/<agent_name>/` with `solve.sh` (script that calls the agent)
 
 See `agents/codex/` and `agents/claude/` for examples. Agents should have web access (e.g., via a web-search tool).
 
