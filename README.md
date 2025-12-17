@@ -1,4 +1,4 @@
-# PostTrainBench: Measuring AI Ability to Perform LLM Post-Training
+[# PostTrainBench: Measuring AI Ability to Perform LLM Post-Training
 http://posttrainbench.com/
 
 We introduce PostTrainBench, a benchmark that measures the ability of AI agents to post-train pre-trained large language models (LLMs). In PostTrainBench the agent's task is to improve the performance of a base LLM on a given benchmark. The agent is given access to an evaluation script and 10 hours on an H100 GPU. Performance is measured by the benchmark score of the post-trained LLM. This setup naturally evaluates an AI agent's ability to conduct AI R&D.
@@ -172,4 +172,4 @@ If you found PostTrainBench useful, consider citing us as:
   author={Rank, Ben and Bhatnagar, Hardik and Bethge, Matthias and Andriushchenko, Maksym},
   year={2025}
 }
-```
+```](https://github.com/aisa-group/PostTrainBench/edit/main/README.md)
