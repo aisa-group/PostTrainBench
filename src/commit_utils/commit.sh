@@ -1,7 +1,5 @@
 #!/bin/bash
-
-export POST_TRAIN_BENCH_CONTAINER_NAME="standard"
-export POST_TRAIN_BENCH_PROMPT="prompt"
+bash src/commit_utils/set_env_vars.sh
 
 models=(
     "google/gemma-3-4b-pt"
@@ -27,14 +25,14 @@ for model in "${models[@]}"; do
             condor_submit_bid 100 -a "agent=claude" -a "agent_config=claude-sonnet-4-5" -a "eval=$eval" -a "model_to_train=$model" src/commit_utils/single_task.sub
             condor_submit_bid 100 -a "agent=claude" -a "agent_config=claude-opus-4-5" -a "eval=$eval" -a "model_to_train=$model" src/commit_utils/single_task.sub
             condor_submit_bid 100 -a "agent=gemini" -a "agent_config=models/gemini-3-pro-preview" -a "eval=$eval" -a "model_to_train=$model" src/commit_utils/single_task.sub
-        elif [ "${POST_TRAIN_BENCH_JOB_SCHEDULER}" = "htcondor_mpi-is" ]; then
+        elif [ "${POST_TRAIN_BENCH_JOB_SCHEDULER}" = "htcondor" ]; then
             condor_submit -a "agent=codex" -a "agent_config=gpt-5.1-codex-max" -a "eval=$eval" -a "model_to_train=$model" src/commit_utils/single_task.sub
             condor_submit -a "agent=codex" -a "agent_config=gpt-5.2" -a "eval=$eval" -a "model_to_train=$model" src/commit_utils/single_task.sub
             condor_submit -a "agent=claude" -a "agent_config=claude-sonnet-4-5" -a "eval=$eval" -a "model_to_train=$model" src/commit_utils/single_task.sub
             condor_submit -a "agent=claude" -a "agent_config=claude-opus-4-5" -a "eval=$eval" -a "model_to_train=$model" src/commit_utils/single_task.sub
             condor_submit -a "agent=gemini" -a "agent_config=models/gemini-3-pro-preview" -a "eval=$eval" -a "model_to_train=$model" src/commit_utils/single_task.sub
         else
-            echo job scheduler "${POST_TRAIN_BENCH_JOB_SCHEDULER}" is not supported.
+            echo ERROR: job scheduler "${POST_TRAIN_BENCH_JOB_SCHEDULER}" is not supported.
         fi
     done
 done

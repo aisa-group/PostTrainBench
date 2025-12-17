@@ -1,11 +1,13 @@
 # PostTrainBench: Measuring AI Ability to Perform LLM Post-Training
 http://posttrainbench.com/
 
-We introduce PostTrainBench, a benchmark which measures the ability of AI agents to post-train pre-trained large language models (LLMs). In PostTrainBench the agent is tasked to improve the performance of a base LLM on some benchmark. The agent gets access to an evaluation script and 10 hours on an H100 GPU. Performance is measured as the benchmark score of the post-trained LLM. This setup naturally measures the ability of an AI agent to perform AI R&D.
+We introduce PostTrainBench, a benchmark that measures the ability of AI agents to post-train pre-trained large language models (LLMs). In PostTrainBench the agent's task is to improve the performance of a base LLM on a given benchmark. The agent is given access to an evaluation script and 10 hours on an H100 GPU. Performance is measured by the benchmark score of the post-trained LLM. This setup naturally evaluates an AI agent's ability to conduct AI R&D.
 
 **We are actively looking for collaborators to gather more tasks and agent scaffolds. Collaborators can become co-authors or our paper. More information below.**
 
-## Current Results
+## Leaderboard
+![Main Plot](assets/main_plot_v0_1.png)
+
 Benchmark scores are computed after post-training, for all but the "base model" score.
 
 All scores are averages over 4 models (Qwen-3-1.7B, Qwen-3-4B, SmolLM3-3B and Gemma-3-4B).
@@ -22,6 +24,11 @@ All scores are averages over 4 models (Qwen-3-1.7B, Qwen-3-4B, SmolLM3-3B and Ge
 
 \* "Human Post-Trained" is not directly comparable since it exceeds the 10h + 1 GPU constraint
 
+## Time Spent on Post-Training
+Different AI agents demonstrate varying levels of persistence. Some give up well before the time limit expires.
+
+![Time Spent](assets/time_spent_v0_1.png)
+
 ## Roadmap
 - Mid / End of January: release v1.0 of the benchmark
 
@@ -30,6 +37,7 @@ For this we want to add:
 - more tasks
 - more agent scaffolds and different agents
 - more advanced data decontamination
+- more advanced method to discover reward hacking by using a different model
 - ablation studies, e.g. using more or less compute for training
 
 ## Contributing
@@ -53,8 +61,8 @@ The following programs need to be installed:
 - `apptainer`
 - `fuse-overlayfs`
 
-## Installation & Usage
-Build the apptainer image via `apptainer build 
+## Installation
+Build the apptainer image via
 ```bash
 bash containers/build_container.sh standard
 ```
@@ -63,6 +71,16 @@ Download the huggingface cache.
 ```bash
 bash containers/download_hf_cache/download_hf_cache.sh
 ```
+
+Set the environment variables `OPENAI_API_KEY` `ANTHROPIC_API_KEY` and  `GEMINI_API_KEY` accordingly.
+
+## Usage
+Commit the jobs via the script 
+```
+bash src/commit_utils/commit.sh
+```
+
+Right now, we only support the HTCondor job scheduler. In the future, we plan to also support slurm.
 
 ## Code structure
 `agents`: agents live here
@@ -82,7 +100,7 @@ E.g. you can run `bash src/commit_utils/commit.sh` for commiting one job
 Each evaluation folder consists of:
 - `benchmark.txt`: The official name of the benchmark (e.g. "American Invitational Mathematics Examination (AIME) 2024")
 - `evaluate.py`: the evaluation script
-- (Optional) `task_context` directory: Other files which the agent can use. This could e.g. include some starting code or papers which the agent can read.
+- (Optional) `task_context` directory: Other files which the agent can use. This could e.g. include information on how exactly the evalution is performed, such that the agent doesn't have to guess.
 
 `results`: Evaluation results automatically go here (baseline runs are prefixed with `baseline_`)
 
@@ -93,7 +111,7 @@ Even when only instructed to fine-tune a target LLM on some benchmark and optimi
 
 Similarly, Claude Code noticed that the performance of the model is not improving by it's post-training. It then downloaded an instruction tuned version of the model to further fine-tune and submit.
 
-Because of this, we now employ an agent as a judge which walks through the generated code to see if there are instances of reward hacking.
+We updated the system prompt accordingly and now reward hacking is less prevalent. Additionally we employ an agent as a judge which reviews the generated code to see if there are any instances of reward hacking. When reward hacking is discovered, we discard the run and use the performance of the base model instead.
 
 ## Our Prompt
 We use the following prompt to instruct the agents:
