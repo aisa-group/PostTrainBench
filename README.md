@@ -3,7 +3,7 @@ http://posttrainbench.com/
 
 We introduce PostTrainBench, a benchmark that measures the ability of AI agents to post-train pre-trained large language models (LLMs). In PostTrainBench the agent's task is to improve the performance of a base LLM on a given benchmark. The agent is given access to an evaluation script and 10 hours on an H100 GPU. Performance is measured by the benchmark score of the post-trained LLM. This setup naturally evaluates an AI agent's ability to conduct AI R&D.
 
-**We are actively looking for collaborators to gather more tasks and agent scaffolds. Collaborators can become co-authors or our paper. More information below.**
+**We are looking for collaborators to gather more tasks and agent scaffolds. Collaborators can become co-authors or our paper. More information below.**
 
 ## Leaderboard
 ![Main Plot](assets/main_plot_v0_1.png)
@@ -14,13 +14,13 @@ All scores are averages over 4 models (Qwen-3-1.7B, Qwen-3-4B, SmolLM3-3B and Ge
 
 | Method              | Average Score | AIME 2025 | BFCL | GPQA (Main) | GSM8K | HumanEval |
 |---------------------|---------------|-----------|------|-------------|-------|-----------|
-| Base model          | 9             | 1.7       | 1.5  | 8.5         | 20.4  | 12.8      |
-| claude sonnet 4.5   | 14.7          | 0.8       | 1.5  | 14.6        | 33.4  | 23        |
+| Human Post-Trained* | 61.8          | 29.2      | 85   | 36.2        | 87    | 71.5      |
+| gpt-5.1-codex-max   | 34.9          | 0.8       | 67   | 29.6        | 44.3  | 32.9      |
 | claude opus 4.5     | 20.1          | 3.3       | 40.3 | 6.8         | 26.7  | 23.5      |
 | gemini-3-pro        | 18            | 0.8       | 16.5 | 19.1        | 30.7  | 23        |
 | gpt-5.2             | 17.5          | 0         | 13.5 | 19.9        | 34.4  | 19.5      |
-| gpt-5.1-codex-max   | 34.9          | 0.8       | 67   | 29.6        | 44.3  | 32.9      |
-| Human Post-Trained* | 61.8          | 29.2      | 85   | 36.2        | 87    | 71.5      |
+| claude sonnet 4.5   | 14.7          | 0.8       | 1.5  | 14.6        | 33.4  | 23        |
+| Base model          | 9             | 1.7       | 1.5  | 8.5         | 20.4  | 12.8      |
 
 \* "Human Post-Trained" is not directly comparable since it exceeds the 10h + 1 GPU constraint
 
@@ -36,8 +36,9 @@ Our goal with v1.0 is to have a simple, yet effective way to measure the perform
 For this we want to add:
 - more tasks
 - more agent scaffolds and different agents
-- more advanced data decontamination
-- more advanced method to discover reward hacking by using a different model
+- enhanced data decontamination
+- enhanced method to stop reward hacking by using a different model
+- support for slurm
 - ablation studies, e.g. using more or less compute for training
 
 ## Contributing
@@ -46,7 +47,11 @@ We are especially interested in people who can contribute more tasks and agents.
 
 People with substantial contributions can become co-authors on our paper.
 ### Adding Tasks
-If you want to add a task, make sure the following conditions hold:
+If you want to add a task, you need to add your code to `src/eval/tasks/task_name/`.
+You need to implement a script `src/eval/tasks/task_name/evaluate.py` which evaluates the post-trained model. See existing tasks for examples.
+Furthermore, you need to add `src/eval/tasks/task_name/benchmark.txt` where you specify the name of your benchmark (e.g. "American Invitational Mathematics Examination (AIME) 2025").
+
+Make sure the following conditions hold:
 - The task is not too difficult for the human post-trained versions of the four models we test on ([Qwen-3-1.7B](https://huggingface.co/Qwen/Qwen3-1.7B), [Qwen-3-4B](https://huggingface.co/Qwen/Qwen3-4B), [SmolLM3-3B](https://huggingface.co/HuggingFaceTB/SmolLM3-3B) and [Gemma-3-4B](https://huggingface.co/google/gemma-3-4b-it)). It should achieve significantly above random chance or simple baselines.
 - Make sure that the default parameters allow the agent to run the evaluation on the H100 rather fast. 15 minutes is a good guideline. For minimal evaluation time, it is advisable to use vllm for inference. Additionally, you can subsample the benchmark. But for the final evaluation, please use the full benchmark.
 
@@ -67,7 +72,7 @@ Build the apptainer image via
 bash containers/build_container.sh standard
 ```
 
-Download the huggingface cache.
+Download the huggingface cache via
 ```bash
 bash containers/download_hf_cache/download_hf_cache.sh
 ```
@@ -87,12 +92,12 @@ Right now, we only support the HTCondor job scheduler. In the future, we plan to
 
 `containers`: container definition, download of cache
 
-`dev_utils`: Some useful scripts for development
+`dev_utils`: useful scripts for development
 
 `src`: main codebase
 
 `src/commit_utils`: utilities to commit a job to the cluster.
-E.g. you can run `bash src/commit_utils/commit.sh` for commiting one job
+E.g. you can run `bash src/commit_utils/commit.sh` to commit all jobs at once.
 
 `src/baselines`: scripts to compute baseline scores inside the standard container
 
@@ -156,7 +161,7 @@ ben.rank@tuebingen.mpg.de
 
 hrdk.bhatnagar@gmail.com
 
-maksym@andriushchenko.me
+maksym.andriushchenko@tue.ellis.eu
 
 ## Citation
 If you found PostTrainBench useful, consider citing us as:
