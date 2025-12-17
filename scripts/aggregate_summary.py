@@ -13,6 +13,14 @@ import os
 import csv
 import argparse
 
+METHOD_NAME_MAP = {
+    "claude_claude-sonnet-4-5": "claude sonnet 4.5",
+    "claude_claude-opus-4-5": "claude opus 4.5",
+    "codex_gpt-5.1-codex-max": "gpt-5.1-codex-max",
+    "codex_gpt-5.2": "gpt-5.2",
+    "gemini_models_gemini-3-pro-preview": "gemini-3-pro",
+}
+
 # Model groups for baseline columns
 BASE_MODELS = ["Qwen3-1.7B-Base", "Qwen3-4B-Base", "SmolLM3-3B-Base", "gemma-3-4b-pt"]
 INSTRUCT_MODELS = ["Qwen3-1.7B", "Qwen3-4B", "SmolLM3-3B", "gemma-3-4b-it"]
@@ -148,7 +156,9 @@ def main():
         writer = csv.writer(f)
 
         # Header: benchmark, baseline_base, baseline_instruct, method1, method2, ...
-        writer.writerow(["benchmark", "baseline_base", "baseline_instruct"] + methods_ordered)
+        # Apply METHOD_NAME_MAP to simplify method names in the header
+        display_methods = [METHOD_NAME_MAP.get(m, m) for m in methods_ordered]
+        writer.writerow(["benchmark", "baseline_base", "baseline_instruct"] + display_methods)
 
         # Benchmark rows
         for bench in common_benchmarks:

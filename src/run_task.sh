@@ -15,7 +15,7 @@ AGENT_CONFIG_SAFE=$(echo "$AGENT_CONFIG" | tr '/:' '_')
 
 RANDOM_UUID=$(uuidgen)
 
-EVAL_DIR="${POST_TRAIN_BENCH_RESULTS_DIR}/${AGENT}_${AGENT_CONFIG_SAFE}_final_v3/${EVALUATION_TASK}_${RESULT_PREFIX_SAFE}_${CLUSTER_ID}"
+EVAL_DIR="${POST_TRAIN_BENCH_RESULTS_DIR}/${AGENT}_${AGENT_CONFIG_SAFE}/${EVALUATION_TASK}_${RESULT_PREFIX_SAFE}_${CLUSTER_ID}"
 
 mkdir -p ${EVAL_DIR}
 
@@ -57,6 +57,7 @@ bash src/utils/create_timer.sh $NUM_HOURS $JOB_DIR/task/timer.sh
 
 # Copy scripts needed inside the container
 cp src/utils/check_cuda.py "${JOB_DIR}/check_cuda.py"
+cp src/utils/check_cuda_writing.py "${JOB_DIR}/check_cuda_writing.py"
 cp "agents/${AGENT}/solve.sh" "${JOB_DIR}/agent_solve.sh"
 
 # Utils
@@ -113,7 +114,7 @@ solve_task() {
         --pwd "/home/ben/task" \
         --writable-tmpfs \
         "${POST_TRAIN_BENCH_CONTAINERS_DIR}/${POST_TRAIN_BENCH_CONTAINER_NAME}.sif" \
-        bash -c "python /home/ben/check_cuda.py && bash /home/ben/agent_solve.sh" > "${SOLVE_OUT}" 2>&1
+        bash -c "python /home/ben/check_cuda.py && python /home/ben/check_cuda_writing.py && bash /home/ben/agent_solve.sh" > "${SOLVE_OUT}" 2>&1
 }
 
 echo "================================"
