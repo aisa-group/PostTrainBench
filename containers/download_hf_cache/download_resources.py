@@ -153,6 +153,7 @@ DATASETS: List[Dict[str, Any]] = [
     {'dataset': 'glaiveai/glaive-function-calling', 'config': 'default', 'splits': ['train'], 'cache_key': 'glaiveai___glaive-function-calling'},
     {'dataset': 'glaiveai/Glaive-function-calling-v2', 'config': 'default', 'splits': ['train'], 'cache_key': 'glaiveai___glaive-function-calling-v2'},
     {'dataset': 'gneubig/aime-1983-2024', 'config': 'default', 'splits': ['train'], 'cache_key': 'gneubig___aime-1983-2024'},
+    {'dataset': 'google/IFEval', 'config': 'default', 'splits': ['train'], 'cache_key': 'google___ifeval'},
     {'dataset': 'google-research-datasets/mbpp', 'config': 'full', 'splits': ['prompt', 'test', 'train', 'validation'], 'cache_key': 'google-research-datasets___mbpp'},
     {'dataset': 'google-research-datasets/mbpp', 'config': 'sanitized', 'splits': ['prompt', 'test', 'train', 'validation'], 'cache_key': 'google-research-datasets___mbpp'},
     {'dataset': 'gorilla-llm/Berkeley-Function-Calling-Leaderboard', 'config': 'chatable', 'splits': ['train'], 'cache_key': 'gorilla-llm___berkeley-function-calling-leaderboard'},

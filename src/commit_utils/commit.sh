@@ -14,6 +14,7 @@ evals=(
     "gpqamain"
     "gsm8k"
     "humaneval"
+    "ifeval"
 )
 for model in "${models[@]}"; do
     for eval in "${evals[@]}"; do
