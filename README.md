@@ -1,4 +1,4 @@
-# PostTrainBench: Measuring CLI agents' Ability to Perform LLM Post-Training
+# PostTrainBench: Measuring AI Ability to Perform LLM Post-Training
 
 [![Website](https://img.shields.io/badge/Website-posttrainbench.com-c17d5a)](http://posttrainbench.com/)
 
