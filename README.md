@@ -87,7 +87,7 @@ Add your code to `src/eval/tasks/<task_name>/` with:
 2. `benchmark.txt` - Official benchmark name
 
 Requirements for new tasks:
-- The task should be achievable by instruction-tuned versions of our test models ([Qwen3-1.7B](https://huggingface.co/Qwen/Qwen3-1.7B), [Qwen3-4B](https://huggingface.co/Qwen/Qwen3-4B), [SmolLM3-3B](https://huggingface.co/HuggingFaceTB/SmolLM3-3B), [Gemma-3-4B](https://huggingface.co/google/gemma-3-4b-pt)) - significantly above random chance
+- The task should be achievable by instruction-tuned versions of our test models ([Qwen3-1.7B](https://huggingface.co/Qwen/Qwen3-1.7B), [Qwen3-4B](https://huggingface.co/Qwen/Qwen3-4B), [SmolLM3-3B](https://huggingface.co/HuggingFaceTB/SmolLM3-3B), [Gemma-3-4B](https://huggingface.co/google/gemma-3-4b-it)) - significantly above random chance
 - Evaluation should run in ~15 minutes on an H100 (use vLLM for inference, subsample if needed during development) For the final evaluation, please use the full benchmark
 
 ### Adding Agents
