@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 import os
+import sys
 
 import argparse
 import json
@@ -10,6 +11,13 @@ from inspect_ai import eval as inspect_eval  # type: ignore  # noqa: E402
 from inspect_ai.util._display import init_display_type  # noqa: E402
 
 import inspect_evals.gsm8k # noqa: F401, E402  (registers task definitions)
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+from utils.fewshot_loader import is_base_model
+
+# GSM8K uses 10-shot by default from inspect_evals
+DEFAULT_FEWSHOT = 10
 
 
 def parse_args() -> argparse.Namespace:
@@ -54,7 +62,67 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=0.3,
     )
+    parser.add_argument(
+        '--fewshot',
+        type=str,
+        choices=['auto', 'always', 'never'],
+        default='always',
+        help="Few-shot mode: 'always' (default, use 10-shot), 'never' (0-shot), 'auto' (base models only)",
+    )
+    parser.add_argument(
+        '--num-fewshot',
+        type=int,
+        default=None,
+        help="Number of few-shot examples to use (default: 10 from inspect_evals)",
+    )
+    # Sampling parameters (Qwen recommends: temperature=0.6, top_p=0.95, top_k=20)
+    parser.add_argument(
+        '--temperature',
+        type=float,
+        default=0.6,
+        help="Sampling temperature (default: 0.6, Qwen recommends not using 0)",
+    )
+    parser.add_argument(
+        '--top-p',
+        type=float,
+        default=0.95,
+        help="Top-p (nucleus) sampling (default: 0.95)",
+    )
+    parser.add_argument(
+        '--top-k',
+        type=int,
+        default=20,
+        help="Top-k sampling (default: 20)",
+    )
+    parser.add_argument(
+        '--use-base-template',
+        action='store_true',
+        default=True,
+        help="Use simple template for base models (default: True)",
+    )
+    parser.add_argument(
+        '--no-use-base-template',
+        action='store_false',
+        dest='use_base_template',
+        help="Disable simple template for base models (use HF default)",
+    )
+    parser.add_argument(
+        '--epochs',
+        type=int,
+        default=5,
+        help="Number of times to run each sample (default: 5 for pass@k style evaluation)",
+    )
     return parser.parse_args()
+
+def should_use_fewshot(args) -> bool:
+    """Determine if few-shot examples should be used."""
+    if args.fewshot == 'always':
+        return True
+    elif args.fewshot == 'never':
+        return False
+    else:  # auto
+        return is_base_model(args.model_path)
+
 
 def main() -> None:
     args = parse_args()
@@ -65,11 +133,24 @@ def main() -> None:
     if (args.limit is not None) and (args.limit != -1):
         other_kwargs["limit"] = args.limit
 
-    task = "inspect_evals/gsm8k"
+    # Determine few-shot settings
+    use_fewshot = should_use_fewshot(args)
+    num_fewshot = args.num_fewshot if args.num_fewshot is not None else DEFAULT_FEWSHOT
+
+    if use_fewshot:
+        print(f"Using {num_fewshot}-shot evaluation for model: {args.model_path}")
+        task = inspect_evals.gsm8k.gsm8k(fewshot=num_fewshot)
+    else:
+        print(f"Using zero-shot evaluation for model: {args.model_path}")
+        task = inspect_evals.gsm8k.gsm8k(fewshot=0)
+
     model_args = {
         'gpu_memory_utilization': args.gpu_memory_utilization,
     }
     model_args.update(template_kwargs(args))
+
+    print(f"Sampling params: temperature={args.temperature}, top_p={args.top_p}, top_k={args.top_k}")
+    print(f"Epochs: {args.epochs}")
 
     eval_out = inspect_eval(
         task,
@@ -82,6 +163,10 @@ def main() -> None:
         attempt_timeout=18000000,
         max_tokens=args.max_tokens,
         max_connections=args.max_connections,
+        temperature=args.temperature,
+        top_p=args.top_p,
+        top_k=args.top_k,
+        epochs=args.epochs,
         **other_kwargs,
     )
 
@@ -94,6 +179,27 @@ def main() -> None:
 
         with open(args.json_output_file, 'w') as f:
             json.dump(metrics, f, indent=2)
+
+        # Save few-shot and sampling configuration info alongside metrics
+        result_dir = os.path.dirname(args.json_output_file)
+        fewshot_info_file = os.path.join(result_dir, 'eval_config.json')
+        eval_config = {
+            "benchmark": "gsm8k",
+            "model_path": args.model_path,
+            "is_base_model": is_base_model(args.model_path),
+            "fewshot_mode": args.fewshot,
+            "fewshot_used": use_fewshot,
+            "num_fewshot_examples": num_fewshot if use_fewshot else 0,
+            "sampling": {
+                "temperature": args.temperature,
+                "top_p": args.top_p,
+                "top_k": args.top_k,
+            },
+            "epochs": args.epochs,
+        }
+        with open(fewshot_info_file, 'w') as f:
+            json.dump(eval_config, f, indent=2)
+        print(f"Eval config saved to: {fewshot_info_file}")
 
 def model_type(args) -> str:
     if 'qwen' in args.model_path.lower():
@@ -121,7 +227,12 @@ def model_type(args) -> str:
 def template_kwargs(args) -> dict:
     model_type_str = model_type(args)
     if model_type_str == 'qwen':
-        return {}
+        # Use simple template for Qwen base models (no chat tokens)
+        if is_base_model(args.model_path):
+            template = 'qwen_base.jinja'
+            print(f"Using qwen_base.jinja template for base model")
+        else:
+            return {}  # Use default HF template for instruct models
     elif model_type_str == 'llama':
         template = 'llama3.jinja'
     elif model_type_str == 'gemma':

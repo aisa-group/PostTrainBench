@@ -1,5 +1,3 @@
-export HF_HOME_NEW="/home/ben/hf_cache"
-
 export HF_HOME=${HF_HOME:-$HOME/.cache/huggingface}
 export POST_TRAIN_BENCH_RESULTS_DIR=${POST_TRAIN_BENCH_RESULTS_DIR:-results}
 export POST_TRAIN_BENCH_CONTAINERS_DIR=${POST_TRAIN_BENCH_CONTAINERS_DIR:-containers}

@@ -1,0 +1,14 @@
+{# Simple template for Qwen base models - no chat tokens #}
+{%- for message in messages %}
+{%- if message.role == 'system' %}
+{{ message.content }}
+
+{% elif message.role == 'user' %}
+{{ message.content }}
+
+{% elif message.role == 'assistant' %}
+{{ message.content }}
+{% endif %}
+{%- endfor %}
+{%- if add_generation_prompt %}
+{% endif %}
