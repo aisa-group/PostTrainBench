@@ -1,0 +1,1248 @@
+{
+  "models": [
+    "HuggingFaceTB/SmolLM3-3B-Base",
+    "Qwen/Qwen2.5-3B",
+    "Qwen/Qwen2.5-7B-Instruct",
+    "Qwen/Qwen2.5-Math-7B-Instruct",
+    "Qwen/Qwen3-1.7B-Base",
+    "Qwen/Qwen3-4B",
+    "Qwen/Qwen3-4B-Base",
+    "Qwen/Qwen3-4B-Instruct-2507",
+    "deepseek-ai/DeepSeek-Math-7B-Instruct",
+    "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B",
+    "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
+    "deepseek-ai/deepseek-math-7b-instruct",
+    "google/gemma-3-4b-it",
+    "google/gemma-3-4b-pt"
+  ],
+  "datasets": [
+    {
+      "dataset": "AI-MO/aimo-validation-aime",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "AI-MO/aimo-validation-amc",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "AI-MO/aimo-validation-math-level-5",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "AI-MO/NuminaMath-CoT",
+      "splits": [
+        "test",
+        "train"
+      ]
+    },
+    {
+      "dataset": "AI-MO/NuminaMath-TIR",
+      "splits": [
+        "test",
+        "train"
+      ]
+    },
+    {
+      "dataset": "AIMERgzr/PapperScore",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "AMead10/Universal-glaive-function-calling-v2",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "Asap7772/aime_gpt-4o-mini_responses_evaluated_flatturn",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "AymanTarig/function-calling-v0.2-with-r1-cot",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "BitAgent/tool_calling",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "BitStarWalkin/AIME_1983_2024",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "chilleD/SVAMP",
+      "splits": [
+        "test",
+        "train"
+      ]
+    },
+    {
+      "dataset": "CohereLabs/m-ArenaHard-v2.0",
+      "config": "en",
+      "splits": [
+        "test"
+      ]
+    },
+    {
+      "dataset": "Deepexi/function-calling-small",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "Digital-nimbus/llama-2-oai-function-calling",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "EleutherAI/hendrycks_math",
+      "configs": [
+        "algebra",
+        "counting_and_probability",
+        "geometry",
+        "intermediate_algebra",
+        "number_theory"
+      ],
+      "splits": [
+        "test",
+        "train"
+      ]
+    },
+    {
+      "dataset": "GBaker/MedQA-USMLE-4-options",
+      "splits": [
+        "test",
+        "train"
+      ]
+    },
+    {
+      "dataset": "Goekdeniz-Guelmez/Function_Calling_Unfiltered",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "HuggingFaceH4/aime_2024",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "HuggingFaceH4/Bespoke-Stratos-17k",
+      "splits": [
+        "test",
+        "train"
+      ]
+    },
+    {
+      "dataset": "HuggingFaceH4/CodeAlpaca_20K",
+      "splits": [
+        "test",
+        "train"
+      ]
+    },
+    {
+      "dataset": "HuggingFaceH4/ultrachat_200k",
+      "splits": [
+        "test_gen",
+        "test_sft",
+        "train_gen",
+        "train_sft"
+      ]
+    },
+    {
+      "dataset": "HuggingFaceH4/ultrafeedback_binarized",
+      "splits": [
+        "test_gen",
+        "test_prefs",
+        "test_sft",
+        "train_gen",
+        "train_prefs",
+        "train_sft"
+      ]
+    },
+    {
+      "dataset": "HydraLM/glaive_function_calling_v1_standardized",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "Idavidrein/gpqa",
+      "configs": [
+        "gpqa_diamond",
+        "gpqa_experts",
+        "gpqa_extended",
+        "gpqa_main"
+      ],
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "Locutusque/hercules-v2.0",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "LongQ/leetcode_python",
+      "splits": [
+        "dev",
+        "test",
+        "train"
+      ]
+    },
+    {
+      "dataset": "MCES10-Software/Python-Code-Solutions",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "magpie-align/Magpie-Pro-300K-Filtered",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "Magpie-Align/Magpie-Qwen2.5-Math-Pro-300K-v0.1",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "Magpie-Align/Magpie-Qwen2.5-Pro-300K-Filtered",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "Maxwell-Jia/AIME_2024",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "Na0s/sft-ready-hendrycks-competition_math",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "Nan-Do/code-search-net-python",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "Nan-Do/instructional_code-search-net-python",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "NewEden/xlam-function-calling-60k-shareGPT",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "NousResearch/hermes-function-calling-v1",
+      "config": "func_calling_singleturn",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "Open-Orca/SlimOrca",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "Pandores/aime-1983-2025",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "Post-training-Data-Flywheel/gorilla-openfunctions-v1",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "Prompt48/AIME_Problem_Set_1983-2024",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "RayBernard/leetcode",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "RayBernard/leetcode1000",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "Rock23210/AIME_Deepseek_Clean",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "Saxo/alpaca_function_calling_dataset",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "TIGER-Lab/MathInstruct",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "TIGER-Lab/MMLU-Pro",
+      "splits": [
+        "test",
+        "validation"
+      ]
+    },
+    {
+      "dataset": "TIGER-Lab/TheoremQA",
+      "splits": [
+        "test"
+      ]
+    },
+    {
+      "dataset": "TigerResearch/tigerbot-kaggle-leetcodesolutions-en-2k",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "Vishal24/function_calling",
+      "splits": [
+        "test",
+        "train"
+      ]
+    },
+    {
+      "dataset": "XxCotHGxX/242K_Python_Docstring_Pairs",
+      "splits": [
+        "test",
+        "train",
+        "validation"
+      ]
+    },
+    {
+      "dataset": "Zaynes/multiple_samples_sympy_numina_aime_with_sol_trace",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "ZeroAgency/gemma3-pythonic-function-tool-calling-v1",
+      "splits": [
+        "test",
+        "train",
+        "valid"
+      ]
+    },
+    {
+      "dataset": "aadajinkya/python_codes_sample",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "agentlans/train-of-thought",
+      "config": "train",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "allenai/ai2_arc",
+      "configs": [
+        "ARC-Challenge",
+        "ARC-Easy"
+      ],
+      "splits": [
+        "test",
+        "train",
+        "validation"
+      ]
+    },
+    {
+      "dataset": "allenai/openbookqa",
+      "config": "main",
+      "splits": [
+        "test",
+        "train",
+        "validation"
+      ]
+    },
+    {
+      "dataset": "allenai/qasc",
+      "splits": [
+        "test",
+        "train",
+        "validation"
+      ]
+    },
+    {
+      "dataset": "allenai/sciq",
+      "splits": [
+        "test",
+        "train",
+        "validation"
+      ]
+    },
+    {
+      "dataset": "allenporter/assist-llm-function-calling",
+      "splits": [
+        "test",
+        "train"
+      ]
+    },
+    {
+      "dataset": "cais/mmlu",
+      "configs": [
+        "abstract_algebra",
+        "all",
+        "anatomy",
+        "astronomy",
+        "auxiliary_train",
+        "clinical_knowledge",
+        "college_biology",
+        "college_chemistry",
+        "college_computer_science",
+        "college_mathematics",
+        "college_medicine",
+        "college_physics",
+        "computer_security",
+        "conceptual_physics",
+        "electrical_engineering",
+        "elementary_mathematics",
+        "high_school_biology",
+        "high_school_chemistry",
+        "high_school_computer_science",
+        "high_school_mathematics",
+        "high_school_physics",
+        "high_school_statistics",
+        "human_aging",
+        "machine_learning",
+        "medical_genetics",
+        "nutrition",
+        "professional_medicine",
+        "virology"
+      ],
+      "splits": [
+        "auxiliary_train",
+        "dev",
+        "test",
+        "train",
+        "validation"
+      ]
+    },
+    {
+      "dataset": "camel-ai/biology",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "camel-ai/chemistry",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "camel-ai/math",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "camel-ai/physics",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "chenggong1995/MATH-lighteval-olympiads_aime",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "codeparrot/codecomplex",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "dakopi/aime_23",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "daman1209arora/jeebench",
+      "splits": [
+        "test"
+      ]
+    },
+    {
+      "dataset": "deepmind/aqua_rat",
+      "config": "raw",
+      "splits": [
+        "test",
+        "train",
+        "validation"
+      ]
+    },
+    {
+      "dataset": "deepmind/code_contests",
+      "splits": [
+        "test",
+        "train",
+        "valid"
+      ]
+    },
+    {
+      "dataset": "derek-thomas/ScienceQA",
+      "splits": [
+        "test",
+        "train",
+        "validation"
+      ]
+    },
+    {
+      "dataset": "di-zhang-fdu/AIME_1983_2024",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "dim/competition_math",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "dim/competition_math_selected",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "dim/leetcodesolutions_en_2k",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "dinushiTJ/gemma-function-calling",
+      "splits": [
+        "test",
+        "train"
+      ]
+    },
+    {
+      "dataset": "dmayhem93/agieval-gaokao-biology",
+      "splits": [
+        "test"
+      ]
+    },
+    {
+      "dataset": "dmayhem93/agieval-gaokao-chemistry",
+      "splits": [
+        "test"
+      ]
+    },
+    {
+      "dataset": "dmayhem93/agieval-gaokao-mathqa",
+      "splits": [
+        "test"
+      ]
+    },
+    {
+      "dataset": "dmayhem93/agieval-gaokao-physics",
+      "splits": [
+        "test"
+      ]
+    },
+    {
+      "dataset": "dmayhem93/agieval-logiqa-en",
+      "splits": [
+        "test"
+      ]
+    },
+    {
+      "dataset": "dmayhem93/agieval-lsat-ar",
+      "splits": [
+        "test"
+      ]
+    },
+    {
+      "dataset": "dmayhem93/agieval-lsat-lr",
+      "splits": [
+        "test"
+      ]
+    },
+    {
+      "dataset": "dmayhem93/agieval-sat-en",
+      "splits": [
+        "test"
+      ]
+    },
+    {
+      "dataset": "dmayhem93/agieval-sat-math",
+      "splits": [
+        "test"
+      ]
+    },
+    {
+      "dataset": "evalplus/mbppplus",
+      "splits": [
+        "test"
+      ]
+    },
+    {
+      "dataset": "flytech/python-codes-25k",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "garage-bAInd/Open-Platypus",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "glaiveai/glaive-function-calling",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "glaiveai/Glaive-function-calling-v2",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "gneubig/aime-1983-2024",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "google-research-datasets/mbpp",
+      "configs": [
+        "full",
+        "sanitized"
+      ],
+      "splits": [
+        "prompt",
+        "test",
+        "train",
+        "validation"
+      ]
+    },
+    {
+      "dataset": "gorilla-llm/Berkeley-Function-Calling-Leaderboard",
+      "configs": [
+        "chatable",
+        "exec_multiple",
+        "exec_parallel_multiple",
+        "exec_simple",
+        "java",
+        "javascript",
+        "parallel",
+        "rest",
+        "sql"
+      ],
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "greengerong/leetcode",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "hbXNov/numina_amc_aime_deepseek_r1_responses",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "hbXNov/numina_amc_aime_in_depth_deepseek_r1_questions",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "hendrydong/aime24",
+      "splits": [
+        "test"
+      ]
+    },
+    {
+      "dataset": "hiyouga/glaive-function-calling-v2-sharegpt",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "huntz47/aimee",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "hypervariance/function-calling-sharegpt",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "iamtarun/python_code_instructions_18k_alpaca",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "interstellarninja/tool-calls-singleturn",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "ise-uiuc/Magicoder-Evol-Instruct-110K",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "ise-uiuc/Magicoder-OSS-Instruct-75K",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "jinaai/code_search_net_clean",
+      "splits": [
+        "test.go",
+        "test.java",
+        "test.javascript",
+        "test.php",
+        "test.python",
+        "test.ruby",
+        "train.go",
+        "train.java",
+        "train.javascript",
+        "train.php",
+        "train.python",
+        "train.ruby",
+        "validation.go",
+        "validation.java",
+        "validation.javascript",
+        "validation.php",
+        "validation.python",
+        "validation.ruby"
+      ]
+    },
+    {
+      "dataset": "jonathanyin/aime_1983_2023_deepseek-r1-distill-qwen-1.5b_traces_32768",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "jonathanyin/aime_1983_2023_deepseek-r1-distill-qwen-14b_traces_32768",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "jonathanyin/aime_1983_2023_deepseek-r1-distill-qwen-7b_traces_32768",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "jonathanyin/aime_1983_2023_deepseek-r1_traces_16384",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "jonathanyin/aime_1983_2023_deepseek-r1_traces_32768",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "jonathanyin/aime_1983_2023_grok-3-mini-high_traces_32768",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "jonathanyin/aime_1983_2023_qwq-32b_traces_16384",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "jonathanyin/aime_1983_2023_qwq-32b_traces_32768",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "khaimaitien/multi-hop-qa-function-calling-format-V1.0",
+      "splits": [
+        "train",
+        "validation"
+      ]
+    },
+    {
+      "dataset": "lighteval/mmlu",
+      "configs": [
+        "abstract_algebra",
+        "all"
+      ],
+      "splits": [
+        "auxiliary_train",
+        "dev",
+        "test",
+        "validation"
+      ]
+    },
+    {
+      "dataset": "lockon/glaive_toolcall_en",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "m-a-p/CodeFeedback-Filtered-Instruction",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "martim00/math_aime_2023",
+      "splits": [
+        "test",
+        "train"
+      ]
+    },
+    {
+      "dataset": "math-ai/aime24",
+      "splits": [
+        "test"
+      ]
+    },
+    {
+      "dataset": "math-ai/aime25",
+      "splits": [
+        "test"
+      ]
+    },
+    {
+      "dataset": "meta-math/MetaMathQA",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "microsoft/orca-math-word-problems-200k",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "milsunone/cural-functionary-small-5000",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "mjalg/function-code",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "mlfoundations-dev/4o_annotated_aime",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "mlfoundations-dev/a1_math_numina_aime",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "mlfoundations-dev/a1_math_openmathinstruct_aime",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "mlfoundations-dev/bespokelabs-sky-t1-numina-amc-aime-subset-unfiltered",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "mlfoundations-dev/multiple_samples_all_numina_aime",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "mlfoundations-dev/multiple_samples_ground_truth_numina_aime",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "mlfoundations-dev/multiple_samples_majority_consensus_numina_aime",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "mlfoundations-dev/multiple_samples_majority_consensus_numina_aime_math_verify",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "mlfoundations-dev/r1_annotated_aime",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "narrative-io/narrative-function-calling-v1",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "nickrosh/Evol-Instruct-Code-80k-v1",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "notbadai/python_functions_reasoning",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "nvidia/OpenCodeInstruct",
+      "config": "train",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "nvidia/OpenMathInstruct-1",
+      "splits": [
+        "train",
+        "validation"
+      ]
+    },
+    {
+      "dataset": "open-r1/codeforces",
+      "splits": [
+        "test",
+        "train"
+      ]
+    },
+    {
+      "dataset": "open-r1/OpenR1-Math-220k",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "openai/gsm8k",
+      "configs": [
+        "default",
+        "main"
+      ],
+      "splits": [
+        "test",
+        "train"
+      ]
+    },
+    {
+      "dataset": "openai/openai_humaneval",
+      "config": "openai_humaneval",
+      "splits": [
+        "test"
+      ]
+    },
+    {
+      "dataset": "philschmid/AIME_1983_2024",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "prem-research/Funcdex-MT-Function-Calling",
+      "splits": [
+        "test",
+        "train"
+      ]
+    },
+    {
+      "dataset": "qfq/genminiall_onlyqwenwrong_aimegpqatrain_domain_powerlaw_steps",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "qwedsacf/competition_math",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "redwoodresearch/mbpp_extended",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "roborovski/synthetic-tool-calls",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "roborovski/synthetic-tool-calls-v2",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "rulins/DeepSeek-R1-Distill-Qwen-32B_NUMINA_train_amc_aime",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "sahil2801/CodeAlpaca-20k",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "semeru/text-code-galeras-code-generation-from-docstring-3k-deduped",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "sharkchill-xy/HumanEval_mbpp_format",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "simplescaling/aime_nofigures",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "smolagents/toolcalling",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "starfishdata/AIME_MATH_1000_LONG_COT",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "starfishdata/AIME_MATH_100_LONG_COT",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "tau/commonsense_qa",
+      "splits": [
+        "test",
+        "train",
+        "validation"
+      ]
+    },
+    {
+      "dataset": "teknium/OpenHermes-2.5",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "theblackcat102/evol-codealpaca-v1",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "think-a-tron/aime-math-train",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "togethercomputer/glaive-function-calling-v2-formatted",
+      "splits": [
+        "test",
+        "train"
+      ]
+    },
+    {
+      "dataset": "TokenBender/code_instructions_122k_alpaca_style",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "vikp/python_code_instructions_filtered",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "weijiezz/math-datasets-100k",
+      "splits": [
+        "test_aime24",
+        "test_aime25",
+        "test_amc23",
+        "test_gsm8k",
+        "test_math500",
+        "test_minervamath",
+        "test_olympiadbench",
+        "train"
+      ]
+    },
+    {
+      "dataset": "weijiezz/math-datasets-20k",
+      "splits": [
+        "test_aime24",
+        "test_aime25",
+        "test_amc23",
+        "test_gsm8k",
+        "test_math500",
+        "test_minervamath",
+        "test_olympiadbench",
+        "train"
+      ]
+    },
+    {
+      "dataset": "weijiezz/NuminaMath-20k",
+      "splits": [
+        "test_aime24",
+        "test_aime25",
+        "test_amc23",
+        "test_gsm8k",
+        "test_math500",
+        "test_minervamath",
+        "test_numina",
+        "test_olympiadbench",
+        "train"
+      ]
+    },
+    {
+      "dataset": "xw27/scibench",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "yahma/alpaca-cleaned",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "zhiyuanhucs/AIME_1983_2024",
+      "splits": [
+        "aime"
+      ]
+    },
+    {
+      "dataset": "zhuzilin/aime-2024",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "zuom/AIME-solutions",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "ByteDance-Seed/Code-Contests-Plus",
+      "config": null
+    },
+    {
+      "dataset": "WNJXYK/AIME_1983_2024-Reasoning-Paths",
+      "config": null
+    },
+    {
+      "dataset": "internlm/Agent-FLAN",
+      "config": null
+    },
+    {
+      "dataset": "nvidia/OpenMathInstruct-2",
+      "config": null
+    }
+  ]
+}
