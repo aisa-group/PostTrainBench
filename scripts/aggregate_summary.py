@@ -19,6 +19,7 @@ METHOD_NAME_MAP = {
     "codex_gpt-5.1-codex-max": "gpt-5.1-codex-max",
     "codex_gpt-5.2": "gpt-5.2",
     "gemini_models_gemini-3-pro-preview": "gemini-3-pro",
+    "opencode_anthropic_claude-sonnet-4-5": "opencode claude-sonnet-4-5",
 }
 
 # Model groups for baseline columns

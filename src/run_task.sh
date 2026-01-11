@@ -102,6 +102,7 @@ solve_task() {
         --env PATH="/home/ben/.local/bin:$PATH" \
         --env HF_HOME="${HF_HOME_NEW}" \
         --env ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}" \
+        --env OPENAI_API_KEY="${OPENAI_API_KEY}" \
         --env CODEX_API_KEY="${OPENAI_API_KEY}" \
         --env GEMINI_API_KEY="${GEMINI_API_KEY}" \
         --env VLLM_API_KEY="inspectai" \
