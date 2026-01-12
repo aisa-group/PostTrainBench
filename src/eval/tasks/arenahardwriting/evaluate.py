@@ -52,7 +52,6 @@ def get_questions(args):
 
     if args.limit == -1:
         random.Random(42).shuffle(questions)
-        questions = questions[: 3] # todo rm
 
     return questions
 
@@ -494,9 +493,11 @@ def _judgments_to_battles(judgments: List[Optional[Dict]]):
         score_map = {"A": 1, "B": 0, "TIE": 0.5, "A>>B": 1, "A>B": 1, "B>A": 0, "B>>A": 0}
         score_ab_val = score_map.get(score_ab.upper(), 0.5)
         score_ba_val = score_map.get(score_ba.upper(), 0.5)
-        score_ba_flipped = 1 - score_ba_val
+        # Game 1: A=baseline, B=candidate. Flip to get candidate's win probability.
+        # Game 2: A=candidate, B=baseline. score_ba_val is already candidate's win probability.
+        score_ab_flipped = 1 - score_ab_val
 
-        avg_score = (score_ab_val + score_ba_flipped) / 2
+        avg_score = (score_ab_flipped + score_ba_val) / 2
 
         battles_data.append({
             "uid": record["uid"],
@@ -570,9 +571,24 @@ def main():
     args.model_alias = model_alias
 
     candidate_answers = None
+
+
     if args.skip_generation:
         ans_path = DATA_PATH / "model_answer" / f"{model_alias}.jsonl"
-        print(f"[skip] Skipping answer generation, using existing answers from {ans_path}")
+        if ans_path.exists():
+            print(f"[skip] Skipping answer generation, loading existing answers from {ans_path}")
+            candidate_answers = {}
+            with open(ans_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    record = json.loads(line)
+                    candidate_answers[record["uid"]] = record
+        else:
+            print(f"[skip] File {ans_path} not found, generating answers instead")
+            ans_path, candidate_answers = generate_answers(args)
+            if ans_path:
+                print(f"[done] Answers saved to {ans_path}")
+            else:
+                print("[done] Answers generated (not saved to disk)")
     else:
         ans_path, candidate_answers = generate_answers(args)
         if ans_path:
