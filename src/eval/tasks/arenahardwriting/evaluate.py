@@ -471,9 +471,22 @@ def _compute_metrics(battles) -> Dict[str, float]:
     return {"accuracy": accuracy, "stderr": stderr}
 
 
-def _judgments_to_battles(judgments: List[Optional[Dict]]):
+def _judgments_to_battles(judgments: List[Optional[Dict]], weight: int = 3):
     """Convert in-memory judgment records to battles DataFrame."""
     import pandas as pd
+
+    score_map = {
+        "A>B": [1],
+        "A>>B": [1] * weight,
+        "A=B": [0.5],
+        "A<<B": [0] * weight,
+        "A<B": [0],
+        "B>A": [0],
+        "B>>A": [0] * weight,
+        "B=A": [0.5],
+        "B<<A": [1] * weight,
+        "B<A": [1],
+    }
 
     battles_data = []
     for record in judgments:
@@ -490,24 +503,23 @@ def _judgments_to_battles(judgments: List[Optional[Dict]]):
         if score_ab is None or score_ba is None:
             continue
 
-        score_map = {"A": 1, "B": 0, "TIE": 0.5, "A>>B": 1, "A>B": 1, "B>A": 0, "B>>A": 0}
-        score_ab_val = score_map.get(score_ab.upper(), 0.5)
-        score_ba_val = score_map.get(score_ba.upper(), 0.5)
         # Game 1: A=baseline, B=candidate. Flip to get candidate's win probability.
-        # Game 2: A=candidate, B=baseline. score_ba_val is already candidate's win probability.
-        score_ab_flipped = 1 - score_ab_val
-
-        avg_score = (score_ab_flipped + score_ba_val) / 2
+        # Game 2: A=candidate, B=baseline. Scores are already candidate's win probability.
+        scores_ab = score_map[score_ab.upper()]
+        scores_ba = score_map[score_ba.upper()]
+        scores = [1 - s for s in scores_ab] + scores_ba
 
         battles_data.append({
             "uid": record["uid"],
             "category": record["category"],
             "model": record["model"],
             "baseline": record["baseline"],
-            "scores": avg_score,
+            "scores": scores,
         })
 
-    return pd.DataFrame(battles_data)
+    battles = pd.DataFrame(battles_data)
+    battles = battles.explode('scores').reset_index(drop=True)
+    return battles
 
 
 def summarize_results(model_alias: str, judgments: Optional[List[Optional[Dict]]] = None) -> Optional[Dict[str, float]]:
