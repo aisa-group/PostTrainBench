@@ -1,26 +1,17 @@
-# HealthBench - Task Context for Agents
+# HealthBench Easy - Task Context for Agents
 
 ## Overview
 
-HealthBench evaluates models on physician-curated medical conversations from OpenAI's HealthBench benchmark. Your goal is to post-train the base model to generate better responses to health-related queries.
+HealthBench Easy evaluates models on physician-curated medical conversations from OpenAI's HealthBench benchmark. Your goal is to post-train the base model to generate better responses to health-related queries.
 
-## Subsets
+## Dataset
 
-Two subsets are available:
+The benchmark contains **1,000 examples** filtered for moderate difficulty:
+- Base models achieve **~27% overall** (with high accuracy but poor communication)
+- Instruction-tuned models achieve **~50% overall** (balanced across all axes)
+- This **~23% gap** demonstrates meaningful improvement from post-training
 
-### HealthBench Hard (default)
-- **1,000 examples** selected for maximum difficulty
-- Base models score **~0%** (essentially random)
-- Tests if agents can post-train for challenging medical tasks
-- Use `--subset hard` (or omit, as this is the default)
-
-### HealthBench Easy
-- **1,000 examples** filtered for moderate difficulty
-- Base models target **40-50%** performance
-- Allows agents to demonstrate incremental progress
-- Use `--subset easy`
-
-**Filtering criteria for Easy:** Non-hard examples with ≤2 negative criteria, stratified sampled to preserve theme distribution.
+**Filtering criteria:** Non-hard examples with ≤2 negative criteria, stratified sampled to preserve theme distribution.
 
 ## Evaluation
 
@@ -72,39 +63,27 @@ Suggested alternative datasets:
 ## Evaluation Command
 
 ```bash
-# Hard subset (default)
-python evaluate.py --model-path final_model/ --subset hard --limit 50  # Quick check
-python evaluate.py --model-path final_model/ --subset hard              # Full evaluation
+# Quick check
+python evaluate.py --model-path final_model/ --limit 50
 
-# Easy subset
-python evaluate.py --model-path final_model/ --subset easy --limit 50  # Quick check
-python evaluate.py --model-path final_model/ --subset easy              # Full evaluation
+# Full evaluation
+python evaluate.py --model-path final_model/
 ```
 
-## Expected Baseline Scores
+## Expected Baseline Scores (SmolLM3-3B, 50 samples, PTB templates)
 
-### HealthBench Hard
-
-**Overall scores (extremely difficult):**
-- Base models: 0% overall (expected — base models can't follow instructions)
-- Instruction-tuned: 0% overall, but ~7-8% accuracy
-
-**Sub-axis scores (more informative):**
-| Model Type | Accuracy | Communication | Instr-Following |
-|------------|----------|---------------|-----------------|
-| Qwen Base | 0-1% | 0-4% | 0% |
-| SmolLM3/Gemma/DeepSeek Base | 0-2% | 14-18% | 0-5% |
-| Qwen Instruct | **7.8%** | 2% | 0% |
-
-### HealthBench Easy
-
-**Target performance:**
-- Base models: 40-50% overall (allows demonstrating progress)
-- Instruction-tuned: Higher (establishes ceiling)
+| Metric | Base | Instruct | Gap |
+|--------|------|----------|-----|
+| **Overall** | 27.2% | **50.3%** | +23.1% |
+| Accuracy | 63.9% | 50.8% | -13.1% |
+| Context Awareness | 25.9% | 50.3% | +24.4% |
+| Completeness | 5.1% | 37.5% | +32.4% |
+| Communication | 0% | **100%** | +100% |
 
 ### Key Insights
 
-1. **Hard subset:** The gap between base (~0%) and instruction-tuned (~8% accuracy) shows the potential improvement available through post-training.
-2. **Easy subset:** Allows agents to show meaningful progress during training, not just at the end.
-3. **Target:** Improve accuracy while maintaining or improving communication quality.
+1. **Overall gap**: 27% → 50% shows meaningful improvement from post-training
+2. **Communication/Completeness**: Instruct model is dramatically better (0% → 100% communication)
+3. **Accuracy paradox**: Base model scores higher on raw accuracy but gives incomplete/poorly formatted responses
 
+The gap between base and instruction-tuned models demonstrates the potential improvement available through post-training. Target: improve overall score by enhancing communication and completeness while maintaining accuracy.

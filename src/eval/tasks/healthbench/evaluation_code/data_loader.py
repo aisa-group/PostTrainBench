@@ -1,4 +1,4 @@
-"""Load and parse HealthBench datasets (Hard and Easy subsets)."""
+"""Load and parse HealthBench Easy dataset for PostTrainBench evaluation."""
 
 import json
 import random
@@ -8,13 +8,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, List
 
-# HealthBench URLs
+# HealthBench URLs (used for creating Easy subset)
 HEALTHBENCH_HARD_URL = "https://openaipublic.blob.core.windows.net/simple-evals/healthbench/hard_2025-05-08-21-00-10.jsonl"
 HEALTHBENCH_FULL_URL = "https://openaipublic.blob.core.windows.net/simple-evals/healthbench/2025-05-07-06-14-12_oss_eval.jsonl"
 
-# Easy subset parameters
+# Easy subset parameters (used when regenerating from full dataset)
 EASY_MAX_NEGATIVE_CRITERIA = 2  # Maximum negative criteria per example
-EASY_TARGET_SIZE = 1000         # Target number of examples after subsampling
+EASY_TARGET_SIZE = 1000         # Target number of examples
 
 
 @dataclass
@@ -98,82 +98,29 @@ def parse_example(raw: dict) -> HealthBenchExample:
     )
 
 
-def load_healthbench_hard(
-    limit: Optional[int] = None,
-    use_cache: bool = True,
-    cache_dir: Optional[Path] = None
-) -> List[HealthBenchExample]:
-    """Load HealthBench Hard dataset.
-    
-    Downloads from OpenAI blob storage and caches locally.
-    
-    Args:
-        limit: Maximum number of examples to load (for fast iteration)
-        use_cache: Whether to use cached data if available
-        cache_dir: Directory to cache data (defaults to ./data/)
-    
-    Returns:
-        List of HealthBenchExample objects
-    """
-    if cache_dir is None:
-        # Default to data/ subdirectory relative to this file
-        cache_dir = Path(__file__).parent.parent / "data"
-    
-    cache_path = cache_dir / "healthbench_hard.jsonl"
-    
-    # Check cache first
-    if use_cache and cache_path.exists():
-        print(f"[data] Loading from cache: {cache_path}")
-        data = cache_path.read_text()
-    else:
-        # Download from blob storage
-        print(f"[data] Downloading HealthBench Hard from {HEALTHBENCH_HARD_URL}")
-        response = requests.get(HEALTHBENCH_HARD_URL, timeout=60)
-        response.raise_for_status()
-        data = response.text
-        
-        # Cache locally
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        cache_path.write_text(data)
-        print(f"[data] Cached to {cache_path}")
-    
-    # Parse JSONL
-    examples = []
-    for line in data.strip().split("\n"):
-        if not line:
-            continue
-        raw = json.loads(line)
-        example = parse_example(raw)
-        examples.append(example)
-        
-        if limit and len(examples) >= limit:
-            break
-    
-    return examples
-
-
 def load_healthbench_easy(
     limit: Optional[int] = None,
     use_cache: bool = True,
     cache_dir: Optional[Path] = None,
     seed: int = 42
 ) -> List[HealthBenchExample]:
-    """Load HealthBench Easy dataset.
+    """Load HealthBench dataset for PostTrainBench evaluation.
     
-    Easy subset is created by:
+    This is the main data loading function. The dataset contains 1,000 examples
+    filtered for moderate difficulty, targeting ~40-50% base model performance.
+    This allows agents to demonstrate meaningful progress during post-training.
+    
+    The Easy subset was created by:
     1. Starting from full HealthBench (5,000 examples)
-    2. Excluding examples in the Hard subset
+    2. Excluding examples in the Hard subset (which base models score ~0% on)
     3. Filtering to examples with ≤2 negative criteria
-    4. Stratified subsampling to 1,000 examples (preserving theme distribution)
-    
-    This yields examples that are inherently easier for models to score well on,
-    targeting ~40-50% base model performance vs ~0% on Hard.
+    4. Stratified subsampling to preserve theme distribution
     
     Args:
         limit: Maximum number of examples to load (for fast iteration)
         use_cache: Whether to use cached data if available
         cache_dir: Directory to cache data (defaults to ./data/)
-        seed: Random seed for reproducible subsampling
+        seed: Random seed for reproducible subsampling (only used if regenerating)
     
     Returns:
         List of HealthBenchExample objects
@@ -308,31 +255,6 @@ def load_healthbench_easy(
         examples = examples[:limit]
     
     return examples
-
-
-def load_healthbench(
-    subset: str = "hard",
-    limit: Optional[int] = None,
-    use_cache: bool = True,
-    cache_dir: Optional[Path] = None
-) -> List[HealthBenchExample]:
-    """Load HealthBench dataset (unified interface).
-    
-    Args:
-        subset: Which subset to load ("hard" or "easy")
-        limit: Maximum number of examples
-        use_cache: Whether to use cached data
-        cache_dir: Cache directory
-    
-    Returns:
-        List of HealthBenchExample objects
-    """
-    if subset == "hard":
-        return load_healthbench_hard(limit=limit, use_cache=use_cache, cache_dir=cache_dir)
-    elif subset == "easy":
-        return load_healthbench_easy(limit=limit, use_cache=use_cache, cache_dir=cache_dir)
-    else:
-        raise ValueError(f"Unknown subset: {subset}. Must be 'hard' or 'easy'.")
 
 
 def get_theme_distribution(examples: List[HealthBenchExample]) -> dict:
