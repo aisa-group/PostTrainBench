@@ -1,0 +1,21 @@
+version = "1.0"
+
+[metadata]
+author_name = "PostTrainBench Team"
+category = "ml-training"
+tags = ["post-training", "llm", "fine-tuning", "gpu"]
+
+[environment]
+gpus = 1
+gpu_types = ["H100"]
+cpus = 8
+memory_mb = 65536
+storage_mb = 102400
+build_timeout_sec = 1800.0
+allow_internet = true
+
+[verifier]
+timeout_sec = 3600.0
+
+[agent]
+timeout_sec = 36000.0
