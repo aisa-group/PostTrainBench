@@ -77,6 +77,8 @@ WORKDIR /home/agent/workspace
 COPY ./evaluate.py /home/agent/workspace/evaluate.py
 COPY ./templates/ /home/agent/workspace/templates/
 COPY ./timer.sh /home/agent/workspace/timer.sh
+COPY ./metadata.json /home/agent/workspace/metadata.json
+COPY ./contamination_judge.py /home/agent/workspace/contamination_judge.py
 
 # Set permissions
 RUN chmod -R a+rw /home/agent/workspace/ && \
