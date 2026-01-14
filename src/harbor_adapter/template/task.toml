@@ -7,7 +7,9 @@ tags = ["post-training", "llm", "fine-tuning", "gpu"]
 
 [environment]
 gpus = 1
-gpu_types = ["H100"]
+# Note: Duplicate GPU type is a workaround for Harbor bug in modal.py line 94
+# (checks len > 1 instead of >= 1). Without this, gpu_type defaults to "any".
+gpu_types = ["H100", "H100"]
 cpus = 8
 memory_mb = 65536
 storage_mb = 102400
@@ -16,6 +18,9 @@ allow_internet = true
 
 [verifier]
 timeout_sec = 3600.0
+
+[verifier.env]
+OPENAI_API_KEY = "${OPENAI_API_KEY}"
 
 [agent]
 timeout_sec = 36000.0
