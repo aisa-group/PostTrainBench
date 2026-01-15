@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import time
 from pathlib import Path
 import subprocess
 import torch
@@ -69,4 +68,4 @@ if __name__ == "__main__":
         Path("cuda_not_available").touch()
 
     import sys
-    sys.exit(0 if check_h100() else 1)
+    sys.exit(0 if cuda_available else 1)

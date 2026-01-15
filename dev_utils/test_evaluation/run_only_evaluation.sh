@@ -51,6 +51,7 @@ with_huggingface_overlay apptainer exec \
     --env OPENAI_API_KEY="${OPENAI_API_KEY})" \
     --env VLLM_API_KEY="inspectai" \
     --env PYTHONNOUSERSITE="1" \
+    --env VLLM_LOGGING_LEVEL="DEBUG" \
     --writable-tmpfs \
     --bind "${REPO_ROOT}:${REPO_ROOT}" \
     --bind "${HF_MERGED}:${TMP_HF_CACHE}" \
@@ -59,6 +60,6 @@ with_huggingface_overlay apptainer exec \
         --model-path "$EVAL_DIR/final_model" \
         --templates-dir ../../../../src/eval/templates \
         --limit -1 \
-        --json-output-file "${EVAL_DIR}/z_new_${CLUSTER}_metrics.json" > "$EVAL_DIR/z_new_${CLUSTER}_final_eval.txt"
+        --json-output-file "${EVAL_DIR}/metrics.json" > "$EVAL_DIR/z_new_${CLUSTER}_final_eval.txt"
 
 echo $(cat "$EVAL_DIR/z_new_${CLUSTER}_final_eval.txt")

@@ -41,16 +41,21 @@ From: nvidia/cuda:12.9.1-cudnn-devel-ubuntu22.04
     # Install the required packages
     uv pip install --system --no-cache \
         accelerate \
+        boto3 \
         bitsandbytes \
         datasets \
         evaluate \
         lm-eval \
+        openai \
+        pandas \
         scikit-learn \
+        shortuuid \
         tokenizers \
         transformers \
         trl \
         peft \
         inspect-ai \
+        tiktoken \
         matplotlib \
         certifi
 

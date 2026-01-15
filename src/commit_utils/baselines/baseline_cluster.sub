@@ -7,7 +7,7 @@ log = test_$(Cluster).log
 request_memory = 32768
 request_cpus = 16
 request_gpus = 1
-requirements = TARGET.CUDADeviceName == "NVIDIA H100"
+requirements = TARGET.CUDADeviceName == "NVIDIA H100 80GB HBM3"
 request_disk=200G
 +BypassLXCfs="true"
 queue

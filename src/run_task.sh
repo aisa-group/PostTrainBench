@@ -15,7 +15,7 @@ AGENT_CONFIG_SAFE=$(echo "$AGENT_CONFIG" | tr '/:' '_')
 
 RANDOM_UUID=$(uuidgen)
 
-EVAL_DIR="${POST_TRAIN_BENCH_RESULTS_DIR}/${AGENT}_${AGENT_CONFIG_SAFE}/${EVALUATION_TASK}_${RESULT_PREFIX_SAFE}_${CLUSTER_ID}"
+EVAL_DIR="${POST_TRAIN_BENCH_RESULTS_DIR}/${AGENT}_${AGENT_CONFIG_SAFE}_${NUM_HOURS}h${POST_TRAIN_BENCH_EXPERIMENT_NAME}/${EVALUATION_TASK}_${RESULT_PREFIX_SAFE}_${CLUSTER_ID}"
 
 mkdir -p ${EVAL_DIR}
 
@@ -50,7 +50,7 @@ fi
 cp -r "containers/other_home_data/.codex" "${JOB_DIR}/"
 
 BENCHMARK=$(cat src/eval/tasks/${EVALUATION_TASK}/benchmark.txt)
-PROMPT=$(python src/eval/general/get_prompt.py --model-to-train "$MODEL_TO_TRAIN" --benchmark "$BENCHMARK" --num-hours "$NUM_HOURS" --agent "${AGENT}")
+PROMPT=$(python src/eval/general/get_prompt.py --model-to-train "$MODEL_TO_TRAIN" --benchmark-id "$EVALUATION_TASK" --num-hours "$NUM_HOURS" --agent "${AGENT}")
 echo "$PROMPT" > "${EVAL_DIR}/prompt.txt"
 
 bash src/utils/create_timer.sh $NUM_HOURS $JOB_DIR/task/timer.sh
@@ -99,11 +99,12 @@ solve_task() {
     apptainer exec \
         --nv \
         -c \
-        --env PATH="/home/ben/.local/bin:$PATH" \
+        --env PATH="/root/.local/bin:/home/ben/.local/bin:$PATH" \
         --env HF_HOME="${HF_HOME_NEW}" \
         --env ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}" \
         --env CODEX_API_KEY="${OPENAI_API_KEY}" \
         --env GEMINI_API_KEY="${GEMINI_API_KEY}" \
+        --env KIMI_API_KEY="${KIMI_API_KEY}" \
         --env VLLM_API_KEY="inspectai" \
         --env PYTHONNOUSERSITE="1" \
         --env PROMPT="${PROMPT}" \
@@ -132,7 +133,7 @@ JUDGE_TASK=$(python src/disallowed_usage_judge/get_judge_prompt.py --benchmark "
 with_huggingface_overlay apptainer exec \
     --nv \
     -c \
-    --env PATH="/home/ben/.local/bin:$PATH" \
+    --env PATH="/root/.local/bin:/home/ben/.local/bin:$PATH" \
     --env HF_HOME="${HF_HOME_NEW}" \
     --env CODEX_API_KEY="${OPENAI_API_KEY}" \
     --env VLLM_API_KEY="inspectai" \
