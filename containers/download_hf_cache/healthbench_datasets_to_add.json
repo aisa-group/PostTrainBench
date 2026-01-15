@@ -1,0 +1,64 @@
+[
+    {
+      "dataset": "openlifescienceai/medmcqa",
+      "splits": ["train", "validation", "test"]
+    },
+    {
+      "dataset": "qiaojin/PubMedQA",
+      "splits": ["train"]
+    },
+    {
+      "dataset": "bigbio/pubmed_qa",
+      "config": "pubmed_qa_labeled_fold0_source",
+      "splits": ["train", "validation", "test"]
+    },
+    {
+      "dataset": "medalpaca/medical_meadow_medqa",
+      "splits": ["train"]
+    },
+    {
+      "dataset": "medalpaca/medical_meadow_wikidoc",
+      "splits": ["train"]
+    },
+    {
+      "dataset": "medalpaca/medical_meadow_wikidoc_patient_information",
+      "splits": ["train"]
+    },
+    {
+      "dataset": "medalpaca/medical_meadow_medical_flashcards",
+      "splits": ["train"]
+    },
+    {
+      "dataset": "lavita/ChatDoctor-HealthCareMagic-100k",
+      "splits": ["train"]
+    },
+    {
+      "dataset": "keivalya/MedQuad-MedicalQnADataset",
+      "splits": ["train"]
+    },
+    {
+      "dataset": "Mohammed-Altaf/medical-instruction-100k",
+      "splits": ["train"]
+    },
+    {
+      "dataset": "ruslanmv/ai-medical-chatbot",
+      "splits": ["train"]
+    },
+    {
+      "dataset": "gamino/wiki_medical_terms",
+      "splits": ["train"]
+    },
+    {
+      "dataset": "nlpie/Llama2-MedTuned-Instructions",
+      "splits": ["train"]
+    },
+    {
+      "dataset": "axiong/pmc_llama_instructions",
+      "splits": ["train"]
+    },
+    {
+      "dataset": "AdaptLLM/medicine-tasks",
+      "splits": ["test"]
+    }
+]
+

@@ -1,0 +1,129 @@
+{
+  "_comment": "Medical/health datasets for HealthBench training - add to resources.json",
+  "_rationale": "These datasets help agents train models for medical conversation quality, focusing on accuracy, communication, and context-seeking - the key axes evaluated by HealthBench.",
+  
+  "datasets": [
+    {
+      "dataset": "openlifescienceai/medmcqa",
+      "splits": ["train", "validation", "test"],
+      "_size": "~200MB",
+      "_rationale": "194K medical MCQs from Indian medical entrance exams (AIIMS/NEET). Covers clinical medicine, pathology, pharmacology. Good for medical accuracy."
+    },
+    {
+      "dataset": "qiaojin/PubMedQA",
+      "splits": ["train"],
+      "_size": "~50MB",
+      "_rationale": "Biomedical QA from PubMed abstracts. 1K expert-labeled + 61K unlabeled. Tests reasoning from medical literature."
+    },
+    {
+      "dataset": "bigbio/pubmed_qa",
+      "config": "pubmed_qa_labeled_fold0_source",
+      "splits": ["train", "validation", "test"],
+      "_size": "~30MB",
+      "_rationale": "BigBIO standardized version of PubMedQA with multiple configs."
+    },
+    {
+      "dataset": "medalpaca/medical_meadow_medqa",
+      "splits": ["train"],
+      "_size": "~50MB",
+      "_rationale": "USMLE-style medical questions formatted for instruction tuning. Good for clinical reasoning."
+    },
+    {
+      "dataset": "medalpaca/medical_meadow_wikidoc",
+      "splits": ["train"],
+      "_size": "~100MB",
+      "_rationale": "Medical Q&A from WikiDoc. Covers broad medical knowledge in accessible language."
+    },
+    {
+      "dataset": "medalpaca/medical_meadow_wikidoc_patient_information",
+      "splits": ["train"],
+      "_size": "~50MB",
+      "_rationale": "Patient-friendly medical explanations. Excellent for communication axis - teaches models to explain in lay terms."
+    },
+    {
+      "dataset": "medalpaca/medical_meadow_medical_flashcards",
+      "splits": ["train"],
+      "_size": "~30MB",
+      "_rationale": "Medical flashcard Q&A pairs. Concise medical facts for accuracy."
+    },
+    {
+      "dataset": "lavita/ChatDoctor-HealthCareMagic-100k",
+      "splits": ["train"],
+      "_size": "~150MB",
+      "_rationale": "100K real doctor-patient conversations. Critical for communication style and context-seeking behavior."
+    },
+    {
+      "dataset": "keivalya/MedQuad-MedicalQnADataset",
+      "splits": ["train"],
+      "_size": "~20MB",
+      "_rationale": "Medical Q&A from NIH websites. Authoritative health information."
+    },
+    {
+      "dataset": "Mohammed-Altaf/medical-instruction-100k",
+      "splits": ["train"],
+      "_size": "~200MB",
+      "_rationale": "100K medical instruction-following examples. Good for instruction-tuning baseline."
+    },
+    {
+      "dataset": "ruslanmv/ai-medical-chatbot",
+      "splits": ["train"],
+      "_size": "~100MB",
+      "_rationale": "Medical chatbot conversations with follow-up questions. Teaches context-seeking."
+    },
+    {
+      "dataset": "gamino/wiki_medical_terms",
+      "splits": ["train"],
+      "_size": "~50MB",
+      "_rationale": "Medical terminology definitions. Helps with accurate use of medical language."
+    },
+    {
+      "dataset": "BI55/MedText",
+      "splits": ["train"],
+      "_size": "~500MB",
+      "_rationale": "Large medical text corpus for continued pretraining or retrieval."
+    },
+    {
+      "dataset": "nlpie/Llama2-MedTuned-Instructions",
+      "splits": ["train"],
+      "_size": "~100MB",
+      "_rationale": "Medical instructions specifically formatted for Llama-style fine-tuning."
+    },
+    {
+      "dataset": "axiong/pmc_llama_instructions",
+      "splits": ["train"],
+      "_size": "~150MB",
+      "_rationale": "PubMed Central derived instructions. High-quality biomedical content."
+    },
+    {
+      "dataset": "cognitivecomputations/dolphin-2.9.3-medical-enc-dec",
+      "splits": ["train"],
+      "_size": "~80MB",
+      "_rationale": "Medical subset of Dolphin dataset. Balanced instruction-following for medical domain."
+    },
+    {
+      "dataset": "mlabonne/medical-qa-shared-task-v1-toy",
+      "splits": ["train"],
+      "_size": "~10MB",
+      "_rationale": "Small toy medical QA dataset for quick iteration."
+    },
+    {
+      "dataset": "Emir4l/Medical_qa_meds",
+      "splits": ["train"],
+      "_size": "~30MB",
+      "_rationale": "Medical Q&A focused on medications. Good for drug-related queries."
+    },
+    {
+      "dataset": "shibing624/medical",
+      "splits": ["train"],
+      "_size": "~200MB",
+      "_rationale": "Chinese medical dataset (some English). Diverse medical knowledge."
+    },
+    {
+      "dataset": "AdaptLLM/medicine-tasks",
+      "splits": ["test"],
+      "_size": "~20MB",
+      "_rationale": "Medical evaluation tasks. Useful for validation during training."
+    }
+  ]
+}
+
