@@ -4,8 +4,13 @@
 Evaluates a model on physician-curated medical conversations using
 LLM-as-judge grading against rubric criteria.
 
-The Easy subset contains 1,000 examples filtered for moderate difficulty,
-targeting 40-50% base model performance to demonstrate post-training progress.
+The Easy dataset contains 450 examples filtered for meaningful base→instruct
+separation to demonstrate post-training progress.
+
+Expected performance:
+- Base models: 5-17% overall
+- Instruct models: 26-40% overall
+- Gap: ~20-23 percentage points
 
 Usage:
     python evaluate.py --model-path Qwen/Qwen3-1.7B-Base --limit 5
@@ -325,7 +330,6 @@ def main():
     # Load data
     print(f"[data] Loading {BENCHMARK_NAME} dataset...")
     examples = load_healthbench_easy(limit=args.limit)
-    print(f"[data] Loaded {len(examples)} examples")
 
     # Generate answers
     responses = generate_answers(args, examples)
@@ -380,4 +384,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
