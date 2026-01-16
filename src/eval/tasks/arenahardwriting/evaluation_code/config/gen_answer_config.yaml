@@ -1,0 +1,7 @@
+bench_name: arena-hard-v2.0
+# bench_name: tmp
+
+# a list of model to generate answers
+model_list:
+  # - deepseek-r1
+  
