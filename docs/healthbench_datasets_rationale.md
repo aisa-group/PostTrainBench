@@ -70,3 +70,4 @@ The following medical-relevant datasets are already in `resources.json`:
 - `cais/mmlu` configs: `anatomy`, `clinical_knowledge`, `college_medicine`, `medical_genetics`, `nutrition`, `professional_medicine`, `virology`
 - `camel-ai/biology`, `camel-ai/chemistry`
 
+

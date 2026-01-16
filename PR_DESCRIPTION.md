@@ -4,10 +4,10 @@
 
 Adds **HealthBench** as a new evaluation task — the first rubric-based, LLM-as-judge eval in PostTrainBench.
 
-The dataset contains **450 examples** designed for meaningful base→instruct separation:
-- **Base models:** 5-17% overall
-- **Instruct models:** 26-40% overall  
-- **Gap:** ~20-23 percentage points
+The dataset contains **245 examples** designed for maximum base→instruct separation:
+- **Base models:** 4.7-13.7% overall
+- **Instruct models:** 30.6-47.9% overall  
+- **Gap:** 25.5-43.2 percentage points
 
 Uses physician-curated medical conversations with ~7 rubric criteria per example, graded by GPT-5-mini against physician-written standards.
 
@@ -22,40 +22,36 @@ HealthBench introduces **multi-dimensional rubric scoring** (-10 to +10 per crit
 
 ## Baseline Results (50 samples, GPT-5-mini grader)
 
-### SmolLM3-3B
+| Model | Base | Instruct | Gap |
+|-------|------|----------|-----|
+| **Gemma-3-4B** | 4.7% | 47.9% | **+43.2pp** |
+| **Qwen3-4B** | 13.7% | 41.7% | **+27.9pp** |
+| **Qwen3-1.7B** | 10.7% | 37.3% | **+26.7pp** |
+| **SmolLM3-3B** | 5.0% | 30.6% | **+25.5pp** |
+
+### Key Axes (SmolLM3-3B example)
 
 | Axis | Base | Instruct | Gap |
 |------|------|----------|-----|
-| **Overall** | **5.2%** | **26.1%** | **+20.9pp** |
-| Accuracy | 20.0% | 26.8% | +6.8pp |
-| Completeness | 0.0% | 24.9% | +24.9pp |
-| Context Awareness | 3.8% | 21.7% | +17.9pp |
-| Communication | 21.9% | 61.5% | +39.6pp |
+| Accuracy | 26.7% | 27.2% | +0.6pp |
+| **Completeness** | **0.0%** | **19.3%** | **+19.3pp** |
+| Context Awareness | 16.9% | 33.8% | +16.9pp |
+| Communication | 40.5% | 29.8% | -10.7pp |
 
-### Qwen3-4B
+**Key finding:** Completeness is the primary discriminator — base models score ~0%, instruct ~20-40%. All models show >25pp overall gap.
 
-| Axis | Base | Instruct | Gap |
-|------|------|----------|-----|
-| **Overall** | **17.1%** | **39.7%** | **+22.6pp** |
-| Accuracy | 23.0% | 45.0% | +22.0pp |
-| Completeness | 12.4% | 39.7% | +27.3pp |
-| Context Awareness | 9.2% | 31.3% | +22.1pp |
-| Communication | 24.0% | 54.2% | +30.2pp |
+## Dataset Filtering (V3)
 
-**Key finding:** ~20pp gap provides clear headroom for post-training agents to improve. Completeness axis is the key discriminator (base models score ~0-12%, instruct ~25-40%).
-
-## Dataset Filtering
-
-The Easy dataset was carefully filtered for meaningful base→instruct separation:
+The Easy dataset was carefully filtered for maximum base→instruct separation:
 
 **Filtering criteria:**
-- Multi-turn conversations (≥3 turns) — forces context tracking
+- Multi-turn conversations (≥5 turns) — forces context tracking
 - Completeness axis required — where base models score ~0%
 - ≤2 negative criteria — limits penalty exposure
 
-**Result:** 450 examples with good theme diversity.
+**Result:** 245 examples with excellent separation across all 4 target models.
 
-See `docs/healthbench_easy_v2_selection.md` for detailed analysis.
+See `docs/healthbench_easy_v3_selection.md` for detailed analysis.
 
 ## Files Added
 
@@ -69,7 +65,7 @@ src/eval/tasks/healthbench/
 │   ├── grader.py                    # LLM-as-judge grading (GPT-5-mini)
 │   └── scoring.py                   # Score aggregation with bootstrap stderr
 ├── data/
-│   └── healthbench_easy.jsonl       # 450 examples
+│   └── healthbench_easy.jsonl       # 245 examples
 └── task_context/
     └── README.md                    # Agent instructions for post-training
 ```
@@ -92,19 +88,19 @@ python src/eval/tasks/healthbench/evaluate.py \
 
 ```json
 {
-  "accuracy": 0.171,
+  "accuracy": 0.137,
   "stderr": 0.025,
   "n_examples": 50,
-  "total_grader_calls": 365,
+  "total_grader_calls": 350,
   "by_theme": {
     "communication": 0.06,
     "hedging": 0.32,
     ...
   },
   "by_axis": {
-    "accuracy": 0.23,
-    "completeness": 0.12,
-    "context_awareness": 0.09,
+    "accuracy": 0.175,
+    "completeness": 0.044,
+    "context_awareness": 0.224,
     ...
   }
 }
@@ -118,7 +114,7 @@ Primary metric is `accuracy` (overall normalized score, 0-1). Additional breakdo
 |--------------|----------|---------|-------------|
 | Quick test | 5 | ~1 min | ~$0.15 |
 | Dev iteration | 50 | ~5 min | ~$1.00 |
-| Full eval | 450 | ~25 min | ~$12 |
+| Full eval | 245 | ~15 min | ~$8 |
 
 *Runtimes on H100. Grader costs using GPT-5-mini.*
 
@@ -138,7 +134,7 @@ Primary metric is `accuracy` (overall normalized score, 0-1). Additional breakdo
 
 - [HealthBench Paper](https://arxiv.org/abs/2505.08775) — OpenAI, May 2025
 - [HealthBench Data](https://openaipublic.blob.core.windows.net/simple-evals/healthbench/)
-- [Filtering Analysis](docs/healthbench_easy_v2_selection.md)
+- [Filtering Analysis](docs/healthbench_easy_v3_selection.md)
 
 ## Authors
 

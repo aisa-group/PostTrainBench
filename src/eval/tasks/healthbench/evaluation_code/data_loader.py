@@ -93,25 +93,25 @@ def load_healthbench_easy(
 ) -> List[HealthBenchExample]:
     """Load HealthBench Easy dataset for PostTrainBench evaluation.
     
-    The Easy dataset contains 450 examples designed for meaningful base→instruct
+    The Easy dataset contains 245 examples designed for maximum base→instruct
     separation to demonstrate post-training progress.
     
-    Filtering criteria (Easy V2):
-    - Multi-turn conversations (≥3 turns) - forces context tracking
+    Filtering criteria (Easy V3):
+    - Multi-turn conversations (≥5 turns) - forces context tracking
     - Completeness axis required - where base models score ~0%
     - ≤2 negative criteria - limits penalty exposure
     
     Expected performance:
-    - Base models: 5-17% overall
-    - Instruct models: 26-40% overall
-    - Gap: ~20-23 percentage points
+    - Base models: 4.7-13.7% overall
+    - Instruct models: 30.6-47.9% overall
+    - Gap: 25-43 percentage points
     
     Args:
         limit: Maximum number of examples to load (for fast iteration)
         cache_dir: Directory containing data (defaults to ./data/)
     
     Returns:
-        List of HealthBenchExample objects (450 total, or limited)
+        List of HealthBenchExample objects (245 total, or limited)
     """
     if cache_dir is None:
         cache_dir = Path(__file__).parent.parent / "data"
