@@ -38,6 +38,13 @@ with_huggingface_overlay() {
     return $exit_code
 }
 
+with_huggingface_overlay apptainer exec \
+    --nv \
+    --writable-tmpfs \
+    --bind "${REPO_ROOT}:${REPO_ROOT}" \
+    --pwd "${REPO_ROOT}" \
+    ${POST_TRAIN_BENCH_CONTAINERS_DIR}/${POST_TRAIN_BENCH_CONTAINER_NAME}.sif python src/utils/check_cuda_writing.py > "$EVAL_DIR/cuda_check.txt"
+
 echo "================================"
 echo "========= EVALUATING ==========="
 echo "================================"
@@ -45,12 +52,14 @@ echo "================================"
 REPO_ROOT="$(pwd)"
 
 TMP_HF_CACHE="/tmp/hf_cache_90afd1"
+
 with_huggingface_overlay apptainer exec \
     --nv \
     --env "HF_HOME=${TMP_HF_CACHE}" \
-    --env OPENAI_API_KEY="${OPENAI_API_KEY})" \
+    --env OPENAI_API_KEY="${OPENAI_API_KEY}" \
     --env VLLM_API_KEY="inspectai" \
     --env PYTHONNOUSERSITE="1" \
+    --env VLLM_LOGGING_LEVEL="DEBUG" \
     --writable-tmpfs \
     --bind "${REPO_ROOT}:${REPO_ROOT}" \
     --bind "${HF_MERGED}:${TMP_HF_CACHE}" \

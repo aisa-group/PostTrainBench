@@ -7,11 +7,8 @@ def load_contamination(contamination_path: str):
     """
     if not os.path.exists(contamination_path):
         return False
-    try:
-        with open(contamination_path, "r") as f:
-            content = f.read().strip()
-    except Exception:
-        return False
+    with open(contamination_path, "r") as f:
+        content = f.read().strip()
         
     if content == "contamination detected":
         return True
@@ -24,11 +21,8 @@ def load_disallowed_model(disallowed_path: str):
     """
     if not os.path.exists(disallowed_path):
         return False
-    try:
-        with open(disallowed_path, "r") as f:
-            content = f.read().strip()
-    except Exception:
-        return False
+    with open(disallowed_path, "r") as f:
+        content = f.read().strip()
 
     if content == "disallowed use detected":
         return True
@@ -47,13 +41,9 @@ def get_latest_runs(method_path: str):
         entry_path = os.path.join(method_path, entry)
         if not os.path.isdir(entry_path):
             continue
-        try: 
-            benchmark, _, model, run_id_str = entry.split("_")
-            run_id = int(run_id_str)
-            key = (benchmark, model)
-        except ValueError:
-            # Skip directories that don't match the expected naming convention
-            continue
+        benchmark, _, model, run_id_str = entry.split("_")
+        run_id = int(run_id_str)
+        key = (benchmark, model)
 
         # keep only highest run_id per (benchmark, model)
         if key not in latest_runs or run_id > latest_runs[key]["run_id"]:
@@ -76,28 +66,24 @@ def main():
     disallowed_list = []
 
     # 1. Iterate over all methods and collect paths
-    if os.path.exists(results_dir):
-        for method_name in os.listdir(results_dir):
-            method_path = os.path.join(results_dir, method_name)
-            if not os.path.isdir(method_path):
-                continue
-            
-            # Get only the latest runs for this method to avoid reporting old overwritten runs
-            run_paths = get_latest_runs(method_path)
+    for method_name in os.listdir(results_dir):
+        method_path = os.path.join(results_dir, method_name)
+        if not os.path.isdir(method_path):
+            continue
+        
+        # Get only the latest runs for this method to avoid reporting old overwritten runs
+        run_paths = get_latest_runs(method_path)
 
-            for run_path in run_paths:
-                # Check Contamination
-                contam_path = os.path.join(run_path, "contamination_judgement.txt")
-                if load_contamination(contam_path):
-                    contaminated_list.append(run_path)
+        for run_path in run_paths:
+            # Check Contamination
+            contam_path = os.path.join(run_path, "contamination_judgement.txt")
+            if load_contamination(contam_path):
+                contaminated_list.append(run_path)
 
-                # Check Disallowed Model
-                disallow_path = os.path.join(run_path, "disallowed_model_judgement.txt")
-                if load_disallowed_model(disallow_path):
-                    disallowed_list.append(run_path)
-    else:
-        print(f"Directory '{results_dir}' not found.")
-        return
+            # Check Disallowed Model
+            disallow_path = os.path.join(run_path, "disallowed_model_judgement.txt")
+            if load_disallowed_model(disallow_path):
+                disallowed_list.append(run_path)
 
     # 2. Output the lists
     print(f"=== CONTAMINATION DETECTED ({len(contaminated_list)}) ===")
