@@ -102,6 +102,11 @@ solve_task() {
         --env PATH="/root/.local/bin:/home/ben/.local/bin:$PATH" \
         --env HF_HOME="${HF_HOME_NEW}" \
         --env ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}" \
+        --env OPENAI_API_KEY="${OPENAI_API_KEY}" \
+        --env OPENROUTER_API_KEY="${OPENROUTER_API_KEY}" \
+        --env TAVILY_API_KEY="${TAVILY_API_KEY}" \
+        --env RA_BASE_URL="${RA_BASE_URL}" \
+        --env RA_API_KEY="${RA_API_KEY}" \
         --env CODEX_API_KEY="${OPENAI_API_KEY}" \
         --env GEMINI_API_KEY="${GEMINI_API_KEY}" \
         --env KIMI_API_KEY="${KIMI_API_KEY}" \
