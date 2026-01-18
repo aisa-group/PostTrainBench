@@ -1,5 +1,9 @@
 #!/bin/bash
 
+set -euo pipefail
+
+source src/commit_utils/set_env_vars.sh
+
 EVAL_NAME="$1"
 MODEL_NAME="$2"
 CLUSTER_ID="$3"
@@ -11,6 +15,8 @@ source src/commit_utils/set_env_vars.sh
 REPO_ROOT="$(pwd)"
 RESULT_PREFIX_SAFE=$(echo "${MODEL_NAME}" | tr '/:' '_')
 RESULT_DIR="${POST_TRAIN_BENCH_RESULTS_DIR}/baseline/${EVAL_NAME}_${RESULT_PREFIX_SAFE}_${CLUSTER_ID}"
+# Ensure RESULT_DIR is absolute (needed for apptainer --bind)
+[[ "${RESULT_DIR}" != /* ]] && RESULT_DIR="${REPO_ROOT}/${RESULT_DIR}"
 
 RANDOM_UUID=$(uuidgen)
 TMP_SUBDIR="/tmp/posttrain_baseline_${EVAL_NAME}_${RESULT_PREFIX_SAFE}_${RANDOM_UUID}"
@@ -107,6 +113,17 @@ echo "${MODEL_NAME}" > "${RESULT_DIR}/model.txt"
 echo "${EVAL_NAME}" > "${RESULT_DIR}/eval.txt"
 date --iso-8601=seconds > "${RESULT_DIR}/timestamp.txt"
 
+# Copy the inspect logs for easier viewing from the same folder 
+LOGS_DIR="${REPO_ROOT}/src/eval/tasks/${EVAL_NAME}/logs"
+if [ -d "${LOGS_DIR}" ]; then
+    mkdir -p "${RESULT_DIR}/inspect_logs"
+    # Find and copy only the most recent log file (created during this job)
+    LATEST_LOG=$(ls -t "${LOGS_DIR}"/*.json 2>/dev/null | head -1)
+    if [ -n "$LATEST_LOG" ]; then
+        cp "$LATEST_LOG" "${RESULT_DIR}/inspect_logs/"
+        echo "Inspect log copied: $(basename $LATEST_LOG)"
+    fi
+fi
 # Cleanup
 rm -rf "${TMP_SUBDIR}"
 
