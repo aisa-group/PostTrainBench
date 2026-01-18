@@ -55,6 +55,11 @@ def main():
         result += """
 You are running in a non-interactive mode. So make sure every process you are running finishes before you write your last message.
 """
+    elif args.agent == 'ra':
+        result += """
+You are running in an agentic CLI that continues until you explicitly call `submit`.
+When you are done (and have written `final_model/`), call `submit` to end the run.
+"""
     print(result)
 
 if __name__ == '__main__':

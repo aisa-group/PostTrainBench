@@ -48,6 +48,13 @@ export OPENAI_API_KEY="your-key"
 export ANTHROPIC_API_KEY="your-key"
 export GEMINI_API_KEY="your-key"
 
+# Optional (for the basic ReAct agent `ra`):
+# set OPENROUTER_API_KEY to use OpenRouter
+# or set RA_BASE_URL / RA_API_KEY for any OpenAI-compatible endpoint
+export OPENROUTER_API_KEY="your-openrouter-key"
+# `ra` requires a TAVILY API key to use web search
+export TAVILY_API_KEY="your-tavily-key"
+
 # 5. Run jobs
 bash src/commit_utils/commit.sh
 ```
