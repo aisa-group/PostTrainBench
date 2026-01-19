@@ -4,7 +4,8 @@ export HF_HOME_NEW="/home/ben/hf_cache"
 set_default() {
     local var_name="${1:-}"
     local default_value="${2:-}"
-    local current_value="${!var_name:-}"
+    local current_value
+    eval "current_value=\"\${$var_name:-}\""
     
     if [ -z "$current_value" ] || [ "$current_value" = "UNDEFINED" ]; then
         export "$var_name"="$default_value"

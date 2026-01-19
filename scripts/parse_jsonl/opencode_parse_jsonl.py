@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-"""Format OpenCode stream-json output into a readable transcript."""
-
 from __future__ import annotations
 
 import argparse

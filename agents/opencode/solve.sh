@@ -16,6 +16,11 @@ cat > opencode.json << 'EOF'
       "options": {
         "apiKey": "{env:OPENAI_API_KEY}"
       }
+    },
+    "opencode": {
+      "options": {
+        "apiKey": "{env:OPENCODE_API_KEY}"
+      }
     }
   }
 }
