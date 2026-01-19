@@ -7,6 +7,15 @@ Some useful scripts after running experiments:
 - `dev_utils/runs_no_metrics.py` lists runs where metrics.json was not produced, also try `--all` to make this list more inclusive. Sometimes final evaluation needs to be rerun.
 - `dev_utils/contamination_list.py` to see runs where contamination occured (sometimes useful to check if the judge works correctly).
 
+#### Debugging
+For debugging the final evaluation (=evaluation of the model checkpoint produced by the agent), use `dev_utils/test_evaluation/run_only_evaluation.sh`.
+Internally, or on HTCondor, this can be used via `dev_utils/test_evaluation/single_evaluation.sub`.
+Also it is best to run this with 
+```
+export POST_TRAIN_BENCH_JOB_SCHEDULER="vllm_debug"
+```
+to get vllm logs in the output.
+
 ## For our internal cluster (MPI)
 #### Env var
 Set this in your `.bashrc` or `.zshrc`
