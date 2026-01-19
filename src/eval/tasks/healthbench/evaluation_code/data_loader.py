@@ -1,5 +1,3 @@
-"""Load and parse HealthBench Easy dataset for PostTrainBench evaluation."""
-
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -91,7 +89,7 @@ def load_healthbench_easy(
     limit: Optional[int] = None,
     cache_dir: Optional[Path] = None,
 ) -> List[HealthBenchExample]:
-    """Load HealthBench Easy dataset for PostTrainBench evaluation.
+    """Load HealthBench subset.
     
     The Easy dataset contains 245 examples designed for maximum base→instruct
     separation to demonstrate post-training progress.
@@ -114,7 +112,7 @@ def load_healthbench_easy(
         List of HealthBenchExample objects (245 total, or limited)
     """
     if cache_dir is None:
-        cache_dir = Path(__file__).parent.parent / "data"
+        cache_dir = Path(__file__).parent / "data"
     
     cache_path = cache_dir / "healthbench_easy.jsonl"
     

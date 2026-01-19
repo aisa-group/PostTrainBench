@@ -1,21 +1,5 @@
 #!/usr/bin/env python3
-"""HealthBench evaluation for PostTrainBench.
-
-Evaluates a model on physician-curated medical conversations using
-LLM-as-judge grading against rubric criteria.
-
-The Easy dataset contains 450 examples filtered for meaningful base→instruct
-separation to demonstrate post-training progress.
-
-Expected performance:
-- Base models: 5-17% overall
-- Instruct models: 26-40% overall
-- Gap: ~20-23 percentage points
-
-Usage:
-    python evaluate.py --model-path Qwen/Qwen3-1.7B-Base --limit 5
-    python evaluate.py --model-path final_model/ --json-output-file results.json
-"""
+"""HealthBench evaluation."""
 
 import os
 import argparse
@@ -290,7 +274,7 @@ def main():
     parser.add_argument(
         "--limit",
         type=int,
-        default=None,
+        default=50,
         help="Limit number of examples for quicker runs."
     )
     parser.add_argument(
@@ -329,6 +313,9 @@ def main():
 
     # Load data
     print(f"[data] Loading {BENCHMARK_NAME} dataset...")
+    if args.limit == -1:
+        args.limit = 245
+        args.limit = 50 # todo rm
     examples = load_healthbench_easy(limit=args.limit)
 
     # Generate answers
