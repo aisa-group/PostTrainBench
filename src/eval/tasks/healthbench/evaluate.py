@@ -22,6 +22,7 @@ load_dotenv()
 from evaluation_code.data_loader import load_healthbench, HealthBenchExample
 from evaluation_code.grader import grade_examples_parallel, ExampleResult
 from evaluation_code.scoring import aggregate_scores, BenchmarkResult
+from evaluation_code.text_utils import limit_repetitions
 
 
 # Constants
@@ -97,6 +98,8 @@ class VLLMServer:
             "--port",
             str(port),
             "--trust-remote-code",
+            "--api-key",
+            os.environ.get("VLLM_API_KEY", ""),
         ]
         command.extend(template_args(self.args))
 
@@ -187,6 +190,9 @@ def generate_answers(
         port = server.start()
         endpoint = f"http://127.0.0.1:{port}/v1/chat/completions"
         session = requests.Session()
+        vllm_api_key = os.environ.get("VLLM_API_KEY")
+        if vllm_api_key:
+            session.headers["Authorization"] = f"Bearer {vllm_api_key}"
 
         responses = []
         print(f"[generate] Generating answers for {len(examples)} examples")
@@ -234,6 +240,9 @@ def generate_answers(
             # Strip thinking tags if present (for reasoning models)
             if answer_text.startswith("<think>"):
                 answer_text = answer_text.split("</think>", maxsplit=1)[-1].strip()
+
+            # Limit repetitive patterns in generated answer
+            answer_text = limit_repetitions(answer_text)
 
             responses.append(answer_text)
 
