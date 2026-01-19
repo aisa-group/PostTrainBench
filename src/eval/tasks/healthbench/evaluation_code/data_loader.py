@@ -85,44 +85,21 @@ def parse_example(raw: dict) -> HealthBenchExample:
     )
 
 
-def load_healthbench_easy(
-    limit: Optional[int] = None,
+def load_healthbench(
     cache_dir: Optional[Path] = None,
 ) -> List[HealthBenchExample]:
-    """Load HealthBench subset.
-    
-    The Easy dataset contains 245 examples designed for maximum base→instruct
-    separation to demonstrate post-training progress.
-    
-    Filtering criteria (Easy V3):
-    - Multi-turn conversations (≥5 turns) - forces context tracking
-    - Completeness axis required - where base models score ~0%
-    - ≤2 negative criteria - limits penalty exposure
-    
-    Expected performance:
-    - Base models: 4.7-13.7% overall
-    - Instruct models: 30.6-47.9% overall
-    - Gap: 25-43 percentage points
-    
-    Args:
-        limit: Maximum number of examples to load (for fast iteration)
-        cache_dir: Directory containing data (defaults to ./data/)
-    
-    Returns:
-        List of HealthBenchExample objects (245 total, or limited)
-    """
     if cache_dir is None:
         cache_dir = Path(__file__).parent / "data"
     
-    cache_path = cache_dir / "healthbench_easy.jsonl"
+    cache_path = cache_dir / "healthbench.jsonl"
     
     if not cache_path.exists():
         raise FileNotFoundError(
-            f"HealthBench Easy dataset not found at {cache_path}. "
-            "Please ensure healthbench_easy.jsonl is in the data/ directory."
+            f"HealthBench dataset not found at {cache_path}. "
+            "Please ensure healthbench.jsonl is in the data/ directory."
         )
     
-    print(f"[data] Loading HealthBench Easy from: {cache_path}")
+    print(f"[data] Loading HealthBench from: {cache_path}")
     data = cache_path.read_text()
     
     examples = []
@@ -132,8 +109,6 @@ def load_healthbench_easy(
         raw = json.loads(line)
         example = parse_example(raw)
         examples.append(example)
-        if limit and len(examples) >= limit:
-            break
     
     print(f"[data] Loaded {len(examples)} examples")
     return examples

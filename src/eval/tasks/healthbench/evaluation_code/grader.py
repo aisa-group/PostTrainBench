@@ -96,7 +96,7 @@ Return just the json object in markdown format. Do not include any other text in
 """.strip()
 
 
-API_MAX_RETRY = 3
+API_MAX_RETRY = 5
 API_RETRY_SLEEP = 2
 
 
@@ -181,6 +181,7 @@ def grade_criterion(
     ).replace("<<rubric_item>>", rubric_str)
     
     # Call grader with retry logic and rate limiting
+    last_error: Optional[Exception] = None
     for attempt in range(max_retries):
         try:
             _acquire_api_slot()
@@ -191,7 +192,7 @@ def grade_criterion(
                     response = client.chat.completions.create(
                         model=grader_model,
                         messages=[{"role": "user", "content": grader_prompt}],
-                        max_completion_tokens=4096  # Need room for reasoning + output
+                        max_completion_tokens=49152
                     )
                 else:
                     response = client.chat.completions.create(
@@ -225,17 +226,16 @@ def grade_criterion(
             
         except Exception as e:
             logger.error(f"API error on attempt {attempt + 1}: {e}")
+            last_error = e
             if attempt < max_retries - 1:
                 time.sleep(API_RETRY_SLEEP * (attempt + 1))
     
-    # If all retries fail, return a default result
-    logger.error(f"All retries failed for criterion: {criterion.criterion[:50]}...")
-    return GradingResult(
-        criterion_id=criterion.criterion_id,
-        criteria_met=False,
-        explanation="Grading failed after retries",
-        weighted_score=0
-    )
+    # If all retries fail, raise an error to surface grading failures.
+    msg = f"All retries failed for criterion: {criterion.criterion[:50]}..."
+    logger.error(msg)
+    if last_error is not None:
+        raise RuntimeError(msg) from last_error
+    raise RuntimeError(msg)
 
 
 def _grade_criterion_with_index(
@@ -434,4 +434,3 @@ def grade_examples_parallel(
                         progress_callback(completed, len(examples))
     
     return results
-

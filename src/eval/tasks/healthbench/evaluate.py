@@ -19,7 +19,7 @@ from tqdm import tqdm
 # Load environment variables from .env file
 load_dotenv()
 
-from evaluation_code.data_loader import load_healthbench_easy, HealthBenchExample
+from evaluation_code.data_loader import load_healthbench, HealthBenchExample
 from evaluation_code.grader import grade_examples_parallel, ExampleResult
 from evaluation_code.scoring import aggregate_scores, BenchmarkResult
 
@@ -33,7 +33,6 @@ VLLM_REQUEST_TIMEOUT = 300
 VLLM_GENERATION_RETRY = 3
 
 JUDGE_MODEL = "gpt-5-mini"
-BENCHMARK_NAME = "HealthBench"
 
 
 def _model_alias(model_path: str) -> str:
@@ -156,8 +155,7 @@ def model_type(args) -> str:
         if 'smollm' in architecture:
             return 'smollm'
     
-    # Default to qwen (no template override)
-    return 'qwen'
+    raise ValueError(architecture)
 
 
 def template_args(args) -> list:
@@ -172,7 +170,7 @@ def template_args(args) -> list:
     elif model_type_str == 'smollm':
         template = 'smollm.jinja'
     else:
-        return []
+        raise ValueError(model_type_str)
     
     return ['--chat-template', os.path.join(args.templates_dir, template)]
 
@@ -262,19 +260,15 @@ def main():
     parser = argparse.ArgumentParser(description="Run HealthBench evaluation.")
     parser.add_argument(
         "--model-path",
-        required=True,
+        default="final_model",
         help="Hugging Face model ID or local path."
     )
-    parser.add_argument(
-        "--max-new-tokens",
-        type=int,
-        default=2048,
-        help="Maximum tokens to generate per response."
-    )
+    parser.add_argument("--max-new-tokens", type=int, default=16384)
+    # this is a good limit for this task, you can keep it like that (or use less in case you want faster tests)
     parser.add_argument(
         "--limit",
         type=int,
-        default=50,
+        default=32,
         help="Limit number of examples for quicker runs."
     )
     parser.add_argument(
@@ -283,11 +277,11 @@ def main():
         default=DEFAULT_JUDGE_WORKERS,
         help="Number of concurrent judge jobs to run in parallel."
     )
+    # final evaluation will be done using the templates/ templates dir. You are not allowed to edit this directory.
     parser.add_argument(
         '--templates-dir',
         type=str,
         default='templates/',
-        help="Directory containing chat templates."
     )
     parser.add_argument(
         '--json-output-file',
@@ -295,35 +289,28 @@ def main():
         default=None,
         help="Optional path to output the metrics as a JSON file."
     )
-    parser.add_argument(
-        '--grader-model',
-        type=str,
-        default=JUDGE_MODEL,
-        help=f"Model for grading (default: {JUDGE_MODEL})."
-    )
     args = parser.parse_args()
 
     model_alias = _model_alias(args.model_path)
 
-    # Check for OpenAI API key
     if "OPENAI_API_KEY" not in os.environ:
         raise EnvironmentError(
             "OPENAI_API_KEY is not set. Please export your OpenAI API key before running."
         )
 
     # Load data
-    print(f"[data] Loading {BENCHMARK_NAME} dataset...")
-    if args.limit == -1:
-        args.limit = 245
-        args.limit = 50 # todo rm
-    examples = load_healthbench_easy(limit=args.limit)
+    print(f"[data] Loading HealthBench dataset...")
+    examples = load_healthbench()
+    random.Random(42).shuffle(examples)
+    if args.limit != -1:
+        examples = examples[: args.limit]
 
     # Generate answers
     responses = generate_answers(args, examples)
     print(f"[generate] Generated {len(responses)} responses")
 
     # Grade responses
-    print(f"[judge] Grading responses with {args.grader_model}...")
+    print(f"[judge] Grading responses...")
     pbar = tqdm(total=len(examples), desc="Judging answers")
     
     def update_progress(completed, total):
@@ -333,7 +320,7 @@ def main():
     results = grade_examples_parallel(
         examples=examples,
         responses=responses,
-        grader_model=args.grader_model,
+        grader_model=JUDGE_MODEL,
         example_workers=min(4, len(examples)),
         criteria_workers=8,
         max_concurrent_requests=args.judge_workers,
@@ -343,10 +330,9 @@ def main():
 
     # Compute metrics
     metrics = _compute_metrics(results, examples)
-    metrics["benchmark"] = BENCHMARK_NAME
 
     # Print summary
-    print(f"\n[done] {BENCHMARK_NAME} Evaluation Complete")
+    print(f"\n[done] Evaluation Complete")
     print(f"  Model: {model_alias}")
     print(f"  Examples: {metrics['n_examples']}")
     print(f"  Accuracy: {metrics['accuracy']:.4f} (±{metrics['stderr']:.4f})")
