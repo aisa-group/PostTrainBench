@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+# Feel free to use this script as needed. Don't edit it.
+# Note that our final evaluation will be done using default parameters of this script and --limit will be set to -1.
+# Also, the templates/ directory will be used as is without any modifications.
+# Make sure to test your model accordingly before submission.
+# This script will consume OpenAI API credits for grading the model outputs, but don't worry about this.
+
 """HealthBench evaluation."""
 
 import os
@@ -263,7 +269,6 @@ def _compute_metrics(results: List[ExampleResult], examples: List[HealthBenchExa
         "by_theme": benchmark_result.by_theme,
         "by_axis": benchmark_result.by_axis,
     }
-
 
 def main():
     parser = argparse.ArgumentParser(description="Run HealthBench evaluation.")

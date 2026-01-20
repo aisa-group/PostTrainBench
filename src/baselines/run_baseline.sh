@@ -72,7 +72,7 @@ check_cuda() {
         --bind "${REPO_ROOT}:${REPO_ROOT}" \
         --bind "${HF_MERGED}:${TMP_HF_CACHE}" \
         ${POST_TRAIN_BENCH_CONTAINERS_DIR}/${POST_TRAIN_BENCH_CONTAINER_NAME}.sif \
-        python src/utils/check_cuda.py > "${RESULT_DIR}/cuda_check.txt"
+        python src/utils/check_cuda_writing.py > "${RESULT_DIR}/cuda_check.txt"
 }
 
 run_eval() {
