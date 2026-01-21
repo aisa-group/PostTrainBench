@@ -20,7 +20,7 @@ condor_submit_bid 50 -a "eval=arenahardwriting" -a "eval_dir=/path/to/results/cl
 
 Things to be aware of:
 - gemma3-4B is often a bit more tricky to prepare, because the evaluation will complain that no image processor is there. The agent should add this, so in case they didn't do this, it is fine that no `metrics.json` was produced.
-- failures happen because the gpu memory is too little. Also here this is a mistake on part of the agent. But we can run the evaluation again with `dev_utils/test_evaluation/single_evaluation.sub` and `dev_utils/test_evaluation/single_evaluation_less_mem.sub`. We should try our best to evaluate the agent, but if it fails after repeated retrys, we also ok that no `metrics.json` was produced. The agent will receive the base model score for this case.
+- failures happen because the gpu memory is too little. Also here this is a mistake on part of the agent. But we can run the evaluation again with `dev_utils/test_evaluation/single_evaluation.sub` and `dev_utils/test_evaluation/single_evaluation_less_mem.sub`. We should try our best to evaluate the model, but if it fails after repeated retrys, we also ok that no `metrics.json` was produced. The agent will receive the base model score for this case.
 
 For runs for which no metrics are produced, but for which this is fine (e.g. because they forgot to add the image processor to gemma or repeated final evals brought no results), add them to this environment variable:
 ```
