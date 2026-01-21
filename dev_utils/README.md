@@ -1,4 +1,6 @@
 ## Tips for running the benchmark
+These comments are mainly for internal use.
+
 You can use the `POST_TRAIN_BENCH_EXPERIMENT_NAME` to set experiment names for the benchmark, e.g. to distinguish experiments where you test and ones which are for actual results.
 E.g. you can set `export POST_TRAIN_BENCH_EXPERIMENT_NAME="_testing"`.
 
@@ -10,6 +12,11 @@ Some useful scripts after running experiments:
 ### Runs without metrics
 Workflow:
 Run `python dev_utils/runs_no_metrics.py`
+
+Rerun evaluation for the runs here with e.g. (note that the eval parameter needs to be adjusted):
+```
+condor_submit_bid 50 -a "eval=arenahardwriting" -a "eval_dir=/path/to/results/claude_claude-sonnet-4-5_10h_v3/arenahardwriting_Qwen_Qwen3-4B-Base_16775298" dev_utils/test_evaluation/single_evaluation.sub
+```
 
 Things to be aware of:
 - gemma3-4B is often a bit more tricky to prepare, because the evaluation will complain that no image processor is there. The agent should add this, so in case they didn't do this, it is fine that no `metrics.json` was produced.

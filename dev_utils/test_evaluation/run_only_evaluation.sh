@@ -68,6 +68,6 @@ with_huggingface_overlay apptainer exec \
         --model-path "$EVAL_DIR/final_model" \
         --templates-dir ../../../../src/eval/templates \
         --limit -1 \
-        --json-output-file "${EVAL_DIR}/z_new_${CLUSTER}_metrics.json" > "$EVAL_DIR/z_new_${CLUSTER}_final_eval.txt"
+        --json-output-file "${EVAL_DIR}/metrics.json" > "$EVAL_DIR/z_new_${CLUSTER}_final_eval.txt"
 
 echo $(cat "$EVAL_DIR/z_new_${CLUSTER}_final_eval.txt")
