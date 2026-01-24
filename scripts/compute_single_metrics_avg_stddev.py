@@ -1,14 +1,20 @@
 #!/usr/bin/env python3
 """
-Compute final metric for each final_*.csv table using factors from factors.json.
+Compute final metric for each final_*.csv table using factors from factors.json,
+then aggregate across multiple runs to produce averages and standard deviations.
 
 For each benchmark, computes the average value across all models, then multiplies
 by the factor. Sums these to produce a single metric per method.
+
+Then, for each agent group defined in HARDCODED_AGENT_MAP, computes the average
+and standard deviation of the metrics across runs.
 """
 import os
 import csv
 import json
-import argparse
+import math
+
+from constants import HARDCODED_AGENT_MAP, HARDCODED_BENCHMARKS
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 FACTORS_PATH = os.path.join(SCRIPT_DIR, "factors.json")
@@ -21,9 +27,18 @@ EXPECTED_MODELS = {
     "gemma-3-4b-pt",
 }
 
-
 def get_results_dir():
     return os.environ.get("POST_TRAIN_BENCH_RESULTS_DIR", "results")
+
+
+def mean(values: list[float]) -> float:
+    return sum(values) / len(values)
+
+
+def stddev(values: list[float]) -> float:
+    avg = mean(values)
+    variance = sum((x - avg) ** 2 for x in values) / (len(values) - 1)
+    return math.sqrt(variance)
 
 
 def load_factors(factors_path: str) -> dict:
@@ -72,23 +87,14 @@ def compute_metric(data: dict, factors: dict, benchmarks: list) -> float:
     return total
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Compute final metrics from final_*.csv files using benchmark factors."
-    )
-    parser.add_argument(
-        "--output",
-        default=None,
-        help="Output CSV path. Defaults to final_metrics.csv in results dir.",
-    )
-    args = parser.parse_args()
-
-    results_dir = get_results_dir()
-    factors = load_factors(FACTORS_PATH)
+def compute_all_metrics(results_dir: str, factors: dict) -> dict[str, float]:
+    """
+    Compute metrics for all final_*.csv files.
+    Returns {method_name: metric}.
+    """
     valid_benchmarks = set(factors.keys())
+    results = {}
 
-    # Find all final_*.csv files, excluding final_time_* files
-    final_files = []
     for filename in os.listdir(results_dir):
         if not filename.startswith("final_"):
             continue
@@ -96,39 +102,60 @@ def main():
             continue
         if filename.startswith("final_time_"):
             continue
-        # Check if file has all expected models
-        csv_path = os.path.join(results_dir, filename)
-        try:
-            data, _ = load_final_csv(csv_path, valid_benchmarks)
-        except Exception:
-            print(f"Warning: could not load {csv_path}.")
-            raise
-        if set(data.keys()) != EXPECTED_MODELS:
-            continue
-        final_files.append(filename)
 
-    final_files.sort()
-
-    # Compute metrics for each file
-    results = {}  # {method_name: metric}
-    for filename in final_files:
-        method_name = filename[len("final_") : -len(".csv")]
         csv_path = os.path.join(results_dir, filename)
         data, benchmarks = load_final_csv(csv_path, valid_benchmarks)
+
+        if set(data.keys()) != EXPECTED_MODELS:
+            continue
+
+        method_name = filename[len("final_") : -len(".csv")]
         metric = compute_metric(data, factors, benchmarks)
         results[method_name] = metric
 
-    # Write output table
-    output_path = args.output or os.path.join(results_dir, "final_metrics.csv")
+    return results
 
-    with open(output_path, "w", newline="") as f:
+
+def main():
+    results_dir = get_results_dir()
+    factors = load_factors(FACTORS_PATH)
+
+    # Compute metrics for all methods
+    all_metrics = compute_all_metrics(results_dir, factors)
+
+    # Write individual metrics CSV
+    metrics_path = os.path.join(results_dir, "single_metrics.csv")
+    with open(metrics_path, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["method", "metric"])
+        for method_name in sorted(all_metrics.keys()):
+            writer.writerow([method_name, round(all_metrics[method_name] * 100, 1)])
+    print(f"Written: {metrics_path}")
 
-        for method_name in sorted(results.keys()):
-            writer.writerow([method_name, results[method_name]])
+    # Compute aggregated metrics for each agent group
+    aggregated_results = {}
 
-    print(f"Written: {output_path}")
+    for agent_name, method_names in HARDCODED_AGENT_MAP.items():
+        metrics = []
+        for method_name in method_names:
+            metric = all_metrics[method_name]
+            metrics.append(metric)
+
+        aggregated_results[agent_name] = {
+            "avg": round(mean(metrics) * 100, 1),
+            "std": round(stddev(metrics) * 100, 1),
+            "n": len(metrics),
+        }
+
+    # Write aggregated metrics CSV
+    aggregated_path = os.path.join(results_dir, "single_metrics_aggregated.csv")
+    with open(aggregated_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["agent", "avg", "std", "n"])
+        for agent_name in sorted(aggregated_results.keys()):
+            data = aggregated_results[agent_name]
+            writer.writerow([agent_name, data["avg"], data["std"], data["n"]])
+    print(f"Written: {aggregated_path}")
 
 
 if __name__ == "__main__":
