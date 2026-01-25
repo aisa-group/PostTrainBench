@@ -1,6 +1,6 @@
 #!/bin/bash
 
-EVALUATION_TASK="$1"
+export EVALUATION_TASK="$1"
 AGENT="$2"
 MODEL_TO_TRAIN="$3"
 CLUSTER_ID="$4"
@@ -15,7 +15,7 @@ AGENT_CONFIG_SAFE=$(echo "$AGENT_CONFIG" | tr '/:' '_')
 
 RANDOM_UUID=$(uuidgen)
 
-EVAL_DIR="${POST_TRAIN_BENCH_RESULTS_DIR}/${AGENT}_${AGENT_CONFIG_SAFE}_${NUM_HOURS}h${POST_TRAIN_BENCH_EXPERIMENT_NAME}/${EVALUATION_TASK}_${RESULT_PREFIX_SAFE}_${CLUSTER_ID}"
+export EVAL_DIR="${POST_TRAIN_BENCH_RESULTS_DIR}/${AGENT}_${AGENT_CONFIG_SAFE}_${NUM_HOURS}h${POST_TRAIN_BENCH_EXPERIMENT_NAME}/${EVALUATION_TASK}_${RESULT_PREFIX_SAFE}_${CLUSTER_ID}"
 
 mkdir -p ${EVAL_DIR}
 
@@ -24,11 +24,11 @@ exec 2>${EVAL_DIR}/error.log
 
 echo "$@"
 
-TMP_SUBDIR="/tmp/posttrain_container_${EVALUATION_TASK}_${RESULT_PREFIX_SAFE}_${RANDOM_UUID}"
+export TMP_SUBDIR="/tmp/posttrain_container_${EVALUATION_TASK}_${RESULT_PREFIX_SAFE}_${RANDOM_UUID}"
 
 JOB_DIR="${TMP_SUBDIR}/job_dir"
 JOB_TMP="${TMP_SUBDIR}/tmp"
-HF_MERGED="${TMP_SUBDIR}/merged_huggingface"
+export HF_MERGED="${TMP_SUBDIR}/merged_huggingface"
 
 mkdir -p "${JOB_DIR}"
 mkdir -p "${JOB_TMP}"
@@ -172,24 +172,124 @@ echo "================================"
 echo "========= EVALUATING ==========="
 echo "================================"
 
-REPO_ROOT="$(pwd)"
+export REPO_ROOT="$(pwd)"
 
-TMP_HF_CACHE="/tmp/hf_cache_90afd0"
+export TMP_HF_CACHE="/tmp/hf_cache_90afd0"
 
-with_huggingface_overlay apptainer exec \
-    --nv \
-    --env "HF_HOME=${TMP_HF_CACHE}" \
-    --env OPENAI_API_KEY="${OPENAI_API_KEY}" \
-    --env VLLM_API_KEY="inspectai" \
-    --env PYTHONNOUSERSITE="1" \
-    --writable-tmpfs \
-    --bind "${REPO_ROOT}:${REPO_ROOT}" \
-    --bind "${HF_MERGED}:${TMP_HF_CACHE}" \
-    --pwd "$(pwd)/src/eval/tasks/${EVALUATION_TASK}" \
-    ${POST_TRAIN_BENCH_CONTAINERS_DIR}/${POST_TRAIN_BENCH_CONTAINER_NAME}.sif python "evaluate.py" \
-        --model-path "$EVAL_DIR/final_model" \
-        --templates-dir ../../../../src/eval/templates \
-        --limit -1 \
-        --json-output-file "${EVAL_DIR}/metrics.json" > "$EVAL_DIR/final_eval.txt"
+export EVAL_COUNTER=0
 
-echo $(cat "$EVAL_DIR/final_eval.txt")
+run_evaluation() {
+    local max_tokens_arg="$1"
+    local eval_num="$2"
+    nvidia-smi --query-compute-apps=pid --format=csv,noheader | xargs -r kill -9
+    sleep 5
+    with_huggingface_overlay apptainer exec \
+        --nv \
+        --env "HF_HOME=${TMP_HF_CACHE}" \
+        --env OPENAI_API_KEY="${OPENAI_API_KEY}" \
+        --env VLLM_API_KEY="inspectai" \
+        --env PYTHONNOUSERSITE="1" \
+        --writable-tmpfs \
+        --bind "${REPO_ROOT}:${REPO_ROOT}" \
+        --bind "${HF_MERGED}:${TMP_HF_CACHE}" \
+        --pwd "$(pwd)/src/eval/tasks/${EVALUATION_TASK}" \
+        ${POST_TRAIN_BENCH_CONTAINERS_DIR}/${POST_TRAIN_BENCH_CONTAINER_NAME}.sif python "evaluate.py" \
+            --model-path "$EVAL_DIR/final_model" \
+            --templates-dir ../../../../src/eval/templates \
+            --limit -1 \
+            ${max_tokens_arg} \
+            --json-output-file "${EVAL_DIR}/metrics.json" > "$EVAL_DIR/final_eval_${eval_num}.txt"
+}
+
+run_evaluation_with_retry() {
+    local max_retries="$1"
+    local max_tokens_arg="$2"
+
+    for ((attempt=1; attempt<=max_retries; attempt++)); do
+        sleep 5
+        if [ -f "${EVAL_DIR}/metrics.json" ]; then
+            return 0
+        fi
+
+        EVAL_COUNTER=$((EVAL_COUNTER + 1))
+        export EVAL_COUNTER
+        echo "Evaluation attempt $EVAL_COUNTER (phase attempt $attempt of $max_retries)"
+
+        timeout --signal=TERM --kill-after=60s 28800s bash -c "$(declare -f run_evaluation with_huggingface_overlay); run_evaluation \"$max_tokens_arg\" \"$EVAL_COUNTER\""
+
+        if [ -f "${EVAL_DIR}/metrics.json" ]; then
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+# First evaluation: up to 4 attempts
+run_evaluation_with_retry 4 ""
+
+# Second evaluation with adjusted max tokens: up to 2 attempts
+case "${EVALUATION_TASK}" in
+    aime2025)
+        MAX_TOKENS_ARG="--max-tokens 12000"
+        ;;
+    arenahardwriting)
+        MAX_TOKENS_ARG="--max-new-tokens 12288"
+        ;;
+    bfcl)
+        MAX_TOKENS_ARG="--max-tokens 12000"
+        ;;
+    gpqamain)
+        MAX_TOKENS_ARG="--max-tokens 12000"
+        ;;
+    gsm8k)
+        MAX_TOKENS_ARG="--max-tokens 3000"
+        ;;
+    healthbench)
+        MAX_TOKENS_ARG="--max-new-tokens 12288"
+        ;;
+    humaneval)
+        MAX_TOKENS_ARG="--max-tokens 3000"
+        ;;
+    *)
+        MAX_TOKENS_ARG=""
+        ;;
+esac
+
+run_evaluation_with_retry 3 "$MAX_TOKENS_ARG"
+
+# Third evaluation with further adjusted max tokens: up to 2 attempts
+case "${EVALUATION_TASK}" in
+    aime2025)
+        MAX_TOKENS_ARG="--max-tokens 8000"
+        ;;
+    arenahardwriting)
+        MAX_TOKENS_ARG="--max-new-tokens 8192"
+        ;;
+    bfcl)
+        MAX_TOKENS_ARG="--max-tokens 8000"
+        ;;
+    gpqamain)
+        MAX_TOKENS_ARG="--max-tokens 8000"
+        ;;
+    gsm8k)
+        MAX_TOKENS_ARG="--max-tokens 2000"
+        ;;
+    healthbench)
+        MAX_TOKENS_ARG="--max-new-tokens 8192"
+        ;;
+    humaneval)
+        MAX_TOKENS_ARG="--max-tokens 2000"
+        ;;
+    *)
+        MAX_TOKENS_ARG=""
+        ;;
+esac
+
+run_evaluation_with_retry 2 "$MAX_TOKENS_ARG"
+
+echo $(cat "$EVAL_DIR/final_eval_${EVAL_COUNTER}.txt")
+
+echo "================================"
+echo "======= EVALUATION DONE ========"
+echo "================================"

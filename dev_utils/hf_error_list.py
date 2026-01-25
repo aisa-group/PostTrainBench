@@ -2,10 +2,11 @@
 import argparse
 import os
 
-# List of error patterns to search for in solve.out
+# List of error patterns to search for in solve_out.txt
 ERROR_PATTERNS = [
-    "API Error: exception TypeError: fetch failed sending request",
-    "Loop detected, stopping execution",
+    "HfHubHTTPError",
+    "Too Many Requests",
+    "429 Client Error",
 ]
 
 
@@ -65,7 +66,7 @@ def get_results_dir():
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Check for API errors in results")
+    parser = argparse.ArgumentParser(description="Check for HuggingFace API errors in results")
     parser.add_argument(
         "results_dir",
         nargs="?",

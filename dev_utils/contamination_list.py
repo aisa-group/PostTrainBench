@@ -65,6 +65,8 @@ def main():
     contaminated_list = []
     disallowed_list = []
 
+    ignored_runs = os.environ.get("POST_TRAIN_BENCH_CONTAMINATION_CORRECT", '').split(":")
+
     # 1. Iterate over all methods and collect paths
     for method_name in os.listdir(results_dir):
         method_path = os.path.join(results_dir, method_name)
@@ -78,12 +80,14 @@ def main():
             # Check Contamination
             contam_path = os.path.join(run_path, "contamination_judgement.txt")
             if load_contamination(contam_path):
-                contaminated_list.append(run_path)
+                if run_path not in ignored_runs:
+                    contaminated_list.append(run_path)
 
             # Check Disallowed Model
             disallow_path = os.path.join(run_path, "disallowed_model_judgement.txt")
             if load_disallowed_model(disallow_path):
-                disallowed_list.append(run_path)
+                if run_path not in ignored_runs:
+                    disallowed_list.append(run_path)
 
     # 2. Output the lists
     print(f"=== CONTAMINATION DETECTED ({len(contaminated_list)}) ===")

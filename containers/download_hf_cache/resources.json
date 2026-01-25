@@ -1614,6 +1614,344 @@
     },
     {
       "dataset": "cognitivecomputations/dolphin"
+    },
+    {
+      "dataset": "openlifescienceai/medmcqa",
+      "splits": [
+        "train",
+        "validation",
+        "test"
+      ]
+    },
+    {
+      "dataset": "qiaojin/PubMedQA",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "bigbio/pubmed_qa",
+      "config": "pubmed_qa_labeled_fold0_source",
+      "splits": [
+        "train",
+        "validation",
+        "test"
+      ]
+    },
+    {
+      "dataset": "medalpaca/medical_meadow_medqa",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "medalpaca/medical_meadow_wikidoc",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "medalpaca/medical_meadow_wikidoc_patient_information",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "medalpaca/medical_meadow_medical_flashcards",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "lavita/ChatDoctor-HealthCareMagic-100k",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "keivalya/MedQuad-MedicalQnADataset",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "Mohammed-Altaf/medical-instruction-100k",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "ruslanmv/ai-medical-chatbot",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "gamino/wiki_medical_terms",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "nlpie/Llama2-MedTuned-Instructions",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "axiong/pmc_llama_instructions",
+      "splits": [
+        "train"
+      ]
+    },
+    {
+      "dataset": "AdaptLLM/medicine-tasks",
+      "splits": [
+        "test"
+      ]
+    },
+    {
+      "dataset": "bigbio/med_qa"
+    },
+    {
+      "dataset": "lavita/medical-qa-datasets"
+    },
+    {
+      "dataset": "ncbi/Open-Patients"
+    },
+    {
+      "dataset": "HPAI-BSC/medical-specialities"
+    },
+    {
+      "dataset": "HPAI-BSC/MedQA-Mixtral-CoT"
+    },
+    {
+      "dataset": "HPAI-BSC/Medprompt-MedQA-CoT"
+    },
+    {
+      "dataset": "UCSD26/medical_dialog"
+    },
+    {
+      "dataset": "bigbio/meddialog"
+    },
+    {
+      "dataset": "AGBonnet/augmented-clinical-notes"
+    },
+    {
+      "dataset": "omi-health/medical-dialogue-to-soap-summary"
+    },
+    {
+      "dataset": "knowrohit07/know_medical_dialogue_v2"
+    },
+    {
+      "dataset": "har1/MTS_Dialogue-Clinical_Note"
+    },
+    {
+      "dataset": "mahfoos/Patient-Doctor-Conversation"
+    },
+    {
+      "dataset": "casey-martin/MedInstruct"
+    },
+    {
+      "dataset": "Detsutut/MedInstruct"
+    },
+    {
+      "dataset": "dmis-lab/meerkat-instructions"
+    },
+    {
+      "dataset": "shibing624/medical"
+    },
+    {
+      "dataset": "FreedomIntelligence/medical-o1-reasoning-SFT"
+    },
+    {
+      "dataset": "starmpcc/Asclepius-Synthetic-Clinical-Notes"
+    },
+    {
+      "dataset": "thbndi/Mimic4Dataset"
+    },
+    {
+      "dataset": "Amod/mental_health_counseling_conversations"
+    },
+    {
+      "dataset": "ShenLab/MentalChat16K"
+    },
+    {
+      "dataset": "heliosbrahma/mental_health_conversational_dataset"
+    },
+    {
+      "dataset": "vibhorag101/phr_mental_therapy_dataset"
+    },
+    {
+      "dataset": "entfane/psychotherapy"
+    },
+    {
+      "dataset": "fadodr/mental_health_therapy"
+    },
+    {
+      "dataset": "Psychotherapy-LLM/CBT-Bench"
+    },
+    {
+      "dataset": "d4data/biomedical-ner-all"
+    },
+    {
+      "dataset": "bigbio/n2c2_2018_track2"
+    },
+    {
+      "dataset": "HiTZ/Multilingual-Medical-Corpus"
+    },
+    {
+      "dataset": "claws-lab/XLingHealth"
+    },
+    {
+      "dataset": "Trelis/hh-rlhf-dpo"
+    },
+    {
+      "dataset": "RLHFlow/HH-RLHF-Helpful-standard"
+    },
+    {
+      "dataset": "openlifescienceai/mmlu_clinical_knowledge"
+    },
+    {
+      "dataset": "openlifescienceai/mmlu_college_medicine"
+    },
+    {
+      "dataset": "openlifescienceai/mmlu_medical_genetics"
+    },
+    {
+      "dataset": "openlifescienceai/mmlu_professional_medicine"
+    },
+    {
+      "dataset": "bigbio/bionli"
+    },
+    {
+      "dataset": "head_qa"
+    },
+    {
+      "dataset": "casperhansen/liveqa"
+    },
+    {
+      "dataset": "lavita/AlpaCare-MedInstruct-52k"
+    },
+    {
+      "dataset": "FreedomIntelligence/HealthcareMagic"
+    },
+    {
+      "dataset": "FreedomIntelligence/iCliniq"
+    },
+    {
+      "dataset": "Liyuan/MedDialog"
+    },
+    {
+      "dataset": "openmed-community/MedReason-Stenographic"
+    },
+    {
+      "dataset": "medalpaca/medical_meadow_pubmed_causal"
+    },
+    {
+      "dataset": "FreedomIntelligence/CoD-PatientSymDisease"
+    },
+    {
+      "dataset": "blue-blues/medical_cot"
+    },
+    {
+      "dataset": "bigbio/rad_qa"
+    },
+    {
+      "dataset": "mlabonne/MedText"
+    },
+    {
+      "dataset": "lewtun/drug-reviews"
+    },
+    {
+      "dataset": "FreedomIntelligence/DxBench"
+    },
+    {
+      "dataset": "stellalisy/MediQ_AskDocs_preference"
+    },
+    {
+      "dataset": "empirischtech/med-qa-orpo-dpo"
+    },
+    {
+      "dataset": "FreedomIntelligence/ApolloMoEDataset"
+    },
+    {
+      "dataset": "allenai/cord19"
+    },
+    {
+      "dataset": "mteb/raw_medrxiv"
+    },
+    {
+      "dataset": "medalpaca/medical_meadow_cord19"
+    },
+    {
+      "dataset": "openlifescienceai/medqa"
+    },
+    {
+      "dataset": "lavita/MedQuAD"
+    },
+    {
+      "dataset": "kroshan/BioASQ"
+    },
+    {
+      "dataset": "bigbio/bioasq_task_b"
+    },
+    {
+      "dataset": "rag-datasets/rag-mini-bioasq"
+    },
+    {
+      "dataset": "croyer/MIMIC-III-split"
+    },
+    {
+      "dataset": "wshi83/EHRAgent-eicu"
+    },
+    {
+      "dataset": "Eladio/emrqa-msquad"
+    },
+    {
+      "dataset": "louisbrulenaudet/clinical-trials"
+    },
+    {
+      "dataset": "pankajrajdeo/Clinical_Trials"
+    },
+    {
+      "dataset": "ravistech/clinical-trial-llm-v2"
+    },
+    {
+      "dataset": "bigbio/n2c2_2010"
+    },
+    {
+      "dataset": "bigbio/n2c2_2014_deid"
+    },
+    {
+      "dataset": "bigbio/n2c2_2018_track1"
+    },
+    {
+      "dataset": "bigbio/n2c2_2011"
+    },
+    {
+      "dataset": "araag2/MedNLI"
+    },
+    {
+      "dataset": "bigbio/mediqa_nli"
+    },
+    {
+      "dataset": "curaihealth/medical_questions_pairs"
+    },
+    {
+      "dataset": "agenticx/DrugBank"
+    },
+    {
+      "dataset": "SkyHuReal/DrugBank-Alpaca"
+    },
+    {
+      "dataset": "antoinebcx/smiles-molecules-chembl"
+    },
+    {
+      "dataset": "eve-bio/drug-target-activity"
+    },
+    {
+      "dataset": "StanfordAIMI/stanford-deidentifier-only-i2b2"
     }
   ]
 }

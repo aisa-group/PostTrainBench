@@ -11,6 +11,35 @@ mkdir -p "${HF_MERGED}"
 
 source src/commit_utils/set_env_vars.sh
 
+# Map each benchmark to its reduced max-tokens option (0.75 * default)
+# Note: different benchmarks use different parameter names
+case "${EVALUATION_TASK}" in
+    aime2025)
+        MAX_TOKENS_ARG="--max-tokens 12000"
+        ;;
+    arenahardwriting)
+        MAX_TOKENS_ARG="--max-new-tokens 12288"
+        ;;
+    bfcl)
+        MAX_TOKENS_ARG="--max-tokens 12000"
+        ;;
+    gpqamain)
+        MAX_TOKENS_ARG="--max-tokens 12000"
+        ;;
+    gsm8k)
+        MAX_TOKENS_ARG="--max-tokens 3000"
+        ;;
+    healthbench)
+        MAX_TOKENS_ARG="--max-new-tokens 12288"
+        ;;
+    humaneval)
+        MAX_TOKENS_ARG="--max-tokens 3000"
+        ;;
+    *)
+        MAX_TOKENS_ARG=""
+        ;;
+esac
+
 exec 1>${EVAL_DIR}/z_new_${CLUSTER}_output.log
 exec 2>${EVAL_DIR}/z_new_${CLUSTER}_error.log
 
@@ -68,6 +97,7 @@ with_huggingface_overlay apptainer exec \
         --model-path "$EVAL_DIR/final_model" \
         --templates-dir ../../../../src/eval/templates \
         --limit -1 \
-        --json-output-file "${EVAL_DIR}/metrics.json" > "$EVAL_DIR/z_new_${CLUSTER}_final_eval.txt"
+        --json-output-file "${EVAL_DIR}/z_new_${CLUSTER}_metrics.json" \
+        ${MAX_TOKENS_ARG} > "$EVAL_DIR/z_new_${CLUSTER}_final_eval.txt"
 
 echo $(cat "$EVAL_DIR/z_new_${CLUSTER}_final_eval.txt")

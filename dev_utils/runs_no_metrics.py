@@ -6,6 +6,8 @@ from pathlib import Path
 def list_runs_no_metrics(show_all: bool = False):
     results_dir = os.environ.get("POST_TRAIN_BENCH_RESULTS_DIR", 'results')
 
+    ignored_runs = os.environ.get("POST_TRAIN_BENCH_NO_METRICS_IS_FINE", '').split(":")
+
     base_path = Path(results_dir)
 
     # Iterate through subdirs
@@ -16,6 +18,8 @@ def list_runs_no_metrics(show_all: bool = False):
         # Iterate through subsubdirs
         for subsubdir in subdir.iterdir():
             if not subsubdir.is_dir():
+                continue
+            if str(subsubdir) in ignored_runs:
                 continue
 
             # Check if metrics.json and final_model/ are both missing
