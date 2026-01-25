@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(cat:*)",
-      "WebFetch(domain:raw.githubusercontent.com)"
-    ]
-  }
-}
