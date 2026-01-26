@@ -1,3 +1,4 @@
+# IMPORTANT: You are NOT allowed to use the OpenAI API for anything but this evaluation script.
 import os
 
 import argparse

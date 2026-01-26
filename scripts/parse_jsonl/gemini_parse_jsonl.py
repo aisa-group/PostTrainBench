@@ -355,6 +355,48 @@ def indent(text: str, level: int) -> str:
     return "\n".join(pad + line if line else pad for line in text.splitlines())
 
 
+def is_delta_message(event: dict[str, Any]) -> bool:
+    """Check if this event is a streaming delta message."""
+    return (
+        event.get("type") == "message"
+        and event.get("delta") is True
+        and "content" in event
+    )
+
+
+def format_consolidated_deltas(
+    index: int, deltas: list[dict[str, Any]]
+) -> str:
+    """Format a sequence of delta messages as a single consolidated event."""
+    if not deltas:
+        return ""
+
+    first = deltas[0]
+    last = deltas[-1]
+    role = first.get("role", "assistant")
+
+    # Combine all content fragments
+    combined_content = "".join(d.get("content", "") for d in deltas)
+
+    # Build header
+    header_bits = [f"type: message (consolidated from {len(deltas)} deltas)"]
+    if first_ts := first.get("timestamp"):
+        last_ts = last.get("timestamp")
+        if last_ts and last_ts != first_ts:
+            header_bits.append(f"ts: {first_ts} -> {last_ts}")
+        else:
+            header_bits.append(f"ts: {first_ts}")
+
+    header_extra = " | ".join(header_bits)
+    lines: list[str] = [f"=== Event {index} | {header_extra} ==="]
+    lines.append(indent(f"Role: {role}", 1))
+    if combined_content:
+        lines.append(indent("Content:", 1))
+        lines.append(indent(combined_content.rstrip(), 2))
+
+    return "\n".join(lines)
+
+
 def main() -> None:
     args = parse_args()
     input_path: Path = args.input
@@ -364,6 +406,19 @@ def main() -> None:
     output_path = args.output or default_output_path(input_path)
 
     formatted_events: list[str] = []
+    pending_deltas: list[dict[str, Any]] = []
+    current_delta_role: str | None = None
+
+    def flush_deltas() -> None:
+        """Flush any accumulated delta messages."""
+        nonlocal pending_deltas, current_delta_role
+        if pending_deltas:
+            formatted_events.append(
+                format_consolidated_deltas(len(formatted_events) + 1, pending_deltas)
+            )
+            pending_deltas = []
+            current_delta_role = None
+
     with input_path.open("r", encoding="utf-8") as stream:
         for line_number, raw_line in enumerate(stream, 1):
             stripped = raw_line.strip()
@@ -372,14 +427,15 @@ def main() -> None:
             try:
                 event = json.loads(stripped)
             except json.JSONDecodeError as exc:
-                # Instead of raising an error, output the unparsable line
+                # Flush any pending deltas before outputting unparsable line
+                flush_deltas()
                 formatted_events.append(
                     format_unparsable_line(len(formatted_events) + 1, stripped, exc.msg)
                 )
                 continue
-            
+
             if not isinstance(event, dict):
-                # Output non-dict JSON as unparsable
+                flush_deltas()
                 formatted_events.append(
                     format_unparsable_line(
                         len(formatted_events) + 1,
@@ -388,8 +444,22 @@ def main() -> None:
                     )
                 )
                 continue
-            
-            formatted_events.append(format_event(len(formatted_events) + 1, event))
+
+            # Check if this is a delta message that can be consolidated
+            if is_delta_message(event):
+                event_role = event.get("role", "assistant")
+                # If role changes, flush previous deltas first
+                if current_delta_role is not None and event_role != current_delta_role:
+                    flush_deltas()
+                pending_deltas.append(event)
+                current_delta_role = event_role
+            else:
+                # Non-delta event: flush any pending deltas first
+                flush_deltas()
+                formatted_events.append(format_event(len(formatted_events) + 1, event))
+
+    # Flush any remaining deltas at end of file
+    flush_deltas()
 
     output_text = "\n\n".join(formatted_events) + "\n"
 

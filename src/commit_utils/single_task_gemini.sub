@@ -4,6 +4,7 @@ environment = "OPENAI_API_KEY=$ENV(OPENAI_API_KEY) ANTHROPIC_API_KEY=$ENV(ANTHRO
 error = test_$(Cluster).err
 output = test_$(Cluster).out
 log = test_$(Cluster).log
+concurrency_limits=user.gemini:1250
 request_memory = 131072
 request_cpus = 16
 request_gpus = 1
