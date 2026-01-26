@@ -7,18 +7,18 @@ models=(
     # "HuggingFaceTB/SmolLM3-3B"
     # 
     # base models
-    # "google/gemma-3-4b-pt"
+    "google/gemma-3-4b-pt"
     # "Qwen/Qwen3-4B-Base"
     # "Qwen/Qwen3-1.7B-Base"
-    "HuggingFaceTB/SmolLM3-3B-Base"
+    # "HuggingFaceTB/SmolLM3-3B-Base"
 )
 
 evals=(
-    # "aime2025"
+    "aime2025"
     # "arenahardwriting"
     # "bfcl"
     # "gpqamain"
-    "gsm8k"
+    # "gsm8k"
     # "humaneval"
 )
 
