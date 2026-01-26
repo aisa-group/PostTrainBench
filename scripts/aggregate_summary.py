@@ -20,6 +20,13 @@ METHOD_NAME_MAP = {
     "codex_gpt-5.2": "gpt-5.2",
     "gemini_models_gemini-3-pro-preview": "gemini-3-pro",
     "opencode_anthropic_claude-sonnet-4-5": "opencode claude-sonnet-4-5",
+    "opencode_anthropic_claude-opus-4-5_10h": "opencode claude-opus-4-5",
+    "opencode_opencode_big-pickle_10h": "opencode big-pickle",
+    "opencode_opencode_gemini-3-pro_10h": "opencode gemini-3-pro",
+    "opencode_opencode_glm-4.7-free_10h": "opencode glm-4.7",
+    "opencode_opencode_gpt-5.1-codex-max_10h": "opencode gpt-5.1-codex-max",
+    "opencode_opencode_kimi-k2-thinking_10h": "opencode kimi-k2-thinking",
+    "opencode_opencode_minimax-m2.1-free_10h": "opencode minimax-m2.1",
 }
 
 # Model groups for baseline columns

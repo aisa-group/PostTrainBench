@@ -15,6 +15,20 @@ python scripts/aggregate_time.py
 sleep 1
 python scripts/aggregate_final.py
 sleep 1
-python scripts/aggregate_summary.py claude_claude-sonnet-4-5 claude_claude-opus-4-5 codex_gpt-5.1-codex-max codex_gpt-5.2 gemini_models_gemini-3-pro-preview 
+python scripts/aggregate_summary.py \
+    opencode_anthropic_claude-opus-4-5_10h \
+    opencode_opencode_big-pickle_10h \
+    opencode_opencode_gemini-3-pro_10h \
+    opencode_opencode_glm-4.7-free_10h \
+    opencode_opencode_gpt-5.1-codex-max_10h \
+    opencode_opencode_kimi-k2-thinking_10h \
+    opencode_opencode_minimax-m2.1-free_10h
 
-python scripts/aggregate_together.py claude_claude-sonnet-4-5 claude_claude-opus-4-5 codex_gpt-5.1-codex-max codex_gpt-5.2 gemini_models_gemini-3-pro-preview 
+python scripts/aggregate_together.py \
+    opencode_anthropic_claude-opus-4-5_10h \
+    opencode_opencode_big-pickle_10h \
+    opencode_opencode_gemini-3-pro_10h \
+    opencode_opencode_glm-4.7-free_10h \
+    opencode_opencode_gpt-5.1-codex-max_10h \
+    opencode_opencode_kimi-k2-thinking_10h \
+    opencode_opencode_minimax-m2.1-free_10h
