@@ -1,10 +1,12 @@
 export HF_HOME_NEW="/home/ben/hf_cache"
+source /etc/profile.d/modules.sh
 
 # Helper function: sets variable to default if unset or "UNDEFINED"
 set_default() {
     local var_name="${1:-}"
     local default_value="${2:-}"
-    local current_value="${!var_name:-}"
+    local current_value
+    eval "current_value=\"\${$var_name:-}\""
     
     if [ -z "$current_value" ] || [ "$current_value" = "UNDEFINED" ]; then
         export "$var_name"="$default_value"

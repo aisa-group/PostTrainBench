@@ -7,6 +7,7 @@ source src/commit_utils/set_env_vars.sh
 EVAL_NAME="$1"
 MODEL_NAME="$2"
 CLUSTER_ID="$3"
+EPOCHS="${4:-5}"
 
 set -euo pipefail
 
@@ -34,6 +35,7 @@ exec 2>${RESULT_DIR}/error.log
 echo "Eval: ${EVAL_NAME}"
 echo "Model: ${MODEL_NAME}"
 echo "Cluster ID: ${CLUSTER_ID}"
+echo "Epochs: ${EPOCHS}"
 
 # Utils
 with_huggingface_overlay() {
@@ -96,6 +98,7 @@ run_eval() {
             --model-path "${MODEL_NAME}" \
             --templates-dir ../../../../src/eval/templates \
             --limit -1 \
+            --epochs "${EPOCHS}" \
             --json-output-file "${RESULT_DIR}/metrics.json" > "${RESULT_DIR}/final_eval.txt"
 }
 

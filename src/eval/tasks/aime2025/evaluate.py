@@ -94,6 +94,12 @@ def parse_args() -> argparse.Namespace:
         default=20,
         help="Top-k sampling (default: 20)",
     )
+    parser.add_argument(
+        '--epochs',
+        type=int,
+        default=1,
+        help="Number of times to run each sample (default: 1)",
+    )
     return parser.parse_args()
 
 
@@ -151,6 +157,7 @@ def main() -> None:
     model_args.update(template_kwargs(args))
 
     print(f"Sampling params: temperature={args.temperature}, top_p={args.top_p}, top_k={args.top_k}")
+    print(f"Epochs: {args.epochs}")
 
     eval_out = inspect_eval(
         task,
@@ -166,6 +173,7 @@ def main() -> None:
         temperature=args.temperature,
         top_p=args.top_p,
         top_k=args.top_k,
+        epochs=args.epochs,
         **other_kwargs,
     )
     
@@ -194,6 +202,7 @@ def main() -> None:
                 "top_p": args.top_p,
                 "top_k": args.top_k,
             },
+            "epochs": args.epochs,
         }
         with open(eval_config_file, 'w') as f:
             json.dump(eval_config, f, indent=2)
