@@ -2,17 +2,23 @@
 from __future__ import annotations
 
 import os
+import sys
 
 import argparse
 import json
 
 from pathlib import Path
 
+from inspect_ai import Task
 from inspect_ai.log._log import EvalLog, EvalMetric, EvalSample
 from inspect_ai import eval as inspect_eval  # type: ignore  # noqa: E402
 from inspect_ai.util._display import init_display_type  # noqa: E402
 
 import inspect_evals.bfcl # noqa: F401, E402  (registers task definitions)
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+from utils.fewshot_loader import is_base_model
 
 
 def parse_args() -> argparse.Namespace:
@@ -57,7 +63,33 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default="templates/",
     )
+    # Sampling parameters (Qwen recommends: temperature=0.6, top_p=0.95, top_k=20)
+    parser.add_argument(
+        '--temperature',
+        type=float,
+        default=0.6,
+        help="Sampling temperature (default: 0.6)",
+    )
+    parser.add_argument(
+        '--top-p',
+        type=float,
+        default=0.95,
+        help="Top-p (nucleus) sampling (default: 0.95)",
+    )
+    parser.add_argument(
+        '--top-k',
+        type=int,
+        default=20,
+        help="Top-k sampling (default: 20)",
+    )
+    parser.add_argument(
+        '--epochs',
+        type=int,
+        default=1,
+        help="Number of times to run each sample (default: 1)",
+    )
     return parser.parse_args()
+
 
 def tool_call_parser_name(args) -> str:
     model_type_str = model_type(args)
@@ -87,6 +119,9 @@ def main() -> None:
     }
     model_args.update(template_kwargs(args))
 
+    print(f"Sampling params: temperature={args.temperature}, top_p={args.top_p}, top_k={args.top_k}")
+    print(f"Epochs: {args.epochs}")
+
     eval_out = inspect_eval(
         task,
         model=model_name,
@@ -97,9 +132,13 @@ def main() -> None:
         log_format='json',
         max_tokens=args.max_tokens,
         max_connections=args.max_connections,
+        temperature=args.temperature,
+        top_p=args.top_p,
+        top_k=args.top_k,
+        epochs=args.epochs,
         **other_kwargs,
     )
-    
+
     if args.json_output_file is not None:
         assert len(eval_out) == 1, eval_out
         assert len(eval_out[0].results.scores) == 1, eval_out[0].results.scores
@@ -109,6 +148,24 @@ def main() -> None:
 
         with open(args.json_output_file, 'w') as f:
             json.dump(metrics, f, indent=2)
+
+        # Save eval configuration info alongside metrics
+        result_dir = os.path.dirname(args.json_output_file)
+        eval_config_file = os.path.join(result_dir, 'eval_config.json')
+        eval_config = {
+            "benchmark": "bfcl",
+            "model_path": args.model_path,
+            "is_base_model": is_base_model(args.model_path),
+            "sampling": {
+                "temperature": args.temperature,
+                "top_p": args.top_p,
+                "top_k": args.top_k,
+            },
+            "epochs": args.epochs,
+        }
+        with open(eval_config_file, 'w') as f:
+            json.dump(eval_config, f, indent=2)
+        print(f"Eval config saved to: {eval_config_file}")
 
 def model_type(args) -> str:
     if 'qwen' in args.model_path.lower():
@@ -136,7 +193,13 @@ def model_type(args) -> str:
 def template_kwargs(args) -> dict:
     model_type_str = model_type(args)
     if model_type_str == 'qwen':
-        return {}
+        # Use simple template for Qwen base models (no chat tokens)
+        # Note: Base models may not perform well on function calling tasks
+        if is_base_model(args.model_path):
+            template = 'qwen_base.jinja'
+            print(f"Using qwen_base.jinja template for base model (warning: base models may not work well for function calling)")
+        else:
+            return {}  # Use default HF template for instruct models
     elif model_type_str == 'llama':
         template = 'llama3.jinja'
     elif model_type_str == 'gemma':
