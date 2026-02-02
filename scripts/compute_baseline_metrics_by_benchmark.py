@@ -10,7 +10,7 @@ import json
 import argparse
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-FACTORS_PATH = os.path.join(SCRIPT_DIR, "factors_by_benchmark.json")
+FACTORS_PATH = os.path.join(SCRIPT_DIR, "factors.json")
 
 BASE_MODELS = {"Qwen3-1.7B-Base", "Qwen3-4B-Base", "SmolLM3-3B-Base", "gemma-3-4b-pt"}
 INSTRUCT_MODELS = {"Qwen3-1.7B", "Qwen3-4B", "SmolLM3-3B", "gemma-3-4b-it"}
