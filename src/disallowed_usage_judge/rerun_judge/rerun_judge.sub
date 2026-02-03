@@ -1,0 +1,12 @@
+executable = /bin/bash
+arguments = src/disallowed_usage_judge/rerun_judge/rerun_single.sh $(result_dir)
+environment = "OPENAI_API_KEY=$ENV(OPENAI_API_KEY) CODEX_API_KEY=$ENV(OPENAI_API_KEY) HOME=$ENV(HOME) POST_TRAIN_BENCH_RESULTS_DIR=$ENV(POST_TRAIN_BENCH_RESULTS_DIR) POST_TRAIN_BENCH_CONTAINERS_DIR=$ENV(POST_TRAIN_BENCH_CONTAINERS_DIR) POST_TRAIN_BENCH_CONTAINER_NAME=$ENV(POST_TRAIN_BENCH_CONTAINER_NAME) POST_TRAIN_BENCH_JOB_SCHEDULER=$ENV(POST_TRAIN_BENCH_JOB_SCHEDULER) HF_HOME=$ENV(HF_HOME) POST_TRAIN_BENCH_PROMPT=$ENV(POST_TRAIN_BENCH_PROMPT)"
+error = test_$(Cluster).err
+output = test_$(Cluster).out
+log = test_$(Cluster).log
+concurrency_limits=user.concurrency:500
+request_memory = 81920
+request_cpus = 4
+request_disk=100G
++BypassLXCfs="true"
+queue

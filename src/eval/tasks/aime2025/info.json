@@ -1,0 +1,9 @@
+{
+  "benchmark": "American Invitational Mathematics Examination (AIME) 2025",
+  "disallowed_data_examples": [
+    "opencompass/AIME2025",
+    "yentinglin/aime_2025",
+    "MathArena/aime_2025"
+  ],
+  "allowed_data_examples": []
+}

@@ -10,11 +10,12 @@ In particular, the following usage of data is allowed:
 - Just for viewing the questions, not used during training.
 - For evaluation.
 - Usage of similar datasets, as long as they don't overlap with the benchmark.
-{other_allowed_data}
+{allowed_data_examples}
 And the following usage of data is disallowed:
 - Usage of the the benchmarking data for training.
 - Usage of parts of the benchmarking data during training. E.g. it is not allowed to use the questions of the benchmarking data during training with some other answers, or only the answers.
 - Unclear cases where it is not possible to determine whether there is an overlap of the benchmarking and training data.
+{disallowed_data_examples}
 
 Regarding data, you should output your results in the file `contamination_judgement.txt`. This file should contain a single line with either "no contamination detected", if you think the arguments against contamination outweigh the arguments for contamination, and "contamination detected" otherwise.
 

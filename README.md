@@ -68,7 +68,7 @@ Currently, we only support the HTCondor job scheduler. Slurm support is planned.
 | `results/` | Evaluation results (baseline runs prefixed with `baseline_`) |
 
 Each evaluation folder in `src/eval/tasks/` contains:
-- `benchmark.txt`: Official benchmark name
+- `info.json`: Task metadata (benchmark name, allowed/disallowed datasets)
 - `evaluate.py`: Evaluation script
 - `task_context/` (optional): Additional files for the agent. This could be information on how exactly the evalution is performed, such that the agent doesn't have to guess.
 
@@ -84,7 +84,7 @@ We are especially interested in:
 
 Add your code to `src/eval/tasks/<task_name>/` with:
 1. `evaluate.py` - Evaluation script (see existing tasks for examples)
-2. `benchmark.txt` - Official benchmark name
+2. `info.json` - Task metadata with benchmark name, allowed/disallowed datasets
 
 Requirements for new tasks:
 - The task should be achievable by instruction-tuned versions of our test models ([Qwen3-1.7B](https://huggingface.co/Qwen/Qwen3-1.7B), [Qwen3-4B](https://huggingface.co/Qwen/Qwen3-4B), [SmolLM3-3B](https://huggingface.co/HuggingFaceTB/SmolLM3-3B), [Gemma-3-4B](https://huggingface.co/google/gemma-3-4b-it)) - significantly above random chance

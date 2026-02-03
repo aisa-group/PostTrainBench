@@ -15,10 +15,13 @@ INSPECT_EVALS = [
 
 def read_benchmark_name(benchmark_id: str) -> str:
     """Resolve the human-readable benchmark name from the benchmark_id."""
-    bench_file = Path("src/eval/tasks") / benchmark_id / "benchmark.txt"
-    if not bench_file.is_file():
-        raise FileNotFoundError(f"Benchmark file not found for id '{benchmark_id}': {bench_file}")
-    return bench_file.read_text(encoding="utf-8").strip()
+    import json
+    info_file = Path("src/eval/tasks") / benchmark_id / "info.json"
+    if not info_file.is_file():
+        raise FileNotFoundError(f"Info file not found for id '{benchmark_id}': {info_file}")
+    with open(info_file, encoding="utf-8") as f:
+        info = json.load(f)
+    return info["benchmark"]
 
 def main():
     parser = argparse.ArgumentParser()

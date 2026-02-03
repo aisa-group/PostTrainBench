@@ -2,6 +2,9 @@ test*.err
 test*.out
 test*.log
 
+.claude
+CLAUDE.md
+
 logs
 .vscode
 

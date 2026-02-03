@@ -10,4 +10,4 @@ request_gpus = 1
 requirements = TARGET.CUDADeviceName == "NVIDIA H100 80GB HBM3"
 request_disk=400G
 +BypassLXCfs="true"
-queue
+queuererun_judge

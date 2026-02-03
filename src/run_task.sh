@@ -49,7 +49,6 @@ if [ -d "src/eval/tasks/${EVALUATION_TASK}/task_context" ]; then
 fi
 cp -r "containers/other_home_data/.codex" "${JOB_DIR}/"
 
-BENCHMARK=$(cat src/eval/tasks/${EVALUATION_TASK}/benchmark.txt)
 PROMPT=$(python src/eval/general/get_prompt.py --model-to-train "$MODEL_TO_TRAIN" --benchmark-id "$EVALUATION_TASK" --num-hours "$NUM_HOURS" --agent "${AGENT}")
 echo "$PROMPT" > "${EVAL_DIR}/prompt.txt"
 
@@ -135,7 +134,7 @@ echo "=================================================="
 echo "=== TASK COMPLETE, RUNNING CONTAMINATION JUDGE ==="
 echo "=================================================="
 
-JUDGE_TASK=$(python src/disallowed_usage_judge/get_judge_prompt.py --benchmark "${BENCHMARK}" --model "${MODEL_TO_TRAIN}")
+JUDGE_TASK=$(python src/disallowed_usage_judge/get_judge_prompt.py --benchmark-id "${EVALUATION_TASK}" --model "${MODEL_TO_TRAIN}")
 
 with_huggingface_overlay apptainer exec \
     --nv \
