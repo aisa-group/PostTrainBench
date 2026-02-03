@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Compute metrics for baseline models (base and instruct-tuned) using factors from factors.json.
+Compute metrics for baseline models (base and instruct-tuned) using factors from factors_by_benchmark.json.
 
-Reads aggregated_baseline.csv and computes weighted metrics per model.
+Reads aggregated_baseline.csv and computes averaged metrics for base and instruct groups.
 """
 import os
 import csv
@@ -11,20 +11,6 @@ import argparse
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 FACTORS_PATH = os.path.join(SCRIPT_DIR, "factors.json")
-
-# Mapping from CSV model names to factors.json model names
-MODEL_NAME_MAPPING = {
-    # Base/pretrained models
-    "Qwen3-1.7B-Base": "Qwen3-1.7B",
-    "Qwen3-4B-Base": "Qwen3-4B",
-    "SmolLM3-3B-Base": "SmolLM3-3B",
-    "gemma-3-4b-pt": "gemma-3-4b",
-    # Instruct-tuned models
-    "Qwen3-1.7B": "Qwen3-1.7B",
-    "Qwen3-4B": "Qwen3-4B",
-    "SmolLM3-3B": "SmolLM3-3B",
-    "gemma-3-4b-it": "gemma-3-4b",
-}
 
 BASE_MODELS = {"Qwen3-1.7B-Base", "Qwen3-4B-Base", "SmolLM3-3B-Base", "gemma-3-4b-pt"}
 INSTRUCT_MODELS = {"Qwen3-1.7B", "Qwen3-4B", "SmolLM3-3B", "gemma-3-4b-it"}
@@ -60,24 +46,28 @@ def load_baseline_csv(csv_path: str) -> tuple[dict, list]:
     return data, benchmarks
 
 
-def compute_metric(model_data: dict, factors: dict, benchmarks: list) -> float:
-    """Compute weighted sum of benchmark values using factors."""
+def compute_metric_by_benchmark(data: dict, factors: dict, benchmarks: list, models: set) -> float:
+    """
+    Compute weighted sum where each benchmark value is averaged across specified models.
+    """
     total = 0.0
+    model_list = [m for m in data if m in models]
+    num_models = len(model_list)
     for bench in benchmarks:
-        value = model_data[bench]
+        avg_value = sum(data[model][bench] for model in model_list) / num_models
         factor = factors[bench]
-        total += value * factor
+        total += avg_value * factor
     return total
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Compute baseline metrics using per-model factors."
+        description="Compute baseline metrics using benchmark factors."
     )
     parser.add_argument(
         "--output",
         default=None,
-        help="Output CSV path. Defaults to baseline_metrics.csv in results dir.",
+        help="Output CSV path. Defaults to baseline_metrics_by_benchmark.csv in results dir.",
     )
     args = parser.parse_args()
 
@@ -87,32 +77,18 @@ def main():
     csv_path = os.path.join(results_dir, "aggregated_baseline.csv")
     data, benchmarks = load_baseline_csv(csv_path)
 
-    # Compute metrics for each model
-    base_results = {}
-    instruct_results = {}
-
-    for csv_model in data:
-        factors_model = MODEL_NAME_MAPPING[csv_model]
-        model_factors = factors[factors_model]
-        metric = compute_metric(data[csv_model], model_factors, benchmarks)
-
-        if csv_model in BASE_MODELS:
-            base_results[csv_model] = metric
-        else:
-            instruct_results[csv_model] = metric
+    # Compute averaged metrics for each group
+    base_metric = compute_metric_by_benchmark(data, factors, benchmarks, BASE_MODELS)
+    instruct_metric = compute_metric_by_benchmark(data, factors, benchmarks, INSTRUCT_MODELS)
 
     # Write output table
-    output_path = args.output or os.path.join(results_dir, "baseline_metrics.csv")
+    output_path = args.output or os.path.join(results_dir, "baseline_metrics_by_benchmark.csv")
 
     with open(output_path, "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["model_type", "model", "metric"])
-
-        for model in sorted(base_results.keys()):
-            writer.writerow(["base", model, base_results[model]])
-
-        for model in sorted(instruct_results.keys()):
-            writer.writerow(["instruct", model, instruct_results[model]])
+        writer.writerow(["model_type", "metric"])
+        writer.writerow(["base", base_metric])
+        writer.writerow(["instruct", instruct_metric])
 
     print(f"Written: {output_path}")
 

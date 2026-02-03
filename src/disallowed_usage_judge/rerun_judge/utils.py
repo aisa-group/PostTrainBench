@@ -23,6 +23,7 @@ def get_result_dirs(
     benchmark_pattern: str = None,
     skip_existing: bool = False,
     limit: int = 0,
+    latest_only: bool = False,
 ) -> list[Path]:
     """
     Get result directories matching the given criteria.
@@ -32,6 +33,7 @@ def get_result_dirs(
         benchmark_pattern: Filter by benchmark name (substring match)
         skip_existing: Skip directories that already have rerun judgement files
         limit: Maximum number of directories to return (0 = no limit)
+        latest_only: Only return the directory with highest cluster_id per (method, model, benchmark)
 
     Returns:
         List of Path objects for matching result directories
@@ -65,10 +67,31 @@ def get_result_dirs(
 
             result_dirs.append(result_dir)
 
+    if latest_only:
+        result_dirs = _filter_latest_only(result_dirs)
+
     if limit > 0:
         result_dirs = result_dirs[:limit]
 
     return result_dirs
+
+
+def _filter_latest_only(result_dirs: list[Path]) -> list[Path]:
+    """
+    Filter to keep only the directory with highest cluster_id per (method, model, benchmark).
+    """
+    # Group by (method, model, benchmark) and track highest cluster_id
+    best_by_key: dict[tuple[str, str, str], tuple[int, Path]] = {}
+
+    for result_dir in result_dirs:
+        parsed = parse_result_dir(result_dir)
+        key = (parsed['method'], parsed['model'], parsed['benchmark'])
+        cluster_id = int(parsed['cluster_id'])
+
+        if key not in best_by_key or cluster_id > best_by_key[key][0]:
+            best_by_key[key] = (cluster_id, result_dir)
+
+    return sorted([path for _, path in best_by_key.values()])
 
 
 def parse_result_dir(result_dir: Path) -> dict:

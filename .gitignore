@@ -3,7 +3,7 @@ test*.out
 test*.log
 
 .claude
-CLAUDE.md
+AGENTS.md
 
 logs
 .vscode

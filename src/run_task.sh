@@ -130,12 +130,23 @@ echo "================================"
 
 with_huggingface_overlay with_record_the_time solve_task
 
-echo "=================================================="
-echo "=== TASK COMPLETE, RUNNING CONTAMINATION JUDGE ==="
-echo "=================================================="
+echo "============================================"
+echo "=== TASK COMPLETE, PARSING AGENT TRACE ==="
+echo "============================================"
 
-# Copy trace file into task directory for judge to analyze
-cp "${SOLVE_OUT}" "${JOB_DIR}/task/solve_trace.txt"
+# Parse agent trace into human-readable format
+TRACE_PARSER="agents/${AGENT}/human_readable_trace.py"
+if [ -f "$TRACE_PARSER" ]; then
+    python "$TRACE_PARSER" "${SOLVE_OUT}" -o "${EVAL_DIR}/solve_parsed.txt"
+    cp "${EVAL_DIR}/solve_parsed.txt" "${JOB_DIR}/solve_parsed.txt"
+else
+    echo "Warning: No trace parser found at $TRACE_PARSER, using raw output"
+    cp "${SOLVE_OUT}" "${JOB_DIR}/solve_parsed.txt"
+fi
+
+echo "========================================="
+echo "=== RUNNING CONTAMINATION JUDGE ==="
+echo "========================================="
 
 JUDGE_TASK=$(python src/disallowed_usage_judge/get_judge_prompt.py --benchmark-id "${EVALUATION_TASK}" --model "${MODEL_TO_TRAIN}")
 
@@ -152,7 +163,10 @@ with_huggingface_overlay apptainer exec \
     --home "${JOB_DIR}:/home/ben" \
     --pwd "/home/ben/task" \
     --writable-tmpfs \
-    ${POST_TRAIN_BENCH_CONTAINERS_DIR}/${POST_TRAIN_BENCH_CONTAINER_NAME}.sif codex --search -a never exec --json -c model_reasoning_summary=detailed --skip-git-repo-check --yolo --model "gpt-5.1-codex" "$JUDGE_TASK" 2>&1 | tee "${EVAL_DIR}/judge_output.txt"
+    ${POST_TRAIN_BENCH_CONTAINERS_DIR}/${POST_TRAIN_BENCH_CONTAINER_NAME}.sif codex --search -a never exec --json -c model_reasoning_summary=detailed --skip-git-repo-check --yolo --model "gpt-5.1-codex" "$JUDGE_TASK" 2>&1 | tee "${EVAL_DIR}/judge_output.json"
+
+# Convert judge JSON output to human-readable format
+python agents/codex/human_readable_trace.py "${EVAL_DIR}/judge_output.json" -o "${EVAL_DIR}/judge_output.txt"
 
 cp "${JOB_DIR}/task/contamination_judgement.txt" "${EVAL_DIR}/contamination_judgement.txt"
 cp "${JOB_DIR}/task/disallowed_model_judgement.txt" "${EVAL_DIR}/disallowed_model_judgement.txt"

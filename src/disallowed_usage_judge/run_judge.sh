@@ -11,7 +11,7 @@
 # 1. Rerun the judge on completed results
 # 2. Run the judge manually for debugging
 #
-# The judge analyzes the task directory and solve_trace.txt to determine:
+# The judge analyzes the task directory and ../solve_parsed.txt to determine:
 # - Whether benchmark data was used for training (contamination)
 # - Whether only the allowed base model was fine-tuned
 
@@ -44,6 +44,11 @@ fi
 
 if [ ! -d "$RESULT_DIR/task" ]; then
     echo "Error: No task directory found in $RESULT_DIR" >&2
+    exit 1
+fi
+
+if [ ! -f "$RESULT_DIR/solve_parsed.txt" ]; then
+    echo "Error: No solve_parsed.txt found in $RESULT_DIR" >&2
     exit 1
 fi
 
@@ -82,23 +87,14 @@ mkdir -p "$JOB_DIR" "$JOB_TMP"
 # Copy task directory
 cp -r "$RESULT_DIR/task" "$JOB_DIR/task"
 
-# Copy trace file into task directory
-# Prefer solve_parsed.txt, fall back to solve_out.txt
-if [ -f "$RESULT_DIR/solve_parsed.txt" ]; then
-    cp "$RESULT_DIR/solve_parsed.txt" "$JOB_DIR/task/solve_trace.txt"
-    echo "  Using trace: solve_parsed.txt"
-elif [ -f "$RESULT_DIR/solve_out.txt" ]; then
-    cp "$RESULT_DIR/solve_out.txt" "$JOB_DIR/task/solve_trace.txt"
-    echo "  Using trace: solve_out.txt"
-else
-    echo "  Warning: No trace file found (solve_parsed.txt or solve_out.txt)"
-fi
+# Copy trace file to parent directory (not task directory)
+cp "$RESULT_DIR/solve_parsed.txt" "$JOB_DIR/solve_parsed.txt"
 
 # Copy codex config
 cp -r "$REPO_ROOT/containers/other_home_data/.codex" "$JOB_DIR/"
 
 # Run judge via codex inside apptainer, capturing output
-JUDGE_OUTPUT_FILE="$TMP_DIR/judge_output.txt"
+JUDGE_OUTPUT_FILE="$TMP_DIR/judge_output.json"
 apptainer exec \
     -c \
     --env PATH="/root/.local/bin:/home/ben/.local/bin:$PATH" \
@@ -118,10 +114,11 @@ else
     SUFFIX=""
 fi
 
-# Copy judge output to result directory
+# Copy judge output to result directory and convert to human-readable format
 if [ -f "$JUDGE_OUTPUT_FILE" ]; then
-    cp "$JUDGE_OUTPUT_FILE" "$RESULT_DIR/judge_output${SUFFIX}.txt"
-    echo "  Judge output saved to: judge_output${SUFFIX}.txt"
+    cp "$JUDGE_OUTPUT_FILE" "$RESULT_DIR/judge_output${SUFFIX}.json"
+    python "$REPO_ROOT/agents/codex/human_readable_trace.py" "$JUDGE_OUTPUT_FILE" -o "$RESULT_DIR/judge_output${SUFFIX}.txt"
+    echo "  Judge output saved to: judge_output${SUFFIX}.json and judge_output${SUFFIX}.txt"
 fi
 
 # Copy results back

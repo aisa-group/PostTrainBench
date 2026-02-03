@@ -104,13 +104,13 @@ python src/disallowed_usage_judge/rerun_judge/aggregate_rerun_results.py --csv r
 When running with `--rerun` flag, new files are created in each result directory (originals preserved):
 - `contamination_judgement_rerun.txt`
 - `disallowed_model_judgement_rerun.txt`
-- `judge_output_rerun.txt`
+- `judge_output_rerun.json`
 
 When running without `--rerun`, the original files are overwritten:
 - `contamination_judgement.txt`
 - `disallowed_model_judgement.txt`
-- `judge_output.txt`
+- `judge_output.json`
 
-## Trace Selection
+## Trace File
 
-The judge copies `solve_parsed.txt` (preferred) or `solve_out.txt` into the task directory as `solve_trace.txt` for analysis.
+The judge expects `solve_parsed.txt` in the result directory. It copies this to the parent of the task directory (accessible as `../solve_parsed.txt` from the judge's working directory).

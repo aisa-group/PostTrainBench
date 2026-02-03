@@ -29,6 +29,8 @@ def main():
                         help="Print just paths (for piping)")
     parser.add_argument("--limit", type=int, default=0,
                         help="Limit number of results")
+    parser.add_argument("--latest-only", action="store_true",
+                        help="Only return latest run (highest cluster_id) per method/model/benchmark")
     args = parser.parse_args()
 
     result_dirs = get_result_dirs(
@@ -36,6 +38,7 @@ def main():
         benchmark_pattern=args.benchmark,
         skip_existing=args.missing_rerun,
         limit=args.limit,
+        latest_only=args.latest_only,
     )
 
     if args.count_only:
