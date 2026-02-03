@@ -1,6 +1,5 @@
 #!/bin/bash
 unset GEMINI_API_KEY
-unset KIMI_API_KEY
 unset CODEX_API_KEY
 
 export BASH_MAX_TIMEOUT_MS="36000000"

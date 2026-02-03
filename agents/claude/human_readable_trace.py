@@ -28,7 +28,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--width",
         type=int,
-        default=100,
+        default=0,
         help="Maximum line width for wrapping text blocks (0 to disable wrapping).",
     )
     parser.add_argument(
