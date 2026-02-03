@@ -1,41 +1,45 @@
+#!/usr/bin/env python3
+"""Generate the judge prompt with trace file reference."""
+
 import os
 import json
-
 import argparse
+from pathlib import Path
+
 
 def load_data_examples(benchmark_id: str) -> tuple[list, list]:
     """Load allowed/disallowed data examples from info.json for the given benchmark."""
-    info_file = f'src/eval/tasks/{benchmark_id}/info.json'
-    if os.path.exists(info_file):
+    repo_root = Path(__file__).parent.parent.parent
+    info_file = repo_root / 'src' / 'eval' / 'tasks' / benchmark_id / 'info.json'
+    if info_file.exists():
         with open(info_file, 'r') as f:
             info = json.load(f)
         return info.get('allowed_data_examples', []), info.get('disallowed_data_examples', [])
     return [], []
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--benchmark-id", type=str, required=True)
-    parser.add_argument("--model", type=str, required=True)
-    args = parser.parse_args()
 
+def get_benchmark_name(benchmark_id: str) -> str:
+    """Get human-readable benchmark name from info.json."""
+    repo_root = Path(__file__).parent.parent.parent
+    info_file = repo_root / 'src' / 'eval' / 'tasks' / benchmark_id / 'info.json'
+    with open(info_file, 'r') as f:
+        return json.load(f)['benchmark']
+
+
+def generate_prompt(benchmark: str, model: str, benchmark_id: str = None) -> str:
+    """Generate the judge prompt with the given benchmark and model."""
     base_prompt = os.environ.get('POST_TRAIN_BENCH_PROMPT', 'prompt')
     if "mock" in base_prompt:
-        print("Just do nothing and return.")
-        return
+        return "Just do nothing and return."
 
-    with open('src/disallowed_usage_judge/prompt.txt', 'r') as f:
-        prompt = f.read()
+    prompt_path = Path(__file__).parent / "prompt.txt"
+    prompt = prompt_path.read_text()
 
-    prompt = prompt.replace("{model}", args.model)
-
-    with open(f'src/eval/tasks/{args.benchmark_id}/info.json', 'r') as f:
-        bm = json.load(f)['benchmark']
-
-    prompt = prompt.replace("{benchmark}", bm)
+    prompt = prompt.replace("{model}", model)
+    prompt = prompt.replace("{benchmark}", benchmark)
 
     allowed_data_examples = ""
     disallowed_data_examples = ""
-    benchmark_id = args.benchmark_id
     if benchmark_id:
         allowed, disallowed = load_data_examples(benchmark_id)
         if allowed:
@@ -46,11 +50,21 @@ def main():
             disallowed_data_examples = "\nExamples of disallowed data (not exhaustive):\n"
             for data in disallowed:
                 disallowed_data_examples += f"- {data}\n"
-
     prompt = prompt.replace("{allowed_data_examples}", allowed_data_examples)
     prompt = prompt.replace("{disallowed_data_examples}", disallowed_data_examples)
 
-    print(prompt)
+    return prompt
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Generate judge prompt with trace reference")
+    parser.add_argument("--benchmark-id", type=str, required=True, help="Benchmark ID (folder name)")
+    parser.add_argument("--model", type=str, required=True, help="Model name")
+    args = parser.parse_args()
+
+    benchmark_name = get_benchmark_name(args.benchmark_id)
+    print(generate_prompt(benchmark_name, args.model, args.benchmark_id))
+
 
 if __name__ == "__main__":
     main()

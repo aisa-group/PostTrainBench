@@ -1,22 +1,42 @@
 # Rerun Judge Pipeline
 
-Reruns the disallowed usage judge with the trace file included in the prompt. The judge is instructed to analyze `solve_trace.txt` by starting from the end and tracing back where `final_model` comes from.
+Reruns the disallowed usage judge on existing result directories. The judge analyzes `solve_trace.txt` by starting from the end and tracing back where `final_model` comes from.
+
+## Architecture
+
+The rerun functionality is integrated into the main judge:
+- `../prompt.txt` contains trace analysis instructions
+- `../get_judge_prompt.py` generates prompts with trace support
+- `../run_judge.sh` is the unified script for running/rerunning the judge
+
+This directory contains orchestration scripts for batch reruns.
 
 ## Files
 
 | File | Description |
 |------|-------------|
-| `prompt_with_trace.txt` | Judge prompt template with trace analysis instructions |
 | `utils.py` | Shared utilities for directory listing and parsing |
-| `get_judge_prompt_with_trace.py` | Generate the full prompt |
 | `list_results.py` | List and filter result directories |
 | `aggregate_rerun_results.py` | Aggregate and compare results |
-| `rerun_single.sh` | Run judge on a single result directory |
+| `rerun_single.sh` | Run judge on a single result directory (wrapper for `run_judge.sh --rerun`) |
 | `rerun_all.sh` | Run judge on all directories (local) |
 | `commit_rerun_judge.sh` | Submit HTCondor jobs |
 | `rerun_judge.sub` | HTCondor submission file |
 
 ## Usage
+
+### Run judge on a single directory
+
+```bash
+# Run judge (overwrites existing judgements)
+bash src/disallowed_usage_judge/run_judge.sh /path/to/result_dir
+
+# Rerun judge (saves with _rerun suffix, preserves originals)
+bash src/disallowed_usage_judge/run_judge.sh --rerun /path/to/result_dir
+
+# Or use the wrapper script
+bash src/disallowed_usage_judge/rerun_judge/rerun_single.sh /path/to/result_dir
+```
 
 ### Submit HTCondor jobs
 
@@ -40,9 +60,6 @@ Reruns the disallowed usage judge with the trace file included in the prompt. Th
 ### Run locally
 
 ```bash
-# Run on a single directory
-./src/disallowed_usage_judge/rerun_judge/rerun_single.sh /path/to/result_dir
-
 # Run on all directories sequentially
 ./src/disallowed_usage_judge/rerun_judge/rerun_all.sh
 
@@ -84,10 +101,16 @@ python src/disallowed_usage_judge/rerun_judge/aggregate_rerun_results.py --csv r
 
 ## Output Files
 
-New files created in each result directory (originals preserved):
+When running with `--rerun` flag, new files are created in each result directory (originals preserved):
 - `contamination_judgement_rerun.txt`
 - `disallowed_model_judgement_rerun.txt`
+- `judge_output_rerun.txt`
+
+When running without `--rerun`, the original files are overwritten:
+- `contamination_judgement.txt`
+- `disallowed_model_judgement.txt`
+- `judge_output.txt`
 
 ## Trace Selection
 
-The pipeline copies `solve_parsed.txt` (preferred) or `solve_out.txt` into the task directory as `solve_trace.txt` for the judge to analyze.
+The judge copies `solve_parsed.txt` (preferred) or `solve_out.txt` into the task directory as `solve_trace.txt` for analysis.
