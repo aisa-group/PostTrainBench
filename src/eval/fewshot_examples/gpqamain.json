@@ -1,0 +1,40 @@
+{
+  "benchmark": "gpqamain",
+  "description": "Few-shot examples for GPQA Main (graduate-level science questions)",
+  "format": "multiple_choice",
+  "examples": [
+    {
+      "question": "A longest wavelength of light that can be used to ionize a hydrogen atom in its ground state is approximately:",
+      "choices": [
+        "91.2 nm",
+        "121.6 nm",
+        "364.7 nm",
+        "656.3 nm"
+      ],
+      "reasoning": "To ionize a hydrogen atom from its ground state (n=1), we need to provide energy equal to the ionization energy, which is 13.6 eV. The relationship between energy and wavelength is E = hc/λ, so λ = hc/E. Using h = 6.626 × 10^-34 J·s, c = 3 × 10^8 m/s, and E = 13.6 eV = 2.18 × 10^-18 J, we get λ = (6.626 × 10^-34 × 3 × 10^8) / (2.18 × 10^-18) = 91.2 nm. This is the longest wavelength (lowest energy) photon that can ionize hydrogen from the ground state.",
+      "answer": "A"
+    },
+    {
+      "question": "In organic chemistry, which of the following reactions would be expected to proceed with retention of stereochemistry at the carbon center undergoing substitution?",
+      "choices": [
+        "SN2 reaction at a chiral center",
+        "SN1 reaction at a chiral center",
+        "SNi reaction (internal nucleophilic substitution)",
+        "E2 elimination"
+      ],
+      "reasoning": "Let's analyze each option: SN2 reactions proceed with inversion of configuration (Walden inversion) due to backside attack. SN1 reactions go through a planar carbocation intermediate, leading to racemization. E2 eliminations don't involve substitution at a chiral center. SNi (internal nucleophilic substitution) reactions, such as the reaction of alcohols with thionyl chloride, proceed with retention of configuration because the nucleophile attacks from the same side as the leaving group through an intimate ion pair mechanism.",
+      "answer": "C"
+    },
+    {
+      "question": "A particle of mass m is confined to a one-dimensional box of length L. What is the probability of finding the particle in the middle third of the box when it is in the first excited state (n=2)?",
+      "choices": [
+        "1/3",
+        "1/3 - 1/(2π)",
+        "1/3 + √3/(2π)",
+        "0.20"
+      ],
+      "reasoning": "For a particle in a 1D box, the wavefunction for state n is ψ_n(x) = √(2/L) sin(nπx/L). For n=2, ψ_2(x) = √(2/L) sin(2πx/L). The probability density is |ψ_2|² = (2/L) sin²(2πx/L). To find the probability in the middle third (L/3 to 2L/3), we integrate: P = ∫(L/3 to 2L/3) (2/L) sin²(2πx/L) dx. Using the identity sin²θ = (1-cos2θ)/2 and evaluating the integral: P = (1/L)[x - (L/4π)sin(4πx/L)] from L/3 to 2L/3 = 1/3 + √3/(2π) ≈ 0.61.",
+      "answer": "C"
+    }
+  ]
+}

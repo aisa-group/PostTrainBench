@@ -731,6 +731,12 @@ def main():
         action='store_true',
         help="Store model answers and judgments to disk (default: off).",
     )
+    parser.add_argument(
+        '--epochs',
+        type=int,
+        default=1,
+        help="Ignored for this benchmark (kept for compatibility with run_baseline.sh).",
+    )
     args = parser.parse_args()
 
     model_alias = _model_alias(args.model_path)

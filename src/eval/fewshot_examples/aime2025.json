@@ -1,0 +1,21 @@
+{
+  "benchmark": "aime2025",
+  "description": "Few-shot examples from AIME 2024 for evaluating base models on AIME 2025",
+  "examples": [
+    {
+      "problem": "Every morning Aya goes for a 9-kilometer-long walk and stops at a coffee shop afterwards. When she walks at a constant speed of $s$ kilometers per hour, the walk takes her 4 hours, including $t$ minutes spent in the coffee shop. When she walks $s+2$ kilometers per hour, the walk takes her 2 hours and 24 minutes, including $t$ minutes spent in the coffee shop. Suppose Aya walks at $s+\\frac{1}{2}$ kilometers per hour. Find the number of minutes the walk takes her, including the $t$ minutes spent in the coffee shop.",
+      "reasoning": "Let me set up equations based on the given information.\n\nWhen walking at speed $s$ km/h:\n- Walking time = 9/s hours\n- Total time = 4 hours = 240 minutes\n- So: 9/s hours + t minutes = 240 minutes\n- Converting: 540/s + t = 240\n\nWhen walking at speed $s+2$ km/h:\n- Walking time = 9/(s+2) hours\n- Total time = 2 hours 24 minutes = 144 minutes\n- So: 9/(s+2) hours + t minutes = 144 minutes\n- Converting: 540/(s+2) + t = 144\n\nSubtracting the second equation from the first:\n540/s - 540/(s+2) = 240 - 144 = 96\n\n540(s+2) - 540s = 96s(s+2)\n540s + 1080 - 540s = 96s^2 + 192s\n1080 = 96s^2 + 192s\n96s^2 + 192s - 1080 = 0\ns^2 + 2s - 11.25 = 0\n\nUsing the quadratic formula:\ns = (-2 + sqrt(4 + 45))/2 = (-2 + 7)/2 = 2.5\n\nSo s = 2.5 km/h.\n\nFrom 540/s + t = 240:\n540/2.5 + t = 240\n216 + t = 240\nt = 24 minutes\n\nNow for s + 1/2 = 2.5 + 0.5 = 3 km/h:\nWalking time = 9/3 = 3 hours = 180 minutes\nTotal time = 180 + 24 = 204 minutes",
+      "answer": "204"
+    },
+    {
+      "problem": "There exist real numbers $x$ and $y$, both greater than 1, such that $\\log_x(y^x) = \\log_y(x^{4y}) = 10$. Find $xy$.",
+      "reasoning": "From $\\log_x(y^x) = 10$:\n$y^x = x^{10}$\nTaking log base x: $x \\log_x(y) = 10$\nSo $\\log_x(y) = 10/x$\n\nFrom $\\log_y(x^{4y}) = 10$:\n$x^{4y} = y^{10}$\nTaking log base y: $4y \\log_y(x) = 10$\nSo $\\log_y(x) = 10/(4y) = 5/(2y)$\n\nWe know that $\\log_x(y) \\cdot \\log_y(x) = 1$ (change of base identity).\n\nSo: $(10/x) \\cdot (5/(2y)) = 1$\n$50/(2xy) = 1$\n$xy = 25$",
+      "answer": "25"
+    },
+    {
+      "problem": "Alice and Bob play the following game. A stack of $n$ tokens lies before them. The players take turns with Alice going first. On each turn, the player removes either 1 token or 4 tokens from the stack. Whoever removes the last token wins. Find the number of positive integers $n$ less than or equal to 2024 for which there exists a strategy for Bob that guarantees that Bob will win the game regardless of Alice's play.",
+      "reasoning": "Let's analyze small cases to find a pattern. A position is losing (L) for the player to move if all moves lead to winning positions for the opponent.\n\nn=1: Alice takes 1, wins. L for Bob perspective means W for Alice. So n=1 is W (Alice wins).\nn=2: Alice takes 1, leaves 1 for Bob who wins. Alice takes 4? Can't. So n=2 is L (Bob wins).\nn=3: Alice takes 1, leaves 2 (L), Bob loses. So n=3 is W (Alice wins).\nn=4: Alice takes 4, wins. So n=4 is W (Alice wins).\nn=5: Alice takes 1 -> 4(W) or takes 4 -> 1(W). Both give Bob a W. So n=5 is L (Bob wins).\nn=6: Alice takes 1 -> 5(L), Alice wins. So n=6 is W.\nn=7: Alice takes 1 -> 6(W) or takes 4 -> 3(W). So n=7 is L (Bob wins).\n\nPattern: Bob wins when n = 2, 5, 7, and checking further: 2, 5, 7, 10, 12, 15, 17, ...\nThe pattern repeats with period 5: positions 2, 5 (mod 5) give 0, 2 (mod 5) after adjustment.\n\nActually, the losing positions for Alice (winning for Bob) follow: n ≡ 0, 2 (mod 5) for n >= 2.\n\nWait, let me recheck: n=2 gives 2 mod 5 = 2. n=5 gives 5 mod 5 = 0. n=7 gives 7 mod 5 = 2. n=10 gives 0.\n\nSo Bob wins when n ≡ 0 or 2 (mod 5).\n\nCount from 1 to 2024:\n- n ≡ 0 (mod 5): 5, 10, 15, ..., 2020. Count = 2020/5 = 404\n- n ≡ 2 (mod 5): 2, 7, 12, ..., 2022. Count = (2022-2)/5 + 1 = 405\n\nTotal = 404 + 405 = 809",
+      "answer": "809"
+    }
+  ]
+}

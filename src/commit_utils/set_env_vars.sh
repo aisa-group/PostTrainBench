@@ -1,4 +1,5 @@
 export HF_HOME_NEW="/home/ben/hf_cache"
+source /etc/profile.d/modules.sh
 
 # Helper function: sets variable to default if unset or "UNDEFINED"
 set_default() {

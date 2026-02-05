@@ -10,6 +10,7 @@ Based on: https://github.com/UKGovernmentBEIS/inspect_evals/blob/main/src/inspec
 """
 from __future__ import annotations
 import os
+import sys
 
 from typing import Any
 
@@ -19,10 +20,14 @@ import json
 from inspect_ai import Task, task
 from inspect_ai.dataset import Sample, hf_dataset
 from inspect_ai.scorer import choice
-from inspect_ai.solver import multiple_choice
+from inspect_ai.solver import multiple_choice, system_message
 from inspect_ai.log._log import EvalLog, EvalMetric, EvalSample
 from inspect_ai import eval as inspect_eval  # type: ignore  # noqa: E402
 from inspect_ai.util._display import init_display_type  # noqa: E402
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+from utils.fewshot_loader import is_base_model, get_fewshot_prompt, should_use_fewshot
 
 DEFAULT_EPOCHS = 1
 
@@ -68,7 +73,74 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=6,
     )
+    # Sampling parameters (Qwen recommends: temperature=0.6, top_p=0.95, top_k=20)
+    parser.add_argument(
+        '--temperature',
+        type=float,
+        default=0.6,
+        help="Sampling temperature (default: 0.6)",
+    )
+    parser.add_argument(
+        '--top-p',
+        type=float,
+        default=0.95,
+        help="Top-p (nucleus) sampling (default: 0.95)",
+    )
+    parser.add_argument(
+        '--top-k',
+        type=int,
+        default=20,
+        help="Top-k sampling (default: 20)",
+    )
+    parser.add_argument(
+        '--epochs',
+        type=int,
+        default=1,
+        help="Number of times to run each sample (default: 1)",
+    )
+    parser.add_argument(
+        '--fewshot',
+        type=str,
+        choices=['auto', 'always', 'never'],
+        default='auto',
+        help="Few-shot mode: 'auto' (base models only), 'always', or 'never'",
+    )
+    parser.add_argument(
+        '--num-fewshot',
+        type=int,
+        default=None,
+        help="Number of few-shot examples to use (default: all available)",
+    )
     return parser.parse_args()
+
+
+def create_fewshot_task(epochs: int = DEFAULT_EPOCHS, num_examples: int = None) -> Task:
+    original_task = gpqa_main(epochs=epochs)
+
+    fewshot_prompt = get_fewshot_prompt("gpqamain", num_examples)
+
+    if not fewshot_prompt:
+        return original_task
+
+    fewshot_system_msg = (
+        "Here are some example questions and solutions to help you understand the expected format:\n"
+        f"{fewshot_prompt}\n"
+        "Now answer the following question using the same step-by-step reasoning approach. "
+        "Think through the problem carefully before selecting your answer."
+    )
+
+    # Handle solver being either a list or a callable
+    if callable(original_task.solver):
+        solver = [system_message(fewshot_system_msg), original_task.solver]
+    else:
+        solver = [system_message(fewshot_system_msg)] + list(original_task.solver)
+
+    return Task(
+        dataset=original_task.dataset,
+        solver=solver,
+        scorer=original_task.scorer,
+        epochs=original_task.epochs,
+    )
 
 
 def main() -> None:
@@ -80,11 +152,23 @@ def main() -> None:
     if (args.limit is not None) and (args.limit != -1):
         other_kwargs["limit"] = args.limit
 
-    task = gpqa_main()
+    # Determine whether to use few-shot
+    use_fewshot = should_use_fewshot(args.fewshot, args.model_path)
+
+    if use_fewshot:
+        print(f"Using few-shot examples for base model: {args.model_path}")
+        task = create_fewshot_task(epochs=args.epochs, num_examples=args.num_fewshot)
+    else:
+        print(f"Using zero-shot evaluation for model: {args.model_path}")
+        task = gpqa_main(epochs=args.epochs)
+
     model_args = {
         'gpu_memory_utilization': args.gpu_memory_utilization,
     }
     model_args.update(template_kwargs(args))
+
+    print(f"Sampling params: temperature={args.temperature}, top_p={args.top_p}, top_k={args.top_k}")
+    print(f"Epochs: {args.epochs}")
 
     eval_out = inspect_eval(
         task,
@@ -97,6 +181,10 @@ def main() -> None:
         log_format='json',
         max_tokens=args.max_tokens,
         max_connections=args.max_connections,
+        temperature=args.temperature,
+        top_p=args.top_p,
+        top_k=args.top_k,
+        epochs=args.epochs,
         **other_kwargs,
     )
 
@@ -110,8 +198,29 @@ def main() -> None:
         with open(args.json_output_file, 'w') as f:
             json.dump(metrics, f, indent=2)
 
+        # Save eval configuration info alongside metrics
+        result_dir = os.path.dirname(args.json_output_file)
+        eval_config_file = os.path.join(result_dir, 'eval_config.json')
+        eval_config = {
+            "benchmark": "gpqamain",
+            "model_path": args.model_path,
+            "is_base_model": is_base_model(args.model_path),
+            "fewshot_mode": args.fewshot,
+            "fewshot_used": use_fewshot,
+            "num_fewshot_examples": args.num_fewshot if args.num_fewshot else "all (3)",
+            "sampling": {
+                "temperature": args.temperature,
+                "top_p": args.top_p,
+                "top_k": args.top_k,
+            },
+            "epochs": args.epochs,
+        }
+        with open(eval_config_file, 'w') as f:
+            json.dump(eval_config, f, indent=2)
+        print(f"Eval config saved to: {eval_config_file}")
+
 @task
-def gpqa_main() -> Task:
+def gpqa_main(epochs: int = DEFAULT_EPOCHS) -> Task:
     return Task(
         dataset=hf_dataset(
             path='Idavidrein/gpqa',
@@ -124,7 +233,7 @@ def gpqa_main() -> Task:
             multiple_choice(cot=True),
         ],
         scorer=choice(),
-        epochs=DEFAULT_EPOCHS,
+        epochs=epochs,
     )
 
 
@@ -169,7 +278,12 @@ def model_type(args) -> str:
 def template_kwargs(args) -> dict:
     model_type_str = model_type(args)
     if model_type_str == 'qwen':
-        return {}
+        # Use simple template for Qwen base models (no chat tokens)
+        if is_base_model(args.model_path):
+            template = 'qwen_base.jinja'
+            print(f"Using qwen_base.jinja template for base model")
+        else:
+            return {}  # Use default HF template for instruct models
     elif model_type_str == 'llama':
         template = 'llama3.jinja'
     elif model_type_str == 'gemma':
