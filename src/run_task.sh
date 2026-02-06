@@ -107,6 +107,7 @@ solve_task() {
         --env GEMINI_API_KEY="${GEMINI_API_KEY}" \
         --env KIMI_API_KEY="${KIMI_API_KEY}" \
         --env OPENCODE_API_KEY="${OPENCODE_API_KEY}" \
+        --env DASHSCOPE_API_KEY="${DASHSCOPE_API_KEY}" \
         --env VLLM_API_KEY="inspectai" \
         --env PYTHONNOUSERSITE="1" \
         --env PROMPT="${PROMPT}" \

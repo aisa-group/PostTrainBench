@@ -139,7 +139,7 @@ def main():
     results_dir = get_results_dir()
 
     # Load baseline data
-    baseline_path = os.path.join(results_dir, "aggregated_baseline.csv")
+    baseline_path = os.path.join(results_dir, "aggregated_baseline_zeroshot.csv")
     baseline_data, _ = load_csv_as_dict(baseline_path)
 
     if not baseline_data:
@@ -156,7 +156,7 @@ def main():
                 continue
             method_name = filename[len("aggregated_") : -len(".csv")]
             # Skip baseline itself
-            if method_name != "baseline":
+            if method_name != "baseline_zeroshot":
                 method_names.append(method_name)
 
     # Process each method

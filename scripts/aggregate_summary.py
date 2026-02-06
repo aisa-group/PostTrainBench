@@ -117,7 +117,7 @@ def main():
     results_dir = get_results_dir()
 
     # Load baseline data
-    baseline_path = os.path.join(results_dir, "aggregated_baseline.csv")
+    baseline_path = os.path.join(results_dir, "aggregated_baseline_zeroshot.csv")
     baseline_data, baseline_benchmarks = load_csv_as_dict(baseline_path)
 
     if not baseline_data:
