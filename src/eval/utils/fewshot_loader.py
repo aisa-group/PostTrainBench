@@ -151,6 +151,69 @@ def format_mcq_fewshot_prompt(
     return "\n\n" + "-" * 50 + "\n\n".join(formatted_parts) + "\n\n" + "-" * 50 + "\n\n"
 
 
+def format_conversation_fewshot_prompt(
+    examples: List[Dict[str, Any]],
+    num_examples: Optional[int] = None
+) -> str:
+    """
+    Format few-shot examples for conversational tasks (HealthBench).
+
+    Args:
+        examples: List of example dicts with 'conversation' (list of messages) and 'response' keys
+        num_examples: Number of examples to include (None = all)
+
+    Returns:
+        Formatted string with few-shot examples
+    """
+    if num_examples is not None:
+        examples = examples[:num_examples]
+
+    formatted_parts = []
+
+    for i, ex in enumerate(examples, 1):
+        part = f"Example {i}:\n"
+
+        # Format conversation history
+        for msg in ex.get('conversation', []):
+            role = msg.get('role', 'user').capitalize()
+            content = msg.get('content', '')
+            part += f"{role}: {content}\n\n"
+
+        # Add the ideal response
+        part += f"Assistant: {ex['response']}"
+        formatted_parts.append(part)
+
+    return "\n\n" + "=" * 50 + "\n\n".join(formatted_parts) + "\n\n" + "=" * 50 + "\n\n"
+
+
+def format_writing_fewshot_prompt(
+    examples: List[Dict[str, Any]],
+    num_examples: Optional[int] = None
+) -> str:
+    """
+    Format few-shot examples for writing/reasoning tasks (ArenaHard).
+
+    Args:
+        examples: List of example dicts with 'prompt' and 'response' keys
+        num_examples: Number of examples to include (None = all)
+
+    Returns:
+        Formatted string with few-shot examples
+    """
+    if num_examples is not None:
+        examples = examples[:num_examples]
+
+    formatted_parts = []
+
+    for i, ex in enumerate(examples, 1):
+        part = f"Example {i}:\n"
+        part += f"User: {ex['prompt']}\n\n"
+        part += f"Assistant: {ex['response']}"
+        formatted_parts.append(part)
+
+    return "\n\n" + "=" * 50 + "\n\n".join(formatted_parts) + "\n\n" + "=" * 50 + "\n\n"
+
+
 def get_fewshot_prompt(
     benchmark: str,
     num_examples: Optional[int] = None
@@ -177,6 +240,10 @@ def get_fewshot_prompt(
         return format_math_fewshot_prompt(examples, num_examples)
     elif format_type == "multiple_choice":
         return format_mcq_fewshot_prompt(examples, num_examples)
+    elif format_type == "conversation":
+        return format_conversation_fewshot_prompt(examples, num_examples)
+    elif format_type == "writing":
+        return format_writing_fewshot_prompt(examples, num_examples)
     else:
         # Default to math reasoning format
         return format_math_fewshot_prompt(examples, num_examples)

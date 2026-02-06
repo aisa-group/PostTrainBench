@@ -1,5 +1,6 @@
 # IMPORTANT: You are NOT allowed to use the OpenAI API for anything but this evaluation script.
 import os
+import sys
 
 import argparse
 import atexit
@@ -28,6 +29,10 @@ from evaluation_code.utils.completion import (
 )
 from evaluation_code.utils.judge_utils import JUDGE_SETTINGS
 from evaluation_code.show_result import load_judgments, print_leaderboard
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+from utils.fewshot_loader import is_base_model, get_fewshot_prompt, should_use_fewshot
 
 
 API_MAX_RETRY = 3
@@ -309,8 +314,12 @@ def _make_metadata(answer: str) -> Dict:
     return metadata
 
 
-def generate_answers(args) -> tuple:
+def generate_answers(args, fewshot_system_msg: Optional[str] = None) -> tuple:
     """Generate answers and optionally save to disk.
+
+    Args:
+        args: Command-line arguments
+        fewshot_system_msg: Optional system message with few-shot examples
 
     Returns:
         Tuple of (output_path or None, dict mapping uid to answer record)
@@ -322,6 +331,8 @@ def generate_answers(args) -> tuple:
     questions = get_questions(args)
     server = VLLMServer(args, args.model_path)
     print(f"[generate] Starting vLLM server for model {args.model_path}.")
+    if fewshot_system_msg:
+        print(f"[generate] Using few-shot examples in system message")
 
     answers_dict: Dict[str, Dict] = {}
 
@@ -334,12 +345,18 @@ def generate_answers(args) -> tuple:
             session.headers["Authorization"] = f"Bearer {vllm_api_key}"
 
         for question in tqdm(questions, desc="Generating answers"):
+            # Build messages list
+            messages = []
+            if fewshot_system_msg:
+                messages.append({"role": "system", "content": fewshot_system_msg})
+            messages.append({"role": "user", "content": question["prompt"]})
+
             payload = {
                 "model": args.model_path,
-                "messages": [
-                    {"role": "user", "content": question["prompt"]},
-                ],
+                "messages": messages,
                 "max_tokens": args.max_new_tokens,
+                "temperature": args.temperature,
+                "top_p": args.top_p,
             }
 
             answer_text: Optional[str] = None
@@ -732,15 +749,58 @@ def main():
         help="Store model answers and judgments to disk (default: off).",
     )
     parser.add_argument(
+        '--temperature',
+        type=float,
+        default=0.6,
+        help="Sampling temperature (default: 0.6)",
+    )
+    parser.add_argument(
+        '--top-p',
+        type=float,
+        default=0.95,
+        help="Top-p sampling (default: 0.95)",
+    )
+    parser.add_argument(
         '--epochs',
         type=int,
         default=1,
         help="Ignored for this benchmark (kept for compatibility with run_baseline.sh).",
     )
+    parser.add_argument(
+        '--fewshot',
+        type=str,
+        choices=['auto', 'always', 'never'],
+        default='auto',
+        help="Few-shot mode: 'auto' (base models only), 'always', or 'never'",
+    )
+    parser.add_argument(
+        '--num-fewshot',
+        type=int,
+        default=None,
+        help="Number of few-shot examples to use (default: all available)",
+    )
     args = parser.parse_args()
 
     model_alias = _model_alias(args.model_path)
     args.model_alias = model_alias
+
+    # Determine whether to use few-shot
+    use_fewshot = should_use_fewshot(args.fewshot, args.model_path)
+    fewshot_system_msg = None
+
+    if use_fewshot:
+        fewshot_prompt = get_fewshot_prompt("arenahardwriting", args.num_fewshot)
+        if fewshot_prompt:
+            print(f"[fewshot] Using few-shot examples for model: {args.model_path}")
+            fewshot_system_msg = (
+                "Here are some examples of high-quality responses to various prompts:\n"
+                f"{fewshot_prompt}\n"
+                "Please provide thoughtful, well-structured, and comprehensive responses to the user's requests."
+            )
+        else:
+            print(f"[fewshot] No few-shot examples found for arenahardwriting")
+    else:
+        print(f"[fewshot] Using zero-shot evaluation for model: {args.model_path}")
 
     candidate_answers = None
 
@@ -755,13 +815,13 @@ def main():
                     candidate_answers[record["uid"]] = record
         else:
             print(f"[skip] File {ans_path} not found, generating answers instead")
-            ans_path, candidate_answers = generate_answers(args)
+            ans_path, candidate_answers = generate_answers(args, fewshot_system_msg)
             if ans_path:
                 print(f"[done] Answers saved to {ans_path}")
             else:
                 print("[done] Answers generated (not saved to disk)")
     else:
-        ans_path, candidate_answers = generate_answers(args)
+        ans_path, candidate_answers = generate_answers(args, fewshot_system_msg)
         if ans_path:
             print(f"[done] Answers saved to {ans_path}")
         else:
@@ -779,9 +839,29 @@ def main():
         with open(args.json_output_file, "w", encoding="utf-8") as metrics_file:
             json.dump(metrics, metrics_file, indent=2)
         print(f"[done] Metrics saved to {args.json_output_file}")
+
+        # Save eval configuration info alongside metrics
+        result_dir = os.path.dirname(args.json_output_file)
+        eval_config_file = os.path.join(result_dir, 'eval_config.json')
+        eval_config = {
+            "benchmark": "arenahardwriting",
+            "model_path": args.model_path,
+            "is_base_model": is_base_model(args.model_path),
+            "fewshot_mode": args.fewshot,
+            "fewshot_used": use_fewshot,
+            "num_fewshot_examples": args.num_fewshot if args.num_fewshot else "all (3)",
+            "max_new_tokens": args.max_new_tokens,
+            "temperature": args.temperature,
+            "top_p": args.top_p,
+            "limit": args.limit,
+        }
+        with open(eval_config_file, 'w') as f:
+            json.dump(eval_config, f, indent=2)
+        print(f"[done] Eval config saved to: {eval_config_file}")
+
     if metrics is None:
         print("Failed to compute metrics.")
-    
+
     print("Score (winrate) is:", metrics['accuracy'])
 
 def model_type(args) -> str:

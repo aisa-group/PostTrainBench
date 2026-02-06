@@ -32,6 +32,11 @@ from evaluation_code.grader import grade_examples_parallel, ExampleResult
 from evaluation_code.scoring import aggregate_scores, BenchmarkResult
 from evaluation_code.text_utils import limit_repetitions
 
+# Add parent directory to path for imports
+import sys
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+from utils.fewshot_loader import is_base_model, get_fewshot_prompt, should_use_fewshot
+
 
 # Constants
 API_MAX_RETRY = 3
@@ -188,11 +193,14 @@ def template_args(args) -> list:
 
 def generate_answers(
     args,
-    examples: List[HealthBenchExample]
+    examples: List[HealthBenchExample],
+    fewshot_system_msg: Optional[str] = None
 ) -> List[str]:
     """Generate model responses for all examples."""
     server = VLLMServer(args, args.model_path)
     print(f"[generate] Starting vLLM server for model {args.model_path}")
+    if fewshot_system_msg:
+        print(f"[generate] Using few-shot examples in system message")
 
     try:
         port = server.start()
@@ -208,11 +216,17 @@ def generate_answers(
         for example in tqdm(examples, desc="Generating answers"):
             # Build messages from conversation
             messages = example.conversation.copy()
-            
+
+            # Prepend few-shot system message if provided
+            if fewshot_system_msg:
+                messages = [{"role": "system", "content": fewshot_system_msg}] + messages
+
             payload = {
                 "model": args.model_path,
                 "messages": messages,
                 "max_tokens": args.max_new_tokens,
+                "temperature": args.temperature,
+                "top_p": args.top_p,
             }
 
             answer_text: Optional[str] = None
@@ -310,6 +324,37 @@ def main():
         action='store_true',
         help="Store model answers to disk (default: off)."
     )
+    parser.add_argument(
+        '--temperature',
+        type=float,
+        default=0.6,
+        help="Sampling temperature (default: 0.6)",
+    )
+    parser.add_argument(
+        '--top-p',
+        type=float,
+        default=0.95,
+        help="Top-p sampling (default: 0.95)",
+    )
+    parser.add_argument(
+        '--epochs',
+        type=int,
+        default=1,
+        help="Ignored for this benchmark (kept for compatibility with run_baseline.sh).",
+    )
+    parser.add_argument(
+        '--fewshot',
+        type=str,
+        choices=['auto', 'always', 'never'],
+        default='auto',
+        help="Few-shot mode: 'auto' (base models only), 'always', or 'never'",
+    )
+    parser.add_argument(
+        '--num-fewshot',
+        type=int,
+        default=None,
+        help="Number of few-shot examples to use (default: all available)",
+    )
     args = parser.parse_args()
 
     model_alias = _model_alias(args.model_path)
@@ -326,8 +371,27 @@ def main():
     if args.limit != -1:
         examples = examples[: args.limit]
 
+    # Determine whether to use few-shot
+    use_fewshot = should_use_fewshot(args.fewshot, args.model_path)
+    fewshot_system_msg = None
+
+    if use_fewshot:
+        fewshot_prompt = get_fewshot_prompt("healthbench", args.num_fewshot)
+        if fewshot_prompt:
+            print(f"[fewshot] Using few-shot examples for model: {args.model_path}")
+            fewshot_system_msg = (
+                "Here are some examples of high-quality medical conversations:\n"
+                f"{fewshot_prompt}\n"
+                "Please provide helpful, accurate, and empathetic responses to health-related questions. "
+                "Be thorough but concise, and always recommend consulting a healthcare professional for serious concerns."
+            )
+        else:
+            print(f"[fewshot] No few-shot examples found for healthbench")
+    else:
+        print(f"[fewshot] Using zero-shot evaluation for model: {args.model_path}")
+
     # Generate answers
-    responses = generate_answers(args, examples)
+    responses = generate_answers(args, examples, fewshot_system_msg)
     print(f"[generate] Generated {len(responses)} responses")
 
     # Save model outputs if requested
@@ -391,6 +455,25 @@ def main():
         with open(args.json_output_file, "w", encoding="utf-8") as f:
             json.dump(metrics, f, indent=2)
         print(f"\n[done] Metrics saved to {args.json_output_file}")
+
+        # Save eval configuration info alongside metrics
+        result_dir = os.path.dirname(args.json_output_file)
+        eval_config_file = os.path.join(result_dir, 'eval_config.json')
+        eval_config = {
+            "benchmark": "healthbench",
+            "model_path": args.model_path,
+            "is_base_model": is_base_model(args.model_path),
+            "fewshot_mode": args.fewshot,
+            "fewshot_used": use_fewshot,
+            "num_fewshot_examples": args.num_fewshot if args.num_fewshot else "all (3)",
+            "max_new_tokens": args.max_new_tokens,
+            "temperature": args.temperature,
+            "top_p": args.top_p,
+            "limit": args.limit,
+        }
+        with open(eval_config_file, 'w') as f:
+            json.dump(eval_config, f, indent=2)
+        print(f"Eval config saved to: {eval_config_file}")
 
 
 if __name__ == "__main__":

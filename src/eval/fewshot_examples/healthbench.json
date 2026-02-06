@@ -1,0 +1,34 @@
+{
+  "benchmark": "healthbench",
+  "description": "Few-shot examples for HealthBench medical conversation tasks",
+  "format": "conversation",
+  "examples": [
+    {
+      "conversation": [
+        {
+          "role": "user",
+          "content": "I've been having headaches almost every day for the past two weeks. They're usually in the front of my head and feel like pressure. I work at a computer all day. Should I be worried?"
+        }
+      ],
+      "response": "Daily headaches lasting two weeks deserve attention, though your description suggests tension-type headaches, which are common and usually not dangerous.\n\n**Likely contributing factors based on your situation:**\n- Extended computer use causing eye strain\n- Poor posture leading to neck and shoulder tension\n- Screen glare or improper monitor positioning\n- Possibly inadequate hydration or irregular meals\n\n**Self-care measures to try:**\n1. Take regular breaks from the screen (20-20-20 rule: every 20 minutes, look at something 20 feet away for 20 seconds)\n2. Ensure proper ergonomic setup - monitor at eye level, arms at 90 degrees\n3. Stay well-hydrated throughout the day\n4. Consider over-the-counter pain relievers like ibuprofen or acetaminophen for relief\n\n**When to see a doctor:**\n- If headaches persist despite these changes\n- If you experience vision changes, nausea, or fever\n- If the pain is severe or different from your usual headaches\n- If headaches wake you from sleep\n\nWould you like more specific guidance on ergonomic adjustments or when to seek medical evaluation?"
+    },
+    {
+      "conversation": [
+        {
+          "role": "user",
+          "content": "My doctor prescribed metformin for my type 2 diabetes. What should I know about this medication?"
+        }
+      ],
+      "response": "Metformin is an excellent first-line medication for type 2 diabetes. Here's what you should know:\n\n**How it works:**\nMetformin reduces glucose production by your liver and improves your body's sensitivity to insulin. It doesn't cause low blood sugar on its own.\n\n**Taking metformin:**\n- Take with food to reduce stomach upset\n- Start with a low dose; your doctor may gradually increase it\n- Extended-release versions can further reduce GI side effects\n- Take at the same time(s) daily for best results\n\n**Common side effects (usually temporary):**\n- Nausea, diarrhea, or stomach upset (most common initially)\n- Metallic taste in mouth\n- These often improve after a few weeks\n\n**Important precautions:**\n- Stay well-hydrated, especially in hot weather or during illness\n- Inform doctors before any procedure requiring contrast dye\n- Avoid excessive alcohol\n- Report any unusual muscle pain or weakness\n\n**Benefits beyond blood sugar:**\n- Generally weight-neutral or may help with modest weight loss\n- May have cardiovascular benefits\n- Low risk of hypoglycemia when used alone\n\n**Monitoring:**\nYour doctor will check your kidney function periodically and monitor your HbA1c to assess blood sugar control.\n\nDo you have questions about any specific aspect of taking metformin?"
+    },
+    {
+      "conversation": [
+        {
+          "role": "user",
+          "content": "I'm 35 weeks pregnant and noticed some swelling in my ankles and feet. Is this normal?"
+        }
+      ],
+      "response": "Mild ankle and foot swelling is very common in late pregnancy, affecting about 75% of pregnant women, especially in the third trimester. However, it's important to distinguish normal swelling from warning signs.\n\n**Normal pregnancy swelling:**\n- Gradual onset over days/weeks\n- Worse at the end of the day or after standing\n- Improves with rest and elevation\n- Affects both feet/ankles similarly\n- No other concerning symptoms\n\n**Ways to manage normal swelling:**\n- Elevate your feet when resting\n- Avoid standing for long periods\n- Stay hydrated (this actually helps reduce swelling)\n- Wear comfortable, supportive shoes\n- Sleep on your left side to improve circulation\n- Gentle walking can help with fluid movement\n\n**Contact your healthcare provider promptly if you notice:**\n- Sudden or severe swelling (especially in face or hands)\n- Swelling in only one leg (could indicate blood clot)\n- Headaches, vision changes, or upper abdominal pain\n- Swelling accompanied by high blood pressure readings\n- Significantly reduced urine output\n\nThese could be signs of preeclampsia, which requires immediate medical attention.\n\n**At your next prenatal visit:**\nMention the swelling so your provider can check your blood pressure and urine protein, which are routine screenings for preeclampsia.\n\nIs the swelling you're experiencing gradual and in both feet, or do you have any of the warning signs I mentioned?"
+    }
+  ]
+}

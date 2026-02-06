@@ -7,25 +7,26 @@ models=(
     # "HuggingFaceTB/SmolLM3-3B"
     # 
     # base models
-    "google/gemma-3-4b-pt"
+    # "google/gemma-3-4b-pt"
     # "Qwen/Qwen3-4B-Base"
     # "Qwen/Qwen3-1.7B-Base"
-    # "HuggingFaceTB/SmolLM3-3B-Base"
+    "HuggingFaceTB/SmolLM3-3B-Base"
 )
 
 evals=(
-    "aime2025"
+    # "aime2025"
     # "arenahardwriting"
     # "bfcl"
     # "gpqamain"
-    # "gsm8k"
+    "gsm8k"
     # "humaneval"
+    # "healthbench"
 )
 
 for model in "${models[@]}"; do
     for eval in "${evals[@]}"; do
         echo $model on $eval
-        condor_submit_bid 50 -a "eval=$eval" -a "model=$model" -a "epochs=10" src/commit_utils/baselines/baseline_cluster.sub 
+        condor_submit_bid 500 -a "eval=$eval" -a "model=$model" -a "epochs=10" src/commit_utils/baselines/baseline_cluster.sub 
         # sleep 30
     done
 done
