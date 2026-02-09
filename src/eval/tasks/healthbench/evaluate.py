@@ -173,7 +173,7 @@ def template_args(args) -> list:
     """Get vLLM template arguments based on model type."""
     model_type_str = model_type(args)
     if model_type_str == 'qwen':
-        return []
+        template = 'qwen3.jinja'
     elif model_type_str == 'llama':
         template = 'llama3.jinja'
     elif model_type_str == 'gemma':
