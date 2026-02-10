@@ -18,7 +18,6 @@ API_KEY_ENV_VARS = [
     "OPENAI_API_KEY",
     "ANTHROPIC_API_KEY",
     "GEMINI_API_KEY",
-    "KIMI_API_KEY",
     "MY_HF_TOKEN"
 ]
 

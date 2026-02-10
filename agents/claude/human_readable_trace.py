@@ -28,7 +28,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--width",
         type=int,
-        default=100,
+        default=0,
         help="Maximum line width for wrapping text blocks (0 to disable wrapping).",
     )
     parser.add_argument(
@@ -43,7 +43,7 @@ def pretty_format_json(obj: Any, indent_level: int = 0) -> str:
     """Format JSON with actual newlines preserved in strings."""
     indent_str = "  " * indent_level
     next_indent = "  " * (indent_level + 1)
-    
+
     if isinstance(obj, dict):
         if not obj:
             return "{}"
