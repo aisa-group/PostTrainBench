@@ -127,12 +127,7 @@ def indent(text: str, level: int) -> str:
 
 
 def format_unparsable_line(index: int, line: str, error_msg: str = "") -> str:
-    lines = [f"=== Event {index} | NOT PARSABLE ==="]
-    if error_msg:
-        lines.append(f"  Error: {error_msg}")
-    lines.append("  Raw line:")
-    lines.append(f"    {line[:500]}{'...' if len(line) > 500 else ''}")
-    return "\n".join(lines)
+    return line
 
 
 def format_command(command: list[str] | str) -> str:
@@ -451,12 +446,14 @@ def main() -> None:
     formatted_events: list[str] = []
     pending_deltas: list[dict[str, Any]] = []
     current_delta_type: str | None = None
+    event_counter = 0
 
     def flush_deltas() -> None:
-        nonlocal pending_deltas, current_delta_type
+        nonlocal pending_deltas, current_delta_type, event_counter
         if pending_deltas and current_delta_type:
+            event_counter += 1
             formatted_events.append(
-                format_consolidated_deltas(len(formatted_events) + 1, pending_deltas, current_delta_type)
+                format_consolidated_deltas(event_counter, pending_deltas, current_delta_type)
             )
             pending_deltas = []
             current_delta_type = None
@@ -471,18 +468,14 @@ def main() -> None:
             except json.JSONDecodeError as exc:
                 flush_deltas()
                 formatted_events.append(
-                    format_unparsable_line(len(formatted_events) + 1, stripped, exc.msg)
+                    format_unparsable_line(0, stripped, exc.msg)
                 )
                 continue
 
             if not isinstance(event, dict):
                 flush_deltas()
                 formatted_events.append(
-                    format_unparsable_line(
-                        len(formatted_events) + 1,
-                        stripped,
-                        "Parsed JSON is not an object",
-                    )
+                    format_unparsable_line(0, stripped, "Parsed JSON is not an object")
                 )
                 continue
 
@@ -495,7 +488,8 @@ def main() -> None:
                 current_delta_type = delta_type
             else:
                 flush_deltas()
-                formatted_events.append(format_event(len(formatted_events) + 1, event))
+                event_counter += 1
+                formatted_events.append(format_event(event_counter, event))
 
     flush_deltas()
 
