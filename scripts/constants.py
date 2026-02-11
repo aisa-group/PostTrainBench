@@ -24,6 +24,14 @@ HARDCODED_AGENT_MAP = {
         "gemini_models_gemini-3-pro-preview_10h_v5",
         "gemini_models_gemini-3-pro-preview_10h_v6_seed1",
     ],
+    "GPT-5.1-Codex-Max Low": [
+        "codexlow_gpt-5.1-codex-max_10h_v7",
+        "codexlow_gpt-5.1-codex-max_10h_v7_seed1"
+    ],
+    "GPT-5.1-Codex-Max High": [
+        "codexhigh_gpt-5.1-codex-max_10h_v7",
+        "codexhigh_gpt-5.1-codex-max_10h_v7_seed1"
+    ],
 }
 
 HARDCODED_BENCHMARKS = [

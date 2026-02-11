@@ -11,11 +11,11 @@ def get_results_dir():
 
 
 def check_terminated(error_log_path: Path) -> bool:
-    """Return True if error.log starts with 'Terminated'."""
+    """Return True if error.log contains 'Terminated'."""
     if not error_log_path.exists():
         return False
     try:
-        content = error_log_path.read_text().lstrip()
+        content = error_log_path.read_text()
         return content.startswith("Terminated")
     except Exception:
         return False

@@ -6,10 +6,8 @@ From: nvidia/cuda:12.9.1-cudnn-devel-ubuntu22.04
 
 %post
     chmod 1777 /tmp
-    # Set environment variables
     export DEBIAN_FRONTEND=noninteractive
 
-    # Update and install system dependencies
     apt-get update && apt-get install -y \
         python3.10 \
         python3-dev \
@@ -19,34 +17,31 @@ From: nvidia/cuda:12.9.1-cudnn-devel-ubuntu22.04
         build-essential \
         && rm -rf /var/lib/apt/lists/*
 
-    # Create python3 symlink
     ln -sf /usr/bin/python3.10 /usr/bin/python3
     ln -sf /usr/bin/python3.10 /usr/bin/python
-    
-    # Install Node.js (LTS version 22.x) for npm
+
     curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
     apt-get install -y nodejs
-    
-    # Install uv
+
     curl -LsSf https://astral.sh/uv/install.sh | sh
     export PATH="/root/.local/bin:$PATH"
-    
+
+    # 1) vllm first (controls torch/CUDA versions)
     uv pip install --system --no-cache vllm==0.11.0 --torch-backend=auto
 
-    #  Pinned direct dependencies
+    # 2) Pinned direct dependencies
     uv pip install --system --no-cache -r /opt/requirements-direct.txt
 
-    #  flash-attn (needs no-build-isolation)
+    # 3) flash-attn (needs no-build-isolation)
     uv pip install --system --no-cache flash-attn==2.8.3 --no-build-isolation
 
-    #  AI CLI tools
+    # 4) AI CLI tools
     npm install -g \
         @anthropic-ai/claude-code@2.1.34 \
         @openai/codex@0.98.0 \
         @google/gemini-cli@0.18.4
-    
 
-    # install inspect evals
+    # 5) inspect_evals from source (pinned commit)
     mkdir -p /opt
     cd /opt
     git clone https://github.com/UKGovernmentBEIS/inspect_evals.git
@@ -54,13 +49,6 @@ From: nvidia/cuda:12.9.1-cudnn-devel-ubuntu22.04
     git checkout 06001a83e6d7c709c2ede0570dce7f1031a0bad8
     uv pip install --system --no-cache .
 
-    # install inspect ai with debug 
-    mkdir -p /opt
-    cd /opt
-    git clone https://github.com/rank-and-file/inspect_ai_vllm_stdout.git
-    cd inspect_ai_vllm_stdout
-    uv pip install --system --no-cache .
-    
 %environment
     export PATH="/root/.local/bin:$PATH"
     export NO_PROXY="localhost,127.0.0.1"
@@ -70,8 +58,8 @@ From: nvidia/cuda:12.9.1-cudnn-devel-ubuntu22.04
     exec python3 "$@"
 
 %labels
-    Version v1.0
-    Description Python ML container with CUDA support for transformers and LLM training (using uv) + AI CLI tools
+    Version v1.1
+    Description Python ML container with CUDA support - pinned dependencies
 
 %help
     Note: Use the --nv flag to enable NVIDIA GPU support when running the container.

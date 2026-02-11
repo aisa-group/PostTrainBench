@@ -2,6 +2,9 @@ test*.err
 test*.out
 test*.log
 
+AGENTS.md
+CLAUDE.md
+
 logs
 .vscode
 

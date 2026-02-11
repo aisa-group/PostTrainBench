@@ -121,7 +121,7 @@ def model_type(args) -> str:
 def template_kwargs(args) -> dict:
     model_type_str = model_type(args)
     if model_type_str == 'qwen':
-        return {}
+        template = 'qwen3.jinja'
     elif model_type_str == 'llama':
         template = 'llama3.jinja'
     elif model_type_str == 'gemma':

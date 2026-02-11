@@ -7,6 +7,7 @@ ERROR_PATTERNS = [
     "HfHubHTTPError",
     "Too Many Requests",
     "429 Client Error",
+    "Huggingface Error"
 ]
 
 
@@ -25,7 +26,7 @@ def check_solve_out_for_errors(solve_out_path: str):
 
     matched_patterns = []
     for pattern in ERROR_PATTERNS:
-        if pattern in content:
+        if pattern.lower() in content.lower():
             matched_patterns.append(pattern)
 
     return matched_patterns

@@ -6,6 +6,10 @@ import os
 ERROR_PATTERNS = [
     "API Error: exception TypeError: fetch failed sending request",
     "Loop detected, stopping execution",
+    "ERROR: unexpected status 401 Unauthorized",
+    "API Error: 529 overloaded_erro"
+    "API Error: 529"
+    "Stale file handle"
 ]
 
 

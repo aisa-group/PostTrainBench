@@ -3,6 +3,7 @@
 EVAL_NAME="$1"
 MODEL_NAME="$2"
 CLUSTER_ID="$3"
+LIMIT="$4"
 
 set -euo pipefail
 
@@ -72,7 +73,7 @@ check_cuda() {
         --bind "${REPO_ROOT}:${REPO_ROOT}" \
         --bind "${HF_MERGED}:${TMP_HF_CACHE}" \
         ${POST_TRAIN_BENCH_CONTAINERS_DIR}/vllm_debug.sif \
-        python src/utils/check_cuda_writing.py > "${RESULT_DIR}/cuda_check.txt"
+        python src/utils/check_cuda.py > "${RESULT_DIR}/cuda_check.txt"
 }
 
 run_eval() {
@@ -80,8 +81,6 @@ run_eval() {
         --nv \
         --env HF_HOME="${TMP_HF_CACHE}" \
         --env OPENAI_API_KEY="${OPENAI_API_KEY}" \
-        --env VLLM_API_KEY="inspectai" \
-        --env VLLM_LOGGING_LEVEL="DEBUG" \
         --writable-tmpfs \
         --bind "${RESULT_DIR}:${RESULT_DIR}" \
         --bind "${REPO_ROOT}:${REPO_ROOT}" \
@@ -91,7 +90,7 @@ run_eval() {
         python "evaluate.py" \
             --model-path "${MODEL_NAME}" \
             --templates-dir ../../../../src/eval/templates \
-            --limit -1 \
+            --limit "${LIMIT}" \
             --json-output-file "${RESULT_DIR}/metrics.json" > "${RESULT_DIR}/final_eval.txt"
 }
 

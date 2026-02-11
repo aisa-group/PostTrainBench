@@ -50,7 +50,7 @@ def pretty_format_json(obj: Any, indent_level: int = 0) -> str:
     """Format JSON with actual newlines preserved in strings."""
     indent_str = "  " * indent_level
     next_indent = "  " * (indent_level + 1)
-    
+
     if isinstance(obj, dict):
         if not obj:
             return "{}"
