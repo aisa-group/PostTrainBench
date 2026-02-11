@@ -37,7 +37,7 @@ def get_latest_results(results_dir):
     runs = defaultdict(list)
     
     # Scan all directories
-    for subdir in results_path.glob('baseline/*'):
+    for subdir in results_path.glob('baseline_zeroshot/*'):
         if subdir.is_dir():
             benchmark, model, run_id = parse_directory_name(subdir.name)
             

@@ -81,7 +81,7 @@ def main():
 
         # Optionally include baseline first
         if args.include_baseline:
-            baseline_path = os.path.join(results_dir, "aggregated_baseline.csv")
+            baseline_path = os.path.join(results_dir, "aggregated_baseline_zeroshot.csv")
             header, rows = load_csv_rows(baseline_path)
 
             if header and rows:

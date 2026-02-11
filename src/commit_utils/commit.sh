@@ -2,14 +2,14 @@
 source src/commit_utils/set_env_vars.sh
 
 models=(
-    "google/gemma-3-4b-pt"
-    "Qwen/Qwen3-4B-Base"
-    "Qwen/Qwen3-1.7B-Base"
+    # "google/gemma-3-4b-pt"
+    # "Qwen/Qwen3-4B-Base"
+    # "Qwen/Qwen3-1.7B-Base"
     "HuggingFaceTB/SmolLM3-3B-Base"
 )
 
 evals=(
-    "aime2025"
+    # "aime2025"
     "arenahardwriting"
     "bfcl"
     "gpqamain"
