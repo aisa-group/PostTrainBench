@@ -67,6 +67,14 @@ cp src/utils/check_cuda.py "${JOB_DIR}/check_cuda.py"
 cp src/utils/check_cuda_writing.py "${JOB_DIR}/check_cuda_writing.py"
 cp "agents/${AGENT}/solve.sh" "${JOB_DIR}/agent_solve.sh"
 
+# Copy agent-specific auth if present (e.g. for non-API agents)
+if [ -f "agents/${AGENT}/auth.json" ]; then
+    cp "agents/${AGENT}/auth.json" "${JOB_DIR}/.codex/auth.json"
+fi
+if [ -f "agents/${AGENT}/oauth_token" ]; then
+    cp "agents/${AGENT}/oauth_token" "${JOB_DIR}/oauth_token"
+fi
+
 # Utils
 with_huggingface_overlay() {
     mkdir -p "$TMP_SUBDIR/merged_huggingface"
@@ -153,7 +161,6 @@ echo "disk_job_dir: $(du -sh "${JOB_DIR}" 2>/dev/null | cut -f1)"
 echo "disk_tmp: $(du -sh "${JOB_TMP}" 2>/dev/null | cut -f1)"
 echo "memory: $(free -m 2>/dev/null | grep Mem | awk '{print "total=" $2 "MB used=" $3 "MB free=" $4 "MB"}')"
 echo "--- END SOLVE DIAGNOSTICS ---"
-
 
 echo "============================================"
 echo "=== TASK COMPLETE, PARSING AGENT TRACE ==="
