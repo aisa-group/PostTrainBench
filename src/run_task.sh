@@ -67,6 +67,14 @@ cp src/utils/check_cuda.py "${JOB_DIR}/check_cuda.py"
 cp src/utils/check_cuda_writing.py "${JOB_DIR}/check_cuda_writing.py"
 cp "agents/${AGENT}/solve.sh" "${JOB_DIR}/agent_solve.sh"
 
+# Copy agent-specific auth if present (e.g. for non-API agents)
+if [ -f "agents/${AGENT}/auth.json" ]; then
+    cp "agents/${AGENT}/auth.json" "${JOB_DIR}/.codex/auth.json"
+fi
+if [ -f "agents/${AGENT}/oauth_token" ]; then
+    cp "agents/${AGENT}/oauth_token" "${JOB_DIR}/oauth_token"
+fi
+
 # Utils
 with_huggingface_overlay() {
     mkdir -p "$TMP_SUBDIR/merged_huggingface"
@@ -130,6 +138,26 @@ echo "========= RUNNING TASK ========="
 echo "================================"
 
 with_huggingface_overlay with_record_the_time solve_task
+SOLVE_EXIT=$?
+
+echo "--- SOLVE DIAGNOSTICS ---"
+echo "exit_code: $SOLVE_EXIT"
+if [ $SOLVE_EXIT -eq 0 ]; then
+    echo "status: exited normally"
+elif [ $SOLVE_EXIT -eq 124 ]; then
+    echo "status: killed by timeout (reached ${NUM_HOURS}h limit)"
+elif [ $SOLVE_EXIT -gt 128 ]; then
+    echo "status: killed by signal $((SOLVE_EXIT - 128)) ($(kill -l $((SOLVE_EXIT - 128)) 2>/dev/null || echo unknown))"
+else
+    echo "status: exited with error code $SOLVE_EXIT"
+fi
+echo "final_model_files: $(ls "${JOB_DIR}/task/final_model/" 2>/dev/null | wc -l)"
+echo "hostname: $(hostname)"
+echo "fuse_overlayfs_alive: $(ps aux 2>/dev/null | grep fuse-overlay | grep -v grep | wc -l)"
+echo "disk_job_dir: $(du -sh "${JOB_DIR}" 2>/dev/null | cut -f1)"
+echo "disk_tmp: $(du -sh "${JOB_TMP}" 2>/dev/null | cut -f1)"
+echo "memory: $(free -m 2>/dev/null | grep Mem | awk '{print "total=" $2 "MB used=" $3 "MB free=" $4 "MB"}')"
+echo "--- END SOLVE DIAGNOSTICS ---"
 
 echo "============================================"
 echo "=== TASK COMPLETE, PARSING AGENT TRACE ==="
