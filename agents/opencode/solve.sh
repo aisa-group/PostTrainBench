@@ -21,6 +21,22 @@ cat > opencode.json << 'EOF'
       "options": {
         "apiKey": "{env:OPENCODE_API_KEY}"
       }
+    },
+    "zai": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Z.AI",
+      "options": {
+        "baseURL": "https://api.z.ai/api/paas/v4",
+        "apiKey": "{env:ZAI_API_KEY}"
+      },
+      "models": {
+        "glm-5": {
+          "name": "GLM-5"
+        },
+        "glm-4.7": {
+          "name": "GLM-4.7"
+        }
+      }
     }
   }
 }
