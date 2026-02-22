@@ -8,9 +8,7 @@ We introduce PostTrainBench, a benchmark that measures the ability of CLI agents
 
 ## Leaderboard
 
-<p align="center">
-  <img src="assets/main_plot_v1.png" width="800">
-</p>
+![Main Plot](assets/main_plot_v1.png)
 
 Scores are weighted averages across 7 benchmarks and 4 models (Qwen3-1.7B, Qwen3-4B, SmolLM3-3B, and Gemma-3-4B). Agents with multiple runs show averaged results.
 
