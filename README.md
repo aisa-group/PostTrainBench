@@ -8,7 +8,9 @@ We introduce PostTrainBench, a benchmark that measures the ability of CLI agents
 
 ## Leaderboard
 
-![Main Plot](assets/main_plot_v1.png)
+<p align="center">
+  <img src="assets/main_plot_v1.png" width="800">
+</p>
 
 Scores are weighted averages across 7 benchmarks and 4 models (Qwen3-1.7B, Qwen3-4B, SmolLM3-3B, and Gemma-3-4B). Agents with multiple runs show averaged results.
 
@@ -32,16 +34,12 @@ Scores are weighted averages across 7 benchmarks and 4 models (Qwen3-1.7B, Qwen3
 
 ## Scaffolds
 
-Agents are run through one of 4 CLI scaffolds:
+Agents are run through one of 4 CLI scaffolds: Claude Code, Codex CLI, Gemini CLI, and OpenCode. 
 
-- **[Claude Code](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/overview)** — Anthropic's agentic CLI. Used with Opus 4.6, Opus 4.5, Sonnet 4.6, and Sonnet 4.5.
-- **[Codex CLI](https://github.com/openai/codex)** — OpenAI's agentic CLI. Used with GPT-5.2, GPT 5.1 Codex Max, GPT 5.2 Codex, and GPT 5.3 Codex.
-- **[Gemini CLI](https://github.com/google-gemini/gemini-cli)** — Google's agentic CLI. Used with Gemini 3 Pro.
-- **[OpenCode](https://github.com/opencode-ai/opencode)** — Open-source agentic CLI. Used with Gemini 3.1 Pro, GLM 5, and others.
 
 ## Evaluation Tasks
 
-PostTrainBench v1 includes 7 benchmarks spanning reasoning, tool use, knowledge, math, health, and code:
+PostTrainBench includes 7 benchmarks spanning reasoning, tool use, knowledge, math, health, and code:
 
 1. **AIME 2025** — Math competition problems
 2. **Arena Hard** — Challenging instruction-following from Chatbot Arena
@@ -225,7 +223,6 @@ For Claude Code, we add the following line (Claude Code can run tasks in the bac
 - [x] More agent scaffolds and agents (v1: 4 scaffolds, 11+ agents)
 - [ ] Enhanced data decontamination
 - [ ] Enhanced method to detect reward hacking
-- [ ] Slurm support
 - [ ] Ablation studies (e.g., varying compute budgets)
 
 ## Contact
