@@ -92,9 +92,54 @@ Requirements for new tasks:
 
 ### Adding Agents
 
-Add your code to `agents/<agent_name>/` with `solve.sh` (script that calls the agent)
+Add your code to `agents/<agent_name>/` with `solve.sh` (script that calls the agent).
 
 See `agents/codex/` and `agents/claude/` for examples. Agents should have web access (e.g., via a web-search tool).
+
+#### API-based agents
+
+Most agents authenticate via API keys set as environment variables (e.g., `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`). These are passed into the container automatically by `run_task.sh`. Set them in your environment before running `commit.sh`.
+
+#### Subscription-based agents (non-API)
+
+Some models are only available through CLI subscriptions rather than API keys (e.g., GPT-5.3-Codex via ChatGPT Pro). These agents require separate authentication setup.
+
+**Codex with ChatGPT Pro (`agents/codex_non_api/`)**
+
+1. Enable device code login in your [ChatGPT security settings](https://chatgpt.com/settings)
+2. Authenticate the Codex CLI:
+   ```bash
+   codex login --device-auth  # follow the browser prompt
+   ```
+3. Copy the generated credentials:
+   ```bash
+   cp ~/.codex/auth.json agents/codex_non_api/auth.json
+   ```
+4. Submit jobs with `agent=codex_non_api`:
+   ```bash
+   condor_submit_bid 50 -a "agent=codex_non_api" -a "agent_config=gpt-5.3-codex" ...
+   ```
+
+The `solve.sh` script unsets API keys and sets `forced_login_method = "chatgpt"` so the CLI uses the `auth.json` credentials instead.
+
+**Claude Code with Claude Max subscription (`agents/claude_non_api/`)**
+
+1. Generate a long-lived OAuth token (~1 year validity):
+   ```bash
+   claude setup-token  # follow the browser prompt
+   ```
+2. Save the token:
+   ```bash
+   echo "sk-ant-..." > agents/claude_non_api/oauth_token
+   ```
+3. Submit jobs with `agent=claude_non_api`:
+   ```bash
+   condor_submit_bid 50 -a "agent=claude_non_api" -a "agent_config=claude-opus-4-6" ...
+   ```
+
+The `solve.sh` script reads the token from the file, exports it as `CLAUDE_CODE_OAUTH_TOKEN`, and unsets `ANTHROPIC_API_KEY` to avoid auth conflicts.
+
+**Important:** Auth credential files (`auth.json`, `oauth_token`) are gitignored. They are copied into the job directory only for agents that need them (see the conditional copy in `run_task.sh`).
 
 ## On Reward Hacking
 

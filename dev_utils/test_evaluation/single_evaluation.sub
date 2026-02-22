@@ -7,7 +7,7 @@ log = test_$(Cluster).log
 request_memory = 131072
 request_cpus = 16
 request_gpus = 1
-requirements = TARGET.CUDADeviceName == "NVIDIA H100 80GB HBM3"
+requirements = TARGET.CUDADeviceName == "NVIDIA H100 80GB HBM3" && Machine != "i104.internal.cluster.is.localnet"
 request_disk=300G
 +BypassLXCfs="true"
 queue

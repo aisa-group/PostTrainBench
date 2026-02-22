@@ -2,6 +2,15 @@ test*.err
 test*.out
 test*.log
 
+# Agent auth tokens 
+agents/*/auth.json
+agents/*/oauth_token
+
+.claude 
+
+AGENTS.md
+CLAUDE.md
+
 logs
 .vscode
 

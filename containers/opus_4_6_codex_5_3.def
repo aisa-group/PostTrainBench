@@ -1,0 +1,65 @@
+Bootstrap: docker
+From: nvidia/cuda:12.9.1-cudnn-devel-ubuntu22.04
+
+%files
+    containers/requirements-direct.txt /opt/requirements-direct.txt
+
+%post
+    chmod 1777 /tmp
+    export DEBIAN_FRONTEND=noninteractive
+
+    apt-get update && apt-get install -y \
+        python3.10 \
+        python3-dev \
+        git \
+        wget \
+        curl \
+        build-essential \
+        && rm -rf /var/lib/apt/lists/*
+
+    ln -sf /usr/bin/python3.10 /usr/bin/python3
+    ln -sf /usr/bin/python3.10 /usr/bin/python
+
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+    apt-get install -y nodejs
+
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    export PATH="/root/.local/bin:$PATH"
+
+    # 1) vllm first (controls torch/CUDA versions)
+    uv pip install --system --no-cache vllm==0.11.0 --torch-backend=auto
+
+    # 2) Pinned direct dependencies
+    uv pip install --system --no-cache -r /opt/requirements-direct.txt
+
+    # 3) flash-attn (needs no-build-isolation)
+    uv pip install --system --no-cache flash-attn==2.8.3 --no-build-isolation
+
+    # 4) AI CLI tools
+    npm install -g \
+        @anthropic-ai/claude-code@2.1.34 \
+        @openai/codex@0.98.0 \
+        @google/gemini-cli@0.18.4
+
+    # 5) inspect_evals from source (pinned commit)
+    mkdir -p /opt
+    cd /opt
+    git clone https://github.com/UKGovernmentBEIS/inspect_evals.git
+    cd /opt/inspect_evals
+    git checkout 06001a83e6d7c709c2ede0570dce7f1031a0bad8
+    uv pip install --system --no-cache .
+
+%environment
+    export PATH="/root/.local/bin:$PATH"
+    export NO_PROXY="localhost,127.0.0.1"
+    export no_proxy="localhost,127.0.0.1"
+
+%runscript
+    exec python3 "$@"
+
+%labels
+    Version v1.1
+    Description Python ML container with CUDA support - pinned dependencies
+
+%help
+    Note: Use the --nv flag to enable NVIDIA GPU support when running the container.

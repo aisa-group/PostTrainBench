@@ -1,6 +1,6 @@
 #!/bin/bash
 
-EVALUATION_TASK="$1"
+export EVALUATION_TASK="$1"
 AGENT="$2"
 MODEL_TO_TRAIN="$3"
 CLUSTER_ID="$4"
@@ -15,7 +15,7 @@ AGENT_CONFIG_SAFE=$(echo "$AGENT_CONFIG" | tr '/:' '_')
 
 RANDOM_UUID=$(uuidgen)
 
-EVAL_DIR="${POST_TRAIN_BENCH_RESULTS_DIR}/${AGENT}_${AGENT_CONFIG_SAFE}/${EVALUATION_TASK}_${RESULT_PREFIX_SAFE}_${CLUSTER_ID}"
+export EVAL_DIR="${POST_TRAIN_BENCH_RESULTS_DIR}/${AGENT}_${AGENT_CONFIG_SAFE}_${NUM_HOURS}h${POST_TRAIN_BENCH_EXPERIMENT_NAME}/${EVALUATION_TASK}_${RESULT_PREFIX_SAFE}_${CLUSTER_ID}"
 
 mkdir -p ${EVAL_DIR}
 
@@ -24,11 +24,11 @@ exec 2>${EVAL_DIR}/error.log
 
 echo "$@"
 
-TMP_SUBDIR="/tmp/posttrain_container_${EVALUATION_TASK}_${RESULT_PREFIX_SAFE}_${RANDOM_UUID}"
+export TMP_SUBDIR="/tmp/posttrain_container_${EVALUATION_TASK}_${RESULT_PREFIX_SAFE}_${RANDOM_UUID}"
 
 JOB_DIR="${TMP_SUBDIR}/job_dir"
 JOB_TMP="${TMP_SUBDIR}/tmp"
-HF_MERGED="${TMP_SUBDIR}/merged_huggingface"
+export HF_MERGED="${TMP_SUBDIR}/merged_huggingface"
 
 mkdir -p "${JOB_DIR}"
 mkdir -p "${JOB_TMP}"
@@ -55,10 +55,25 @@ echo "$PROMPT" > "${EVAL_DIR}/prompt.txt"
 
 bash src/utils/create_timer.sh $NUM_HOURS $JOB_DIR/task/timer.sh
 
+# set openai api keys appropriately
+export CODEX_API_KEY="${OPENAI_API_KEY}"
+unset OPENAI_API_KEY
+if [ "$EVALUATION_TASK" == "arenahardwriting" ] || [ "$EVALUATION_TASK" == "healthbench" ]; then
+    export OPENAI_API_KEY="${CODEX_API_KEY}"
+fi
+
 # Copy scripts needed inside the container
 cp src/utils/check_cuda.py "${JOB_DIR}/check_cuda.py"
 cp src/utils/check_cuda_writing.py "${JOB_DIR}/check_cuda_writing.py"
 cp "agents/${AGENT}/solve.sh" "${JOB_DIR}/agent_solve.sh"
+
+# Copy agent-specific auth if present (e.g. for non-API agents)
+if [ -f "agents/${AGENT}/auth.json" ]; then
+    cp "agents/${AGENT}/auth.json" "${JOB_DIR}/.codex/auth.json"
+fi
+if [ -f "agents/${AGENT}/oauth_token" ]; then
+    cp "agents/${AGENT}/oauth_token" "${JOB_DIR}/oauth_token"
+fi
 
 # Utils
 with_huggingface_overlay() {
@@ -93,16 +108,17 @@ with_record_the_time() {
     return $exit_code
 }
 
+SOLVE_OUT="${EVAL_DIR}/solve_out.txt"
+
 solve_task() {
-    SOLVE_OUT="${EVAL_DIR}/solve_out.txt"
     timeout --signal=TERM --kill-after=30s "$((NUM_HOURS * 60 + 5))m" \
     apptainer exec \
         --nv \
         -c \
-        --env PATH="/home/ben/.local/bin:$PATH" \
+        --env PATH="/root/.local/bin:/home/ben/.local/bin:$PATH" \
         --env HF_HOME="${HF_HOME_NEW}" \
         --env ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}" \
-        --env CODEX_API_KEY="${OPENAI_API_KEY}" \
+        --env CODEX_API_KEY="${CODEX_API_KEY}" \
         --env GEMINI_API_KEY="${GEMINI_API_KEY}" \
         --env VLLM_API_KEY="inspectai" \
         --env PYTHONNOUSERSITE="1" \
@@ -122,19 +138,53 @@ echo "========= RUNNING TASK ========="
 echo "================================"
 
 with_huggingface_overlay with_record_the_time solve_task
+SOLVE_EXIT=$?
 
-echo "=================================================="
-echo "=== TASK COMPLETE, RUNNING CONTAMINATION JUDGE ==="
-echo "=================================================="
+echo "--- SOLVE DIAGNOSTICS ---"
+echo "exit_code: $SOLVE_EXIT"
+if [ $SOLVE_EXIT -eq 0 ]; then
+    echo "status: exited normally"
+elif [ $SOLVE_EXIT -eq 124 ]; then
+    echo "status: killed by timeout (reached ${NUM_HOURS}h limit)"
+elif [ $SOLVE_EXIT -gt 128 ]; then
+    echo "status: killed by signal $((SOLVE_EXIT - 128)) ($(kill -l $((SOLVE_EXIT - 128)) 2>/dev/null || echo unknown))"
+else
+    echo "status: exited with error code $SOLVE_EXIT"
+fi
+echo "final_model_files: $(ls "${JOB_DIR}/task/final_model/" 2>/dev/null | wc -l)"
+echo "hostname: $(hostname)"
+echo "fuse_overlayfs_alive: $(ps aux 2>/dev/null | grep fuse-overlay | grep -v grep | wc -l)"
+echo "disk_job_dir: $(du -sh "${JOB_DIR}" 2>/dev/null | cut -f1)"
+echo "disk_tmp: $(du -sh "${JOB_TMP}" 2>/dev/null | cut -f1)"
+echo "memory: $(free -m 2>/dev/null | grep Mem | awk '{print "total=" $2 "MB used=" $3 "MB free=" $4 "MB"}')"
+echo "--- END SOLVE DIAGNOSTICS ---"
+
+echo "============================================"
+echo "=== TASK COMPLETE, PARSING AGENT TRACE ==="
+echo "============================================"
+
+# Parse agent trace into human-readable format
+TRACE_PARSER="agents/${AGENT}/human_readable_trace.py"
+if [ -f "$TRACE_PARSER" ]; then
+    python "$TRACE_PARSER" "${SOLVE_OUT}" -o "${EVAL_DIR}/solve_parsed.txt"
+    cp "${EVAL_DIR}/solve_parsed.txt" "${JOB_DIR}/solve_parsed.txt"
+else
+    echo "Warning: No trace parser found at $TRACE_PARSER, using raw output"
+    cp "${SOLVE_OUT}" "${JOB_DIR}/solve_parsed.txt"
+fi
+
+echo "========================================="
+echo "=== RUNNING CONTAMINATION JUDGE ==="
+echo "========================================="
 
 JUDGE_TASK=$(python src/disallowed_usage_judge/get_judge_prompt.py --benchmark "${BENCHMARK}" --model "${MODEL_TO_TRAIN}")
 
 with_huggingface_overlay apptainer exec \
     --nv \
     -c \
-    --env PATH="/home/ben/.local/bin:$PATH" \
+    --env PATH="/root/.local/bin:/home/ben/.local/bin:$PATH" \
     --env HF_HOME="${HF_HOME_NEW}" \
-    --env CODEX_API_KEY="${OPENAI_API_KEY}" \
+    --env CODEX_API_KEY="${CODEX_API_KEY}" \
     --env VLLM_API_KEY="inspectai" \
     --env PYTHONNOUSERSITE="1" \
     --bind "${JOB_TMP}:/tmp" \
@@ -142,7 +192,10 @@ with_huggingface_overlay apptainer exec \
     --home "${JOB_DIR}:/home/ben" \
     --pwd "/home/ben/task" \
     --writable-tmpfs \
-    ${POST_TRAIN_BENCH_CONTAINERS_DIR}/${POST_TRAIN_BENCH_CONTAINER_NAME}.sif codex --search -a never exec --skip-git-repo-check --yolo --model "gpt-5.1-codex" "$JUDGE_TASK"
+    ${POST_TRAIN_BENCH_CONTAINERS_DIR}/${POST_TRAIN_BENCH_CONTAINER_NAME}.sif codex --search -a never exec --json -c model_reasoning_summary=detailed --skip-git-repo-check --yolo --model "gpt-5.1-codex" "$JUDGE_TASK" 2>&1 | tee "${EVAL_DIR}/judge_output.json"
+
+# Convert judge JSON output to human-readable format
+python agents/codex/human_readable_trace.py "${EVAL_DIR}/judge_output.json" -o "${EVAL_DIR}/judge_output.txt"
 
 cp "${JOB_DIR}/task/contamination_judgement.txt" "${EVAL_DIR}/contamination_judgement.txt"
 cp "${JOB_DIR}/task/disallowed_model_judgement.txt" "${EVAL_DIR}/disallowed_model_judgement.txt"
@@ -169,24 +222,124 @@ echo "================================"
 echo "========= EVALUATING ==========="
 echo "================================"
 
-REPO_ROOT="$(pwd)"
+export REPO_ROOT="$(pwd)"
 
-TMP_HF_CACHE="/tmp/hf_cache_90afd0"
+export TMP_HF_CACHE="/tmp/hf_cache_90afd0"
 
-with_huggingface_overlay apptainer exec \
-    --nv \
-    --env "HF_HOME=${TMP_HF_CACHE}" \
-    --env OPENAI_API_KEY="${OPENAI_API_KEY}" \
-    --env VLLM_API_KEY="inspectai" \
-    --env PYTHONNOUSERSITE="1" \
-    --writable-tmpfs \
-    --bind "${REPO_ROOT}:${REPO_ROOT}" \
-    --bind "${HF_MERGED}:${TMP_HF_CACHE}" \
-    --pwd "$(pwd)/src/eval/tasks/${EVALUATION_TASK}" \
-    ${POST_TRAIN_BENCH_CONTAINERS_DIR}/${POST_TRAIN_BENCH_CONTAINER_NAME}.sif python "evaluate.py" \
-        --model-path "$EVAL_DIR/final_model" \
-        --templates-dir ../../../../src/eval/templates \
-        --limit -1 \
-        --json-output-file "${EVAL_DIR}/metrics.json" > "$EVAL_DIR/final_eval.txt"
+export EVAL_COUNTER=0
 
-echo $(cat "$EVAL_DIR/final_eval.txt")
+run_evaluation() {
+    local max_tokens_arg="$1"
+    local eval_num="$2"
+    nvidia-smi --query-compute-apps=pid --format=csv,noheader | xargs -r kill -9
+    sleep 5
+    with_huggingface_overlay apptainer exec \
+        --nv \
+        --env "HF_HOME=${TMP_HF_CACHE}" \
+        --env OPENAI_API_KEY="${OPENAI_API_KEY}" \
+        --env VLLM_API_KEY="inspectai" \
+        --env PYTHONNOUSERSITE="1" \
+        --writable-tmpfs \
+        --bind "${REPO_ROOT}:${REPO_ROOT}" \
+        --bind "${HF_MERGED}:${TMP_HF_CACHE}" \
+        --pwd "$(pwd)/src/eval/tasks/${EVALUATION_TASK}" \
+        ${POST_TRAIN_BENCH_CONTAINERS_DIR}/vllm_debug.sif python "evaluate.py" \
+            --model-path "$EVAL_DIR/final_model" \
+            --templates-dir ../../../../src/eval/templates \
+            --limit -1 \
+            ${max_tokens_arg} \
+            --json-output-file "${EVAL_DIR}/metrics.json" > "$EVAL_DIR/final_eval_${eval_num}.txt"
+}
+
+run_evaluation_with_retry() {
+    local max_retries="$1"
+    local max_tokens_arg="$2"
+
+    for ((attempt=1; attempt<=max_retries; attempt++)); do
+        sleep 5
+        if [ -f "${EVAL_DIR}/metrics.json" ]; then
+            return 0
+        fi
+
+        EVAL_COUNTER=$((EVAL_COUNTER + 1))
+        export EVAL_COUNTER
+        echo "Evaluation attempt $EVAL_COUNTER (phase attempt $attempt of $max_retries)"
+
+        timeout --signal=TERM --kill-after=60s 28800s bash -c "$(declare -f run_evaluation with_huggingface_overlay); run_evaluation \"$max_tokens_arg\" \"$EVAL_COUNTER\""
+
+        if [ -f "${EVAL_DIR}/metrics.json" ]; then
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+# First evaluation: up to 4 attempts
+run_evaluation_with_retry 4 ""
+
+# Second evaluation with adjusted max tokens: up to 2 attempts
+case "${EVALUATION_TASK}" in
+    aime2025)
+        MAX_TOKENS_ARG="--max-tokens 12000"
+        ;;
+    arenahardwriting)
+        MAX_TOKENS_ARG="--max-new-tokens 12288"
+        ;;
+    bfcl)
+        MAX_TOKENS_ARG="--max-tokens 12000"
+        ;;
+    gpqamain)
+        MAX_TOKENS_ARG="--max-tokens 12000"
+        ;;
+    gsm8k)
+        MAX_TOKENS_ARG="--max-tokens 3000"
+        ;;
+    healthbench)
+        MAX_TOKENS_ARG="--max-new-tokens 12288"
+        ;;
+    humaneval)
+        MAX_TOKENS_ARG="--max-tokens 3000"
+        ;;
+    *)
+        MAX_TOKENS_ARG=""
+        ;;
+esac
+
+run_evaluation_with_retry 3 "$MAX_TOKENS_ARG"
+
+# Third evaluation with further adjusted max tokens: up to 2 attempts
+case "${EVALUATION_TASK}" in
+    aime2025)
+        MAX_TOKENS_ARG="--max-tokens 8000"
+        ;;
+    arenahardwriting)
+        MAX_TOKENS_ARG="--max-new-tokens 8192"
+        ;;
+    bfcl)
+        MAX_TOKENS_ARG="--max-tokens 8000"
+        ;;
+    gpqamain)
+        MAX_TOKENS_ARG="--max-tokens 8000"
+        ;;
+    gsm8k)
+        MAX_TOKENS_ARG="--max-tokens 2000"
+        ;;
+    healthbench)
+        MAX_TOKENS_ARG="--max-new-tokens 8192"
+        ;;
+    humaneval)
+        MAX_TOKENS_ARG="--max-tokens 2000"
+        ;;
+    *)
+        MAX_TOKENS_ARG=""
+        ;;
+esac
+
+run_evaluation_with_retry 2 "$MAX_TOKENS_ARG"
+
+echo $(cat "$EVAL_DIR/final_eval_${EVAL_COUNTER}.txt")
+
+echo "================================"
+echo "======= EVALUATION DONE ========"
+echo "================================"

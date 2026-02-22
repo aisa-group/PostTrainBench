@@ -1,4 +1,5 @@
 #!/bin/bash
+bash src/commit_utils/set_env_vars.sh
 
 models=(
     "google/gemma-3-4b-it"
@@ -15,6 +16,7 @@ models=(
 
 evals=(
     "aime2025"
+    "arenahardwriting"
     "bfcl"
     "gpqamain"
     "gsm8k"
