@@ -32,7 +32,7 @@ def load_metrics(metrics_path: str, method_name: str = None):
     
     # Only reach here if metrics.json doesn't exist or is invalid
     # For baseline, just return "ERR"
-    if method_name == "baseline":
+    if method_name == "baseline_zeroshot":
         return "ERR"
     
     # For non-baseline methods, provide more specific error messages
