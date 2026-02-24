@@ -17,7 +17,7 @@ Store your best trained model in the folder \`final_model\`.
 - The packages are installed via \`uv pip install --system\`.
 - The machine is equiped with an Nvidia H100 GPU.
 - Consider the --limit option of the evaluate.py script for faster iteration during development.
-{setup_other}
+{setup_other}{openai_restriction}
 ## Rules
 1. There will be no user interaction. You have to operate autonomously.
 2. You have a maximum of {num_hours} hours. You can query how much time you have left by calling \`bash timer.sh\` in the current directory.

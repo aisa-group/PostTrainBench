@@ -73,12 +73,8 @@ RUN mkdir -p /opt && \
 RUN mkdir -p /home/agent/workspace
 WORKDIR /home/agent/workspace
 
-# Copy task files (will be populated by adapter)
-COPY ./evaluate.py /home/agent/workspace/evaluate.py
-COPY ./templates/ /home/agent/workspace/templates/
-COPY ./timer.sh /home/agent/workspace/timer.sh
-COPY ./metadata.json /home/agent/workspace/metadata.json
-COPY ./contamination_judge.py /home/agent/workspace/contamination_judge.py
+# Copy all task files (populated by adapter; .dockerignore excludes Dockerfile)
+COPY . /home/agent/workspace/
 
 # Set permissions
 RUN chmod -R a+rw /home/agent/workspace/ && \

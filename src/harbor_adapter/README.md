@@ -2,17 +2,39 @@
 
 This adapter generates [Harbor](https://harborframework.com)-compatible tasks for running PostTrainBench evaluations on cloud GPUs.
 
+## Supported Benchmarks
+
+| Benchmark ID | Name | Type | Notes |
+|-------------|------|------|-------|
+| gsm8k | GSM8K (Grade School Math 8K) | inspect-ai | |
+| humaneval | HumanEval | inspect-ai | |
+| aime2025 | AIME 2025 | inspect-ai | |
+| gpqamain | GPQA | inspect-ai | |
+| bfcl | Berkeley Function Calling Leaderboard | inspect-ai | Includes `bfcl_evaluation_code.py` via task_context |
+| arenahardwriting | Arena-Hard-v2.0 (Writing) | vLLM + OpenAI judge | Requires `OPENAI_API_KEY` for agent |
+| healthbench | HealthBench | vLLM + OpenAI judge | Requires `OPENAI_API_KEY` for agent |
+
+## Supported Models
+
+| Key | HuggingFace Model ID |
+|-----|---------------------|
+| qwen3-1.7b | Qwen/Qwen3-1.7B-Base |
+| qwen3-4b | Qwen/Qwen3-4B-Base |
+| smollm3-3b | HuggingFaceTB/SmolLM3-3B-Base |
+| gemma3-4b | google/gemma-3-4b-pt |
+
+Total: **28 tasks** (7 benchmarks x 4 models).
 
 ## Installation
 
 ```bash
-# use the included pyproject.toml file to get the python environment with harbor and modal 
+# Use the included pyproject.toml file to get the python environment with harbor and modal
 uv sync
 ```
 
 ## Quick Start
 
-### 1. Generate a task
+### 1. Generate tasks
 
 ```bash
 cd src/harbor_adapter
@@ -20,19 +42,24 @@ cd src/harbor_adapter
 # Generate a single task
 python run_adapter.py --benchmark gsm8k --model qwen3-1.7b --output ./tasks
 
-# Or generate all task combinations
+# Or generate all 28 task combinations
 python run_adapter.py --all --output ./tasks
+
+# List available benchmarks and models
+python run_adapter.py --list
 ```
 
-### 2. Run with Harbor
+### 2. Set API keys
 
 ```bash
-# Set your API keys
-python -m modal setup
-export ANTHROPIC_API_KEY=<your-key>
+python -m modal setup                # Modal cloud setup
+export ANTHROPIC_API_KEY=<your-key>  # For Claude agent
+export OPENAI_API_KEY=<your-key>     # For contamination judge (codex CLI) + arenahardwriting/healthbench eval
+```
 
+### 3. Run with Harbor
 
-# Run on Modal
+```bash
 harbor run \
     --path ./tasks/posttrainbench-gsm8k-qwen3-1.7b \
     --agent claude-code \
@@ -40,90 +67,96 @@ harbor run \
     --env modal
 ```
 
+## API Key Requirements
+
+| Key | Used By | Required For |
+|-----|---------|-------------|
+| `ANTHROPIC_API_KEY` | Agent (Claude) | All benchmarks |
+| `OPENAI_API_KEY` | Contamination judge (codex CLI), evaluation judge | All benchmarks (judge), arenahardwriting/healthbench (agent eval) |
+
+- The verifier receives `OPENAI_API_KEY` as both `OPENAI_API_KEY` and `CODEX_API_KEY` (codex CLI reads `CODEX_API_KEY`).
+- For arenahardwriting and healthbench, `OPENAI_API_KEY` is also passed to the agent environment since their `evaluate.py` scripts call the OpenAI API for judging.
+
 ## Task Structure
 
 Each generated task follows Harbor's standard format:
 
 ```
 posttrainbench-gsm8k-qwen3-1.7b/
-├── task.toml           # Task configuration (GPU, timeout, etc.)
-├── instruction.md      # Instructions for the agent
+├── task.toml              # Task configuration (GPU, timeout, env vars)
+├── instruction.md         # Instructions for the agent
 ├── environment/
-│   ├── Dockerfile      # Container definition
-│   ├── evaluate.py     # Evaluation script
-│   └── templates/      # Chat templates for different models
+│   ├── Dockerfile         # Container definition (CUDA + vLLM + ML packages)
+│   ├── .dockerignore      # Excludes Dockerfile from COPY
+│   ├── evaluate.py        # Benchmark evaluation script
+│   ├── contamination_judge.py  # Generates judge prompt for codex CLI
+│   ├── timer.sh           # Countdown timer (sentinel-file based)
+│   ├── metadata.json      # Benchmark/model metadata for verifier
+│   ├── templates/         # Chat templates for different models
+│   ├── evaluation_code/   # (arenahardwriting, healthbench only)
+│   └── bfcl_evaluation_code.py  # (bfcl only, from task_context)
 └── tests/
-    └── test.sh         # Verification script (runs evaluation)
+    └── test.sh            # Verifier: contamination judge + 3-phase eval retry
 ```
 
-## Configuration
+## Evaluation Retry Logic
 
-The default configuration is:
-- **GPU**: 1x H100
-- **Memory**: 64GB
-- **Storage**: 100GB
-- **Timeout**: 10 hours
-- **Internet**: Enabled
+The verifier (`test.sh`) uses a 3-phase evaluation retry strategy matching `run_task.sh`:
 
-You can adjust the timeout with `--num-hours`:
+| Phase | Max Attempts | Token Limits |
+|-------|-------------|-------------|
+| 1 | 4 | Default |
+| 2 | 3 | Reduced (see below) |
+| 3 | 2 | Further reduced (see below) |
+
+Token limits per benchmark:
+
+| Benchmark | Phase 2 | Phase 3 |
+|-----------|---------|---------|
+| aime2025 | `--max-tokens 12000` | `--max-tokens 8000` |
+| arenahardwriting | `--max-new-tokens 12288` | `--max-new-tokens 8192` |
+| bfcl | `--max-tokens 12000` | `--max-tokens 8000` |
+| gpqamain | `--max-tokens 12000` | `--max-tokens 8000` |
+| gsm8k | `--max-tokens 3000` | `--max-tokens 2000` |
+| healthbench | `--max-new-tokens 12288` | `--max-new-tokens 8192` |
+| humaneval | `--max-tokens 3000` | `--max-tokens 2000` |
+
+GPU processes are killed between attempts to free VRAM.
+
+## Contamination Judge
+
+The contamination judge uses OpenAI's Codex CLI to analyze the agent's code:
 
 ```bash
-python run_adapter.py --benchmark gsm8k --model qwen3-1.7b --num-hours 5 --output ./tasks
+codex --search -a never exec --json -c model_reasoning_summary=detailed \
+    --skip-git-repo-check --yolo --model "gpt-5.1-codex" "$JUDGE_PROMPT"
 ```
 
-## Scoring
-
-The verifier runs the evaluation script on the agent's `final_model` and extracts the accuracy metric as the reward (0-1 scale). Results are stored in:
-- `/logs/verifier/metrics.json` - Full evaluation metrics
-- `/logs/verifier/reward.txt` - Accuracy score
-
-## Parity with Original PostTrainBench
-
-This table tracks feature parity between the Harbor adapter and the original PostTrainBench implementation (`src/run_task.sh`).
-
-| Feature | Original | Harbor Adapter | Notes |
-|---------|----------|----------------|-------|
-| Agent timeout | Configurable hours | Configurable hours | Parity via `--num-hours` |
-| GPU access | H100 via HTCondor | H100/A100 via Modal | Parity |
-| Timer script | Created at job start | Created at task generation | **Difference**: See note 1 |
-| Evaluation | inspect-ai + vLLM | inspect-ai + vLLM | Parity |
-| Contamination judge | Runs after agent | Runs in verifier | Parity - uses OpenAI API (gpt-4o-mini) |
-| Agent duration | time_taken.txt | Harbor result.json | Parity - see note 4 |
-| HuggingFace cache overlay | fuse-overlayfs | Docker volume | Functionally equivalent |
-| task_context/ | Copied if exists | Not implemented | **TODO**: Add if needed |
-| .codex directory | Copied for Codex agent | Not implemented | Harbor uses different agent configs |
-| Container format | Apptainer .sif | Docker | Functionally equivalent |
-
-### Known Differences
-
-1. **Timer.sh timing**: The original creates `timer.sh` at job start time with the actual creation timestamp. The Harbor adapter creates it at task generation time. This means the timer may show less remaining time than expected if there's a delay between task generation and job start. (TODO)
-
-2. **Container format**: Original uses Apptainer/Singularity `.sif` files, Harbor uses Docker containers. Both support GPU passthrough and are functionally equivalent.
-
-3. **Cache management**: Original uses `fuse-overlayfs` for copy-on-write HuggingFace cache. Harbor relies on Docker volumes which achieve similar isolation. (TODO VERIFY)
-
-4. **Agent duration**: The original writes `time_taken.txt` with the agent execution time. Harbor tracks this automatically in its `result.json` file under `agent_execution.started_at` and `agent_execution.finished_at`. To get agent duration from a Harbor job:
-   ```python
-   import json
-   from datetime import datetime
-
-   result = json.load(open("path/to/result.json"))
-   start = datetime.fromisoformat(result["agent_execution"]["started_at"])
-   end = datetime.fromisoformat(result["agent_execution"]["finished_at"])
-   duration = end - start
-   print(f"Agent duration: {duration}")
-   ``` 
-
-### Contamination Judge
-
-The contamination judge runs in the verifier before evaluation. It uses OpenAI's API (gpt-4o-mini by default) to analyze the agent's code for:
+It checks for:
 - **Data contamination**: Using benchmark test data for training
 - **Model violations**: Using a different model than the specified base model
 
-To enable the judge, set `OPENAI_API_KEY` in your environment before running Harbor. If no API key is set, the judge is skipped and default "pass" results are written.
+Codex reads the workspace code and writes `contamination_judgement.txt` and `disallowed_model_judgement.txt` directly. The judge prompt is synced with `src/disallowed_usage_judge/prompt.txt`.
 
-Output files:
-- `contamination_judgement.txt`: "no contamination detected" or "contamination detected"
-- `disallowed_model_judgement.txt`: "only allowed use detected" or "disallowed use detected"
-- `judge_analysis.json`: Detailed analysis from the LLM
+## Timer
 
+The timer uses a sentinel-file approach: on the first `bash timer.sh` call, the current timestamp is recorded in `.timer_start`. This ensures the countdown is accurate even if the task is generated long before the agent starts.
+
+## Configuration
+
+| Setting | Default | Notes |
+|---------|---------|-------|
+| GPU | 1x H100 | Configured in task.toml |
+| Memory | 64 GB | |
+| Storage | 100 GB | |
+| Agent timeout | 10 hours | Adjustable via `--num-hours` |
+| Verifier timeout | 3 hours | Accommodates 3-phase retry |
+| Internet | Enabled | |
+
+## Scoring
+
+The verifier extracts the accuracy metric from `metrics.json` as the reward (0-1 scale). Results are stored in:
+- `/logs/verifier/metrics.json` - Full evaluation metrics
+- `/logs/verifier/reward.txt` - Accuracy score
+- `/logs/verifier/contamination_judgement.txt` - Data contamination verdict
+- `/logs/verifier/disallowed_model_judgement.txt` - Model usage verdict

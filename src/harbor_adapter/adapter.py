@@ -1,6 +1,5 @@
 import json
 import shutil
-import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -63,6 +62,16 @@ BENCHMARKS = {
         setup_note="- A final note: the evaluate.py script sometimes outputs ERROR warnings. "
                    "Do not be alarmed by this, this is normal behavior for inspect-ai.\n"
     ),
+    "arenahardwriting": BenchmarkInfo(
+        task_id="arenahardwriting",
+        benchmark_name="Arena-Hard-v2.0 (Writing)",
+        setup_note="",
+    ),
+    "healthbench": BenchmarkInfo(
+        task_id="healthbench",
+        benchmark_name="HealthBench",
+        setup_note="",
+    ),
 }
 
 MODELS = {
@@ -117,7 +126,7 @@ class PostTrainBenchAdapter:
             return BENCHMARKS[benchmark_id].benchmark_name
         raise FileNotFoundError(f"Benchmark file not found: {bench_file}")
 
-    def generate_task_toml(self, task_dir: Path) -> None:
+    def generate_task_toml(self, task_dir: Path, benchmark_id: str = "") -> None:
         """Generate task.toml for the Harbor task."""
         # Copy template and adjust timeout based on num_hours
         template_path = TEMPLATE_DIR / "task.toml"
@@ -132,6 +141,11 @@ class PostTrainBenchAdapter:
             f"timeout_sec = {float(agent_timeout)}"
         )
 
+        # For arenahardwriting/healthbench, agents need OPENAI_API_KEY
+        # during their run (to run evaluate.py which uses OpenAI judge)
+        if benchmark_id in ("arenahardwriting", "healthbench"):
+            content += '\n[agent.env]\nOPENAI_API_KEY = "${OPENAI_API_KEY}"\n'
+
         target_path.write_text(content)
 
     def generate_instruction(
@@ -139,6 +153,7 @@ class PostTrainBenchAdapter:
         task_dir: Path,
         model_info: ModelInfo,
         benchmark_info: BenchmarkInfo,
+        benchmark_id: str = "",
     ) -> None:
         """Generate instruction.md for the Harbor task."""
         template_path = TEMPLATE_DIR / "instruction.md"
@@ -152,6 +167,15 @@ class PostTrainBenchAdapter:
         content = content.replace("{num_hours}", str(self.num_hours))
         content = content.replace("{setup_other}", benchmark_info.setup_note)
 
+        # OpenAI restriction for benchmarks that provide OPENAI_API_KEY to agents
+        if benchmark_id in ("arenahardwriting", "healthbench"):
+            content = content.replace(
+                "{openai_restriction}",
+                "- IMPORTANT: You are NOT allowed to use the OpenAI API for anything but the evaluation script.\n"
+            )
+        else:
+            content = content.replace("{openai_restriction}", "")
+
         if self.include_claude_clause:
             content += CLAUDE_CLAUSE
 
@@ -160,17 +184,21 @@ class PostTrainBenchAdapter:
     def generate_timer_sh(self, env_dir: Path) -> None:
         """Generate timer.sh script that tracks remaining time.
 
-        This matches the original PostTrainBench create_timer.sh behavior.
-        The timer uses the current timestamp as the creation time.
+        Uses a sentinel file to record the actual start time on first
+        invocation, so the timer is accurate even if the task is generated
+        long before the agent runs.
         """
-        creation_date = int(time.time())
-
         timer_script = f"""#!/bin/bash
 
 NUM_HOURS={self.num_hours}
-CREATION_DATE={creation_date}
 
-DEADLINE=$((CREATION_DATE + NUM_HOURS * 3600))
+START_FILE="$(dirname "$0")/.timer_start"
+if [ ! -f "$START_FILE" ]; then
+    date +%s > "$START_FILE"
+fi
+START_DATE=$(cat "$START_FILE")
+
+DEADLINE=$((START_DATE + NUM_HOURS * 3600))
 NOW=$(date +%s)
 REMAINING=$((DEADLINE - NOW))
 
@@ -198,11 +226,14 @@ fi
         env_dir = task_dir / "environment"
         env_dir.mkdir(parents=True, exist_ok=True)
 
-        # Copy Dockerfile template
+        # Copy Dockerfile template and .dockerignore
         shutil.copy(
             TEMPLATE_DIR / "environment" / "Dockerfile",
             env_dir / "Dockerfile"
         )
+        dockerignore_src = TEMPLATE_DIR / "environment" / ".dockerignore"
+        if dockerignore_src.exists():
+            shutil.copy(dockerignore_src, env_dir / ".dockerignore")
 
         # Copy evaluate.py from the benchmark
         eval_src = self.posttrainbench_root / "src" / "eval" / "tasks" / benchmark_id / "evaluate.py"
@@ -218,6 +249,21 @@ fi
             shutil.copytree(templates_src, templates_dst, dirs_exist_ok=True)
         else:
             raise FileNotFoundError(f"templates directory not found: {templates_src}")
+
+        # Copy evaluation_code/ if it exists (arenahardwriting, healthbench)
+        eval_code_src = self.posttrainbench_root / "src" / "eval" / "tasks" / benchmark_id / "evaluation_code"
+        if eval_code_src.is_dir():
+            shutil.copytree(eval_code_src, env_dir / "evaluation_code", dirs_exist_ok=True)
+
+        # Copy task_context/* contents if they exist (bfcl has bfcl_evaluation_code.py)
+        task_context_src = self.posttrainbench_root / "src" / "eval" / "tasks" / benchmark_id / "task_context"
+        if task_context_src.is_dir():
+            for item in task_context_src.iterdir():
+                dst = env_dir / item.name
+                if item.is_dir():
+                    shutil.copytree(item, dst, dirs_exist_ok=True)
+                else:
+                    shutil.copy(item, dst)
 
         # Copy contamination judge script
         judge_src = TEMPLATE_DIR / "environment" / "contamination_judge.py"
@@ -290,8 +336,8 @@ fi
         print(f"Generating task: {task_id}")
 
         # Generate all components
-        self.generate_task_toml(task_dir)
-        self.generate_instruction(task_dir, model_info, benchmark_info)
+        self.generate_task_toml(task_dir, benchmark_id)
+        self.generate_instruction(task_dir, model_info, benchmark_info, benchmark_id)
         self.generate_environment(task_dir, benchmark_id, model_info, benchmark_info)
         self.generate_tests(task_dir)
 
