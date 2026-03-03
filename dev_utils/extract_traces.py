@@ -26,16 +26,31 @@ def get_api_keys() -> list[str]:
     """Get API key values from environment variables (non-empty only)."""
     keys = []
     for var in API_KEY_ENV_VARS:
+        if var not in os.environ:
+            raise ValueError(f"Expected environment variable not set: {var}")
         value = os.environ[var]
         keys.append(value)
 
     return keys
 
+def print_warning_if_api_key_in_content(content: str, prefix: str) -> None:
+    if prefix in content:
+        print("WARNING: Found potential API key pattern in content that was not redacted:")
+        idx = content.index(prefix)
+        start = max(0, idx - 50)
+        end = min(len(content), idx + 50)
+        print(f"  ...{content[start:end]}...")
 
 def sanitize_content(content: str, api_keys: list[str]) -> str:
     """Replace any API keys found in content with a placeholder."""
     for key in api_keys:
         content = content.replace(key, "<omitted-api-key>")
+    print_warning_if_api_key_in_content(content, "sk-proj")
+    print_warning_if_api_key_in_content(content, "sk-ant")
+    print_warning_if_api_key_in_content(content, "sk-")
+    print_warning_if_api_key_in_content(content, "hf_")
+    print_warning_if_api_key_in_content(content, "AIzaSy")
+
     return content
 
 
