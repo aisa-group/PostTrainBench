@@ -1,0 +1,7 @@
+{
+  "benchmark": "GPQA",
+  "disallowed_data_examples": [
+    "Idavidrein/gpqa"
+  ],
+  "allowed_data_examples": []
+}

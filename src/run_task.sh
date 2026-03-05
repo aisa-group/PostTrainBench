@@ -189,7 +189,7 @@ echo "========================================="
 echo "=== RUNNING CONTAMINATION JUDGE ==="
 echo "========================================="
 
-JUDGE_TASK=$(python src/disallowed_usage_judge/get_judge_prompt.py --benchmark "${BENCHMARK}" --model "${MODEL_TO_TRAIN}")
+JUDGE_TASK=$(python src/disallowed_usage_judge/get_judge_prompt.py --benchmark-id "${EVALUATION_TASK}" --model "${MODEL_TO_TRAIN}")
 
 # Reset codex config to prevent agent-specific settings (e.g. model_reasoning_effort)
 # from leaking into the judge, which uses a different model

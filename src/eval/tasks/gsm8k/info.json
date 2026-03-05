@@ -1,0 +1,8 @@
+{
+  "benchmark": "GSM8K (Grade School Math 8K)",
+  "disallowed_data_examples": [],
+  "allowed_data_examples": [
+    "gsm8k training data",
+    "meta-math/MetaMathQA"
+  ]
+}

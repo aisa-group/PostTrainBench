@@ -1,0 +1,7 @@
+{
+  "benchmark": "Berkeley Function Calling Leaderboard (BFCL)",
+  "disallowed_data_examples": [
+    "gorilla-llm/Berkeley-Function-Calling-Leaderboard"
+  ],
+  "allowed_data_examples": []
+}

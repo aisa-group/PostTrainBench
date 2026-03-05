@@ -1,0 +1,7 @@
+{
+  "benchmark": "HealthBench",
+  "disallowed_data_examples": [
+    "openai/healthbench"
+  ],
+  "allowed_data_examples": []
+}

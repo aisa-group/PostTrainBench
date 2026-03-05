@@ -1,0 +1,9 @@
+{
+  "benchmark": "HumanEval",
+  "disallowed_data_examples": [
+    "openai/openai_humaneval",
+    "openai_humaneval",
+    "evalplus/humanevalplus"
+  ],
+  "allowed_data_examples": []
+}

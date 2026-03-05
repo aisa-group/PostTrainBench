@@ -1,0 +1,7 @@
+{
+  "benchmark": "Arena-Hard-v2.0 (Writing)",
+  "disallowed_data_examples": [
+    "lmarena-ai/arena-hard-auto"
+  ],
+  "allowed_data_examples": []
+}
