@@ -11,6 +11,7 @@ Usage:
 import csv
 import argparse
 from collections import defaultdict
+from pathlib import Path
 from utils import get_result_dirs, parse_result_dir, get_trace_file, read_judgement
 
 
@@ -20,9 +21,14 @@ def main():
     parser.add_argument("--diff-only", action="store_true",
                         help="Only show results where judgement changed")
     parser.add_argument("--method", type=str, help="Filter by method pattern")
+    parser.add_argument("--dirs", type=str, nargs="+",
+                        help="Only process these specific result directories")
     args = parser.parse_args()
 
-    result_dirs = get_result_dirs(method_pattern=args.method)
+    if args.dirs:
+        result_dirs = [Path(d) for d in args.dirs]
+    else:
+        result_dirs = get_result_dirs(method_pattern=args.method)
 
     results = []
     stats = defaultdict(int)
@@ -87,6 +93,7 @@ def main():
 
         for result in results:
             print(f"Method: {result['method']}")
+            print(f"  Folder: {result['result_dir']}")
             print(f"  Benchmark: {result['benchmark']}")
             print(f"  Model: {result['model']}")
             print(f"  Trace: {result['trace_source']}")
