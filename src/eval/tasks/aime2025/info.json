@@ -5,5 +5,7 @@
     "yentinglin/aime_2025",
     "MathArena/aime_2025"
   ],
-  "allowed_data_examples": []
+  "allowed_data_examples": [
+    "Maxwell-Jia/AIME_2024"
+  ]
 }

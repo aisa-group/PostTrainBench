@@ -5,5 +5,7 @@
     "openai_humaneval",
     "evalplus/humanevalplus"
   ],
-  "allowed_data_examples": []
+  "allowed_data_examples": [
+    "Muennighoff/mbpp"
+  ]
 }

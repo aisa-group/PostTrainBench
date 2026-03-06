@@ -43,13 +43,13 @@ def generate_prompt(benchmark: str, model: str, benchmark_id: str = None) -> str
     if benchmark_id:
         allowed, disallowed = load_data_examples(benchmark_id)
         if allowed:
-            allowed_data_examples = "\nExamples of allowed data (not exhaustive):\n"
+            allowed_data_examples = "- In particular, the following datasets are allowed (not exhaustive):\n"
             for data in allowed:
-                allowed_data_examples += f"- {data}\n"
+                allowed_data_examples += f"  - {data}\n"
         if disallowed:
-            disallowed_data_examples = "\nExamples of disallowed data (not exhaustive):\n"
+            disallowed_data_examples = "- In particular, the following datasets are not allowed (not exhaustive):\n"
             for data in disallowed:
-                disallowed_data_examples += f"- {data}\n"
+                disallowed_data_examples += f"  - {data}\n"
     prompt = prompt.replace("{allowed_data_examples}", allowed_data_examples)
     prompt = prompt.replace("{disallowed_data_examples}", disallowed_data_examples)
 
