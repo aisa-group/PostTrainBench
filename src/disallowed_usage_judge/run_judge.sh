@@ -104,7 +104,7 @@ apptainer exec \
     --home "${JOB_DIR}:/home/ben" \
     --pwd "/home/ben/task" \
     --writable-tmpfs \
-    "${POST_TRAIN_BENCH_CONTAINERS_DIR}/${POST_TRAIN_BENCH_CONTAINER_NAME}.sif" \
+    "${POST_TRAIN_BENCH_CONTAINERS_DIR}/standard.sif" \
     codex --search -a never exec --json -c model_reasoning_summary=detailed --skip-git-repo-check --yolo --model "gpt-5.1-codex" "$JUDGE_PROMPT" 2>&1 | tee "$JUDGE_OUTPUT_FILE"
 
 # Determine output file suffix based on mode
