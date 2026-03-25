@@ -86,12 +86,21 @@ def process_method(method_path: str, method_name: str):
         entry_path = os.path.join(method_path, entry)
         if not os.path.isdir(entry_path):
             continue
-        try: 
-            benchmark, _, model, run_id = entry.split("_")
-            key = (benchmark, model)
-        except ValueError as e:
-            print(entry)
-            raise ValueError(f"{entry}, {method_path}")
+
+        # Format: {benchmark}_{provider}_{model}_{cluster_id}
+        # Split from right to get cluster_id, then from left to get benchmark
+        parts = entry.rsplit("_", 1)
+        if len(parts) < 2:
+            raise ValueError(f"Invalid result directory name: {entry}, {method_path}")
+        run_id = parts[1]
+        rest = parts[0]
+
+        benchmark_end = rest.find("_")
+        if benchmark_end == -1:
+            raise ValueError(f"Invalid result directory name: {entry}, {method_path}")
+        benchmark = rest[:benchmark_end]
+        model = rest[benchmark_end + 1:]  # provider_model (e.g. meta-llama_Llama-3.2-1B)
+        key = (benchmark, model)
 
         # keep only highest run_id per (benchmark, model)
         if key not in latest_runs or run_id > latest_runs[key]["run_id"]:

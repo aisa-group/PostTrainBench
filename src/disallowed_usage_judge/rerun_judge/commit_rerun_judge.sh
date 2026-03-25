@@ -64,11 +64,9 @@ if [ "$TOTAL" -eq 0 ]; then
     exit 0
 fi
 
-SUBMITTED=0
-echo "$RESULT_DIRS" | while read -r result_dir; do
+while read -r result_dir; do
     condor_submit_bid 100 -a "result_dir=$result_dir" "$SUB_FILE"
-    SUBMITTED=$((SUBMITTED + 1))
-done
+done <<< "$RESULT_DIRS"
 
 echo ""
 echo "========================================"

@@ -47,8 +47,15 @@ if [ ! -d "$RESULT_DIR/task" ]; then
     exit 1
 fi
 
-if [ ! -f "$RESULT_DIR/solve_parsed.txt" ]; then
-    echo "Error: No solve_parsed.txt found in $RESULT_DIR" >&2
+# Find trace file (solve_parsed.txt preferred, solve_out.txt as fallback)
+if [ -f "$RESULT_DIR/solve_parsed.txt" ]; then
+    TRACE_FILE="$RESULT_DIR/solve_parsed.txt"
+    TRACE_NAME="solve_parsed.txt"
+elif [ -f "$RESULT_DIR/solve_out.txt" ]; then
+    TRACE_FILE="$RESULT_DIR/solve_out.txt"
+    TRACE_NAME="solve_out.txt"
+else
+    echo "Error: No trace file (solve_parsed.txt or solve_out.txt) found in $RESULT_DIR" >&2
     exit 1
 fi
 
@@ -64,7 +71,7 @@ MODEL_PART=$(echo "$DIRNAME" | sed -E 's/^[^_]+_(.*)_[0-9]+$/\1/')
 MODEL_HF=$(echo "$MODEL_PART" | sed 's/_/\//')
 
 echo "Running judge on: $RESULT_DIR"
-echo "  Benchmark: $BENCHMARK | Model: $MODEL_HF"
+echo "  Benchmark: $BENCHMARK | Model: $MODEL_HF | Trace: $TRACE_NAME"
 if [ "$RERUN_MODE" = true ]; then
     echo "  Mode: rerun (will save with _rerun suffix)"
 else
@@ -78,7 +85,7 @@ JUDGE_PROMPT=$(python "$SCRIPT_DIR/get_judge_prompt.py" \
 
 # Create temporary working directory
 TMP_DIR=$(mktemp -d)
-trap "rm -rf $TMP_DIR" EXIT
+trap 'rm -rf "$TMP_DIR"' EXIT
 
 JOB_DIR="$TMP_DIR/job_dir"
 JOB_TMP="$TMP_DIR/tmp"
@@ -88,7 +95,7 @@ mkdir -p "$JOB_DIR" "$JOB_TMP"
 cp -r "$RESULT_DIR/task" "$JOB_DIR/task"
 
 # Copy trace file to parent directory (not task directory)
-cp "$RESULT_DIR/solve_parsed.txt" "$JOB_DIR/solve_parsed.txt"
+cp "$TRACE_FILE" "$JOB_DIR/$TRACE_NAME"
 
 # Copy codex config
 cp -r "$REPO_ROOT/containers/other_home_data/.codex" "$JOB_DIR/"

@@ -288,7 +288,7 @@ def read_input_documents(input_file, input_format: str, text_field: str) -> list
 
 def resolve_reference_path(task: str) -> Path:
     """Resolve reference data path from task name."""
-    repo_root = Path(__file__).parent.parent.parent
+    repo_root = Path(__file__).parent.parent.parent.parent
     path = repo_root / "src" / "eval" / "tasks" / task / "test_data.json"
     if not path.exists():
         raise FileNotFoundError(f"Reference data not found: {path}")
