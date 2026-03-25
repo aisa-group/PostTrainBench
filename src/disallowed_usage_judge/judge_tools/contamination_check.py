@@ -34,8 +34,8 @@ from pathlib import Path
 
 NGRAM_SIZE = 5
 CONTAMINATION_THRESHOLD = 0.8
-PERFECT_MATCH_DECAY_START = 8  # tokens
-PERFECT_MATCH_DECAY_END = 32   # tokens
+PERFECT_MATCH_DECAY_START = 8  # tokens (originally 20)
+PERFECT_MATCH_DECAY_END = 32   # tokens (originally 50)
 
 # Field detection order: first match wins as the "question" field, etc.
 QUESTION_FIELDS = ("question", "input", "prompt", "text", "content")

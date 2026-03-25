@@ -16,6 +16,9 @@ logs
 
 containers/empty_dot_git
 
+# Downloaded benchmark test data for contamination checking
+**/test_data.json
+
 2025-10-13/*
 data/*
 simple/2025*

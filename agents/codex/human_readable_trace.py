@@ -145,24 +145,55 @@ def format_command(command: list[str] | str) -> str:
     return str(command)
 
 
+CODEX_ITEM_EVENT_TYPES = {"item.completed", "item.started", "item.updated"}
+
+
 def format_event(index: int, data: dict[str, Any], wall_ts: str | None = None) -> str:
     """Format a Codex event for display."""
-    # Codex events are wrapped: {"id": "...", "msg": {...}}
-    # The actual event type is in msg.type
+    # Codex CLI uses two event formats:
+    #   1. Old format: {"id": "...", "msg": {"type": "agent_message", ...}}
+    #   2. New (Codex) format: {"type": "item.completed", "item": {"type": "command_execution", ...}}
+    event_type = data.get("type", "unknown")
+
+    # Handle Codex item-based events
+    if event_type in CODEX_ITEM_EVENT_TYPES:
+        item = data.get("item", {})
+        item_type = item.get("type", "unknown")
+        item_id = item.get("id", "")
+        header_bits = [f"type: {event_type} ({item_type})"]
+        if item_id:
+            header_bits.append(f"id: {item_id}")
+        header_extra = " | ".join(header_bits)
+        lines: list[str] = [f"=== Event {index} | {header_extra} ==="]
+        lines.extend(format_codex_item_event(data))
+        return "\n".join(lines)
+
+    # Handle other Codex top-level events
+    if event_type == "thread.started":
+        lines = [f"=== Event {index} | type: {event_type} ==="]
+        lines.extend(format_codex_thread_started(data))
+        return "\n".join(lines)
+
+    if event_type in ("turn.started", "turn.completed"):
+        lines = [f"=== Event {index} | type: {event_type} ==="]
+        lines.extend(format_codex_turn_event(data))
+        return "\n".join(lines)
+
+    # Old format: msg-based events
     msg = data.get("msg", data)
     event_id = data.get("id", "")
-    event_type = msg.get("type", "unknown")
+    msg_type = msg.get("type", "unknown")
 
-    header_bits: list[str] = [f"type: {event_type}"]
+    header_bits = [f"type: {msg_type}"]
     if event_id:
         header_bits.append(f"id: {event_id}")
     if wall_ts:
         header_bits.append(f"ts: {wall_ts}")
 
     header_extra = " | ".join(header_bits)
-    lines: list[str] = [f"=== Event {index} | {header_extra} ==="]
+    lines = [f"=== Event {index} | {header_extra} ==="]
 
-    handler = EVENT_HANDLERS.get(event_type, format_unknown_event)
+    handler = EVENT_HANDLERS.get(msg_type, format_unknown_event)
     lines.extend(handler(msg))
 
     return "\n".join(lines)
@@ -371,6 +402,122 @@ def format_turn_aborted(msg: dict[str, Any]) -> list[str]:
     return lines
 
 
+# --- Codex CLI item-based event formatters ---
+
+
+def format_codex_reasoning(item: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    if item_id := item.get("id"):
+        lines.append(indent(f"Item ID: {item_id}", 1))
+    if text := item.get("text"):
+        lines.append(indent("Reasoning:", 1))
+        lines.append(indent(text.rstrip(), 2))
+    return lines
+
+
+def format_codex_agent_message(item: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    if item_id := item.get("id"):
+        lines.append(indent(f"Item ID: {item_id}", 1))
+    if text := item.get("text"):
+        lines.append(indent("Message:", 1))
+        lines.append(indent(text.rstrip(), 2))
+    return lines
+
+
+def format_codex_command_execution(item: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    if item_id := item.get("id"):
+        lines.append(indent(f"Item ID: {item_id}", 1))
+    if command := item.get("command"):
+        lines.append(indent(f"Command: {command}", 1))
+    item_status = item.get("status", "")
+    if item_status:
+        lines.append(indent(f"Status: {item_status}", 1))
+    if (exit_code := item.get("exit_code")) is not None:
+        lines.append(indent(f"Exit code: {exit_code}", 1))
+    if output := item.get("aggregated_output"):
+        lines.append(indent("Output:", 1))
+        lines.append(indent(output.rstrip(), 2))
+    return lines
+
+
+def format_codex_file_change(item: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    if item_id := item.get("id"):
+        lines.append(indent(f"Item ID: {item_id}", 1))
+    filtered = {k: v for k, v in item.items() if k not in ("id", "type")}
+    if filtered:
+        lines.append(indent(pretty_format_json(filtered, 0), 1))
+    return lines
+
+
+def format_codex_todo_list(item: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    if item_id := item.get("id"):
+        lines.append(indent(f"Item ID: {item_id}", 1))
+    if items := item.get("items"):
+        for entry in items:
+            check = "x" if entry.get("completed") else " "
+            lines.append(indent(f"[{check}] {entry.get('text', '')}", 1))
+    return lines
+
+
+def format_codex_web_search(item: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    if item_id := item.get("id"):
+        lines.append(indent(f"Item ID: {item_id}", 1))
+    filtered = {k: v for k, v in item.items() if k not in ("id", "type")}
+    if filtered:
+        lines.append(indent(pretty_format_json(filtered, 0), 1))
+    return lines
+
+
+CODEX_ITEM_HANDLERS: dict[str, Any] = {
+    "reasoning": format_codex_reasoning,
+    "agent_message": format_codex_agent_message,
+    "file_change": format_codex_file_change,
+    "todo_list": format_codex_todo_list,
+    "web_search": format_codex_web_search,
+}
+
+
+def format_codex_item_event(data: dict[str, Any]) -> list[str]:
+    """Format a Codex item.completed / item.started / item.updated event."""
+    item = data.get("item", {})
+    item_type = item.get("type", "unknown")
+
+    # command_execution needs the status label from the wrapper
+    if item_type == "command_execution":
+        return format_codex_command_execution(item)
+
+    handler = CODEX_ITEM_HANDLERS.get(item_type)
+    if handler:
+        return handler(item)
+
+    # Fallback: dump the item contents
+    filtered = {k: v for k, v in item.items() if k != "type"}
+    if filtered:
+        return [indent(pretty_format_json(filtered, 0), 1)]
+    return []
+
+
+def format_codex_thread_started(msg: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    if thread_id := msg.get("thread_id"):
+        lines.append(indent(f"Thread: {thread_id}", 1))
+    return lines
+
+
+def format_codex_turn_event(msg: dict[str, Any]) -> list[str]:
+    """Format turn.started / turn.completed events."""
+    lines: list[str] = []
+    filtered = {k: v for k, v in msg.items() if k != "type"}
+    if filtered:
+        lines.append(indent(pretty_format_json(filtered, 0), 1))
+    return lines
+
+
 def format_unknown_event(msg: dict[str, Any]) -> list[str]:
     # Filter out the type field for cleaner output
     filtered = {k: v for k, v in msg.items() if k != "type"}
@@ -469,7 +616,7 @@ def main() -> None:
             current_delta_type = None
 
     with input_path.open("r", encoding="utf-8") as stream:
-        for line_number, raw_line in enumerate(stream, 1):
+        for _line_number, raw_line in enumerate(stream, 1):
             stripped = raw_line.strip()
             if not stripped:
                 continue
