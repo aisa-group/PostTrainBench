@@ -1,15 +1,15 @@
 #!/bin/bash
 #
-# Run the contamination judge on a result directory.
+# Run the contamination judge on a result directory using two models:
+#   1. GPT-5.2 (via codex CLI)
+#   2. Claude Sonnet 4.6 (via claude CLI)
+#
+# Results are aggregated: if either model flags an issue, the overall result is flagged.
 #
 # Usage: run_judge.sh [--rerun] <result_dir>
 #
 # Options:
 #   --rerun    Save results with _rerun suffix (doesn't overwrite original judgements)
-#
-# This script can be used to:
-# 1. Rerun the judge on completed results
-# 2. Run the judge manually for debugging
 #
 # The judge analyzes the task directory and ../solve_parsed.txt to determine:
 # - Whether benchmark data was used for training (contamination)
@@ -106,8 +106,22 @@ fi
 # Copy codex config
 cp -r "$REPO_ROOT/containers/other_home_data/.codex" "$JOB_DIR/"
 
-# Run judge via codex inside apptainer, capturing output
-JUDGE_OUTPUT_FILE="$TMP_DIR/judge_output.json"
+# Determine output file suffix based on mode
+if [ "$RERUN_MODE" = true ]; then
+    SUFFIX="_rerun"
+else
+    SUFFIX=""
+fi
+
+# ============================================================
+# Judge 1: GPT-5.2 via codex CLI
+# ============================================================
+echo ""
+echo "========================================="
+echo "=== Judge 1: GPT-5.2 (codex CLI) ==="
+echo "========================================="
+
+JUDGE_OUTPUT_GPT="$TMP_DIR/judge_output_gpt5_2.json"
 apptainer exec \
     -c \
     --env PATH="/root/.local/bin:/home/ben/.local/bin:$PATH" \
@@ -118,35 +132,106 @@ apptainer exec \
     --pwd "/home/ben/task" \
     --writable-tmpfs \
     "${POST_TRAIN_BENCH_CONTAINERS_DIR}/standard.sif" \
-    codex --search -a never exec --json -c model_reasoning_summary=detailed --skip-git-repo-check --yolo --model "gpt-5.1-codex" "$JUDGE_PROMPT" 2>&1 | tee "$JUDGE_OUTPUT_FILE"
+    codex --search -a never exec --json -c model_reasoning_summary=detailed -c model_reasoning_effort=high --skip-git-repo-check --yolo --model "gpt-5.2" "$JUDGE_PROMPT" 2>&1 | tee "$JUDGE_OUTPUT_GPT"
 
-# Determine output file suffix based on mode
-if [ "$RERUN_MODE" = true ]; then
-    SUFFIX="_rerun"
-else
-    SUFFIX=""
+# Save GPT-5.2 judge output
+if [ -f "$JUDGE_OUTPUT_GPT" ]; then
+    cp "$JUDGE_OUTPUT_GPT" "$RESULT_DIR/judge_output_gpt5_2${SUFFIX}.json"
+    python "$REPO_ROOT/agents/codex/human_readable_trace.py" "$JUDGE_OUTPUT_GPT" -o "$RESULT_DIR/judge_output_gpt5_2${SUFFIX}.txt"
+    echo "  GPT-5.2 judge output saved"
 fi
 
-# Copy judge output to result directory and convert to human-readable format
-if [ -f "$JUDGE_OUTPUT_FILE" ]; then
-    cp "$JUDGE_OUTPUT_FILE" "$RESULT_DIR/judge_output${SUFFIX}.json"
-    python "$REPO_ROOT/agents/codex/human_readable_trace.py" "$JUDGE_OUTPUT_FILE" -o "$RESULT_DIR/judge_output${SUFFIX}.txt"
-    echo "  Judge output saved to: judge_output${SUFFIX}.json and judge_output${SUFFIX}.txt"
-fi
-
-# Copy results back
+# Save GPT-5.2 judgements with model-specific suffix
 if [ -f "$JOB_DIR/task/contamination_judgement.txt" ]; then
-    cp "$JOB_DIR/task/contamination_judgement.txt" "$RESULT_DIR/contamination_judgement${SUFFIX}.txt"
-    echo "  Contamination: $(cat "$RESULT_DIR/contamination_judgement${SUFFIX}.txt")"
+    cp "$JOB_DIR/task/contamination_judgement.txt" "$RESULT_DIR/contamination_judgement_gpt5_2${SUFFIX}.txt"
+    echo "  GPT-5.2 Contamination: $(cat "$RESULT_DIR/contamination_judgement_gpt5_2${SUFFIX}.txt")"
 else
-    echo "  Warning: contamination_judgement.txt not created by judge"
+    echo "  Warning: contamination_judgement.txt not created by GPT-5.2 judge"
 fi
 
 if [ -f "$JOB_DIR/task/disallowed_model_judgement.txt" ]; then
-    cp "$JOB_DIR/task/disallowed_model_judgement.txt" "$RESULT_DIR/disallowed_model_judgement${SUFFIX}.txt"
-    echo "  Model usage: $(cat "$RESULT_DIR/disallowed_model_judgement${SUFFIX}.txt")"
+    cp "$JOB_DIR/task/disallowed_model_judgement.txt" "$RESULT_DIR/disallowed_model_judgement_gpt5_2${SUFFIX}.txt"
+    echo "  GPT-5.2 Model usage: $(cat "$RESULT_DIR/disallowed_model_judgement_gpt5_2${SUFFIX}.txt")"
 else
-    echo "  Warning: disallowed_model_judgement.txt not created by judge"
+    echo "  Warning: disallowed_model_judgement.txt not created by GPT-5.2 judge"
 fi
 
-echo "Judge completed successfully"
+# Clean judgement files so the next judge starts fresh
+rm -f "$JOB_DIR/task/contamination_judgement.txt"
+rm -f "$JOB_DIR/task/disallowed_model_judgement.txt"
+
+# ============================================================
+# Judge 2: Claude Sonnet 4.6 via claude CLI
+# ============================================================
+echo ""
+echo "========================================="
+echo "=== Judge 2: Claude Sonnet 4.6 ==="
+echo "========================================="
+
+JUDGE_OUTPUT_SONNET="$TMP_DIR/judge_output_sonnet4_6.json"
+apptainer exec \
+    -c \
+    --env PATH="/root/.local/bin:/home/ben/.local/bin:$PATH" \
+    --env ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}" \
+    --env PYTHONNOUSERSITE="1" \
+    --bind "${JOB_TMP}:/tmp" \
+    --home "${JOB_DIR}:/home/ben" \
+    --pwd "/home/ben/task" \
+    --writable-tmpfs \
+    "${POST_TRAIN_BENCH_CONTAINERS_DIR}/standard.sif" \
+    claude --print --verbose --effort high --model claude-sonnet-4-6 --output-format stream-json --dangerously-skip-permissions "$JUDGE_PROMPT" 2>&1 | tee "$JUDGE_OUTPUT_SONNET"
+
+# Save Sonnet 4.6 judge output
+if [ -f "$JUDGE_OUTPUT_SONNET" ]; then
+    cp "$JUDGE_OUTPUT_SONNET" "$RESULT_DIR/judge_output_sonnet4_6${SUFFIX}.json"
+    python "$REPO_ROOT/agents/claude/human_readable_trace.py" "$JUDGE_OUTPUT_SONNET" -o "$RESULT_DIR/judge_output_sonnet4_6${SUFFIX}.txt"
+    echo "  Sonnet 4.6 judge output saved"
+fi
+
+# Save Sonnet 4.6 judgements with model-specific suffix
+if [ -f "$JOB_DIR/task/contamination_judgement.txt" ]; then
+    cp "$JOB_DIR/task/contamination_judgement.txt" "$RESULT_DIR/contamination_judgement_sonnet4_6${SUFFIX}.txt"
+    echo "  Sonnet 4.6 Contamination: $(cat "$RESULT_DIR/contamination_judgement_sonnet4_6${SUFFIX}.txt")"
+else
+    echo "  Warning: contamination_judgement.txt not created by Sonnet 4.6 judge"
+fi
+
+if [ -f "$JOB_DIR/task/disallowed_model_judgement.txt" ]; then
+    cp "$JOB_DIR/task/disallowed_model_judgement.txt" "$RESULT_DIR/disallowed_model_judgement_sonnet4_6${SUFFIX}.txt"
+    echo "  Sonnet 4.6 Model usage: $(cat "$RESULT_DIR/disallowed_model_judgement_sonnet4_6${SUFFIX}.txt")"
+else
+    echo "  Warning: disallowed_model_judgement.txt not created by Sonnet 4.6 judge"
+fi
+
+# ============================================================
+# Aggregate results: flag if either judge flags
+# ============================================================
+echo ""
+echo "========================================="
+echo "=== Aggregating Judge Results ==="
+echo "========================================="
+
+# Aggregate contamination judgement
+CONTAM_GPT=$(cat "$RESULT_DIR/contamination_judgement_gpt5_2${SUFFIX}.txt" 2>/dev/null || echo "")
+CONTAM_SONNET=$(cat "$RESULT_DIR/contamination_judgement_sonnet4_6${SUFFIX}.txt" 2>/dev/null || echo "")
+
+if echo "$CONTAM_GPT" | grep -qi "contamination detected" || echo "$CONTAM_SONNET" | grep -qi "contamination detected"; then
+    echo "contamination detected" > "$RESULT_DIR/contamination_judgement${SUFFIX}.txt"
+else
+    echo "no contamination detected" > "$RESULT_DIR/contamination_judgement${SUFFIX}.txt"
+fi
+echo "  Aggregated Contamination: $(cat "$RESULT_DIR/contamination_judgement${SUFFIX}.txt")"
+
+# Aggregate disallowed model judgement
+MODEL_GPT=$(cat "$RESULT_DIR/disallowed_model_judgement_gpt5_2${SUFFIX}.txt" 2>/dev/null || echo "")
+MODEL_SONNET=$(cat "$RESULT_DIR/disallowed_model_judgement_sonnet4_6${SUFFIX}.txt" 2>/dev/null || echo "")
+
+if echo "$MODEL_GPT" | grep -qi "disallowed use detected" || echo "$MODEL_SONNET" | grep -qi "disallowed use detected"; then
+    echo "disallowed use detected" > "$RESULT_DIR/disallowed_model_judgement${SUFFIX}.txt"
+else
+    echo "only allowed use detected" > "$RESULT_DIR/disallowed_model_judgement${SUFFIX}.txt"
+fi
+echo "  Aggregated Model usage: $(cat "$RESULT_DIR/disallowed_model_judgement${SUFFIX}.txt")"
+
+echo ""
+echo "Judge completed successfully (GPT-5.2 + Sonnet 4.6)"

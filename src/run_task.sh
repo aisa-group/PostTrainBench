@@ -201,6 +201,9 @@ JUDGE_TASK=$(python src/disallowed_usage_judge/get_judge_prompt.py --benchmark-i
 # from leaking into the judge, which uses a different model
 cp -r "containers/other_home_data/.codex" "${JOB_DIR}/"
 
+# ---- Judge 1: GPT-5.2 via codex CLI ----
+echo "=== Judge 1: GPT-5.2 (codex CLI) ==="
+
 with_huggingface_overlay apptainer exec \
     --nv \
     -c \
@@ -214,13 +217,71 @@ with_huggingface_overlay apptainer exec \
     --home "${JOB_DIR}:/home/ben" \
     --pwd "/home/ben/task" \
     --writable-tmpfs \
-    ${POST_TRAIN_BENCH_CONTAINERS_DIR}/standard.sif codex --search -a never exec --json -c model_reasoning_summary=detailed --skip-git-repo-check --yolo --model "gpt-5.1-codex" "$JUDGE_TASK" 2>&1 | tee "${EVAL_DIR}/judge_output.json"
+    ${POST_TRAIN_BENCH_CONTAINERS_DIR}/standard.sif codex --search -a never exec --json -c model_reasoning_summary=detailed -c model_reasoning_effort=high --skip-git-repo-check --yolo --model "gpt-5.2" "$JUDGE_TASK" 2>&1 | tee "${EVAL_DIR}/judge_output_gpt5_2.json"
 
-# Convert judge JSON output to human-readable format
-python agents/codex/human_readable_trace.py "${EVAL_DIR}/judge_output.json" -o "${EVAL_DIR}/judge_output.txt"
+python agents/codex/human_readable_trace.py "${EVAL_DIR}/judge_output_gpt5_2.json" -o "${EVAL_DIR}/judge_output_gpt5_2.txt"
 
-cp "${JOB_DIR}/task/contamination_judgement.txt" "${EVAL_DIR}/contamination_judgement.txt"
-cp "${JOB_DIR}/task/disallowed_model_judgement.txt" "${EVAL_DIR}/disallowed_model_judgement.txt"
+if [ -f "${JOB_DIR}/task/contamination_judgement.txt" ]; then
+    cp "${JOB_DIR}/task/contamination_judgement.txt" "${EVAL_DIR}/contamination_judgement_gpt5_2.txt"
+fi
+if [ -f "${JOB_DIR}/task/disallowed_model_judgement.txt" ]; then
+    cp "${JOB_DIR}/task/disallowed_model_judgement.txt" "${EVAL_DIR}/disallowed_model_judgement_gpt5_2.txt"
+fi
+
+# Clean judgement files so the next judge starts fresh
+rm -f "${JOB_DIR}/task/contamination_judgement.txt"
+rm -f "${JOB_DIR}/task/disallowed_model_judgement.txt"
+
+# ---- Judge 2: Claude Sonnet 4.6 via claude CLI ----
+echo "=== Judge 2: Claude Sonnet 4.6 ==="
+
+with_huggingface_overlay apptainer exec \
+    --nv \
+    -c \
+    --env PATH="/root/.local/bin:/home/ben/.local/bin:$PATH" \
+    --env HF_HOME="${HF_HOME_NEW}" \
+    --env ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}" \
+    --env VLLM_API_KEY="inspectai" \
+    --env PYTHONNOUSERSITE="1" \
+    --bind "${JOB_TMP}:/tmp" \
+    --bind "${HF_MERGED}:${HF_HOME_NEW}" \
+    --home "${JOB_DIR}:/home/ben" \
+    --pwd "/home/ben/task" \
+    --writable-tmpfs \
+    ${POST_TRAIN_BENCH_CONTAINERS_DIR}/standard.sif claude --print --verbose --effort high --model claude-sonnet-4-6 --output-format stream-json --dangerously-skip-permissions "$JUDGE_TASK" 2>&1 | tee "${EVAL_DIR}/judge_output_sonnet4_6.json"
+
+python agents/claude/human_readable_trace.py "${EVAL_DIR}/judge_output_sonnet4_6.json" -o "${EVAL_DIR}/judge_output_sonnet4_6.txt"
+
+if [ -f "${JOB_DIR}/task/contamination_judgement.txt" ]; then
+    cp "${JOB_DIR}/task/contamination_judgement.txt" "${EVAL_DIR}/contamination_judgement_sonnet4_6.txt"
+fi
+if [ -f "${JOB_DIR}/task/disallowed_model_judgement.txt" ]; then
+    cp "${JOB_DIR}/task/disallowed_model_judgement.txt" "${EVAL_DIR}/disallowed_model_judgement_sonnet4_6.txt"
+fi
+
+# ---- Aggregate: flag if either judge flags ----
+echo "=== Aggregating Judge Results ==="
+
+CONTAM_GPT=$(cat "${EVAL_DIR}/contamination_judgement_gpt5_2.txt" 2>/dev/null || echo "")
+CONTAM_SONNET=$(cat "${EVAL_DIR}/contamination_judgement_sonnet4_6.txt" 2>/dev/null || echo "")
+
+if echo "$CONTAM_GPT" | grep -qi "contamination detected" || echo "$CONTAM_SONNET" | grep -qi "contamination detected"; then
+    echo "contamination detected" > "${EVAL_DIR}/contamination_judgement.txt"
+else
+    echo "no contamination detected" > "${EVAL_DIR}/contamination_judgement.txt"
+fi
+
+MODEL_GPT=$(cat "${EVAL_DIR}/disallowed_model_judgement_gpt5_2.txt" 2>/dev/null || echo "")
+MODEL_SONNET=$(cat "${EVAL_DIR}/disallowed_model_judgement_sonnet4_6.txt" 2>/dev/null || echo "")
+
+if echo "$MODEL_GPT" | grep -qi "disallowed use detected" || echo "$MODEL_SONNET" | grep -qi "disallowed use detected"; then
+    echo "disallowed use detected" > "${EVAL_DIR}/disallowed_model_judgement.txt"
+else
+    echo "only allowed use detected" > "${EVAL_DIR}/disallowed_model_judgement.txt"
+fi
+
+echo "  Aggregated Contamination: $(cat "${EVAL_DIR}/contamination_judgement.txt")"
+echo "  Aggregated Model usage: $(cat "${EVAL_DIR}/disallowed_model_judgement.txt")"
 
 echo "============================="
 echo "======== CLEANING UP ========"
