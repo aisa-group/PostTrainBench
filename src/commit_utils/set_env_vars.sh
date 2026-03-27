@@ -1,28 +1,30 @@
-if [ "${POST_TRAIN_BENCH_JOB_SCHEDULER}" = "htcondor_mpi-is" ]; then
-    source /etc/profile.d/modules.sh
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_FILE="${SCRIPT_DIR}/../../.env"
+
+if [ ! -f "$ENV_FILE" ]; then
+    echo "ERROR: .env file not found at $ENV_FILE" >&2
+    echo "Copy example.env to .env and fill in your values." >&2
+    exit 1
 fi
+
+# Export all variables from .env, without overriding already-set env vars
+while IFS= read -r line || [ -n "$line" ]; do
+    # Skip empty lines and comments
+    [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+
+    var_name="${line%%=*}"
+    current_value="$(eval echo "\${$var_name:-}")"
+
+    if [ -z "$current_value" ] || [ "$current_value" = "UNDEFINED" ]; then
+        eval "export $line"
+    fi
+done < "$ENV_FILE"
 
 export HF_HOME_NEW="/home/ben/hf_cache"
 
-# Helper function: sets variable to default if unset or "UNDEFINED"
-set_default() {
-    local var_name="${1:-}"
-    local default_value="${2:-}"
-    local current_value
-    eval "current_value=\"\${$var_name:-}\""
-    
-    if [ -z "$current_value" ] || [ "$current_value" = "UNDEFINED" ]; then
-        export "$var_name"="$default_value"
-    fi
-}
-
-set_default HF_HOME "$HOME/.cache/huggingface"
-set_default POST_TRAIN_BENCH_RESULTS_DIR "results"
-set_default POST_TRAIN_BENCH_CONTAINERS_DIR "containers"
-set_default POST_TRAIN_BENCH_CONTAINER_NAME "standard"
-set_default POST_TRAIN_BENCH_PROMPT "prompt"
-set_default POST_TRAIN_BENCH_JOB_SCHEDULER "htcondor"
-set_default POST_TRAIN_BENCH_EXPERIMENT_NAME ""
+if [ "${POST_TRAIN_BENCH_JOB_SCHEDULER}" = "htcondor_mpi-is" ]; then
+    source /etc/profile.d/modules.sh
+fi
 
 export PYTHONNOUSERSITE=1
 
