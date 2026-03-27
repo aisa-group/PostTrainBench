@@ -7,20 +7,13 @@ with IDF weighting. Scores each reference field (question, answer, etc.)
 independently to avoid dilution, then combines with decon-style component weights.
 
 Usage:
-    # With task name (reads from src/eval/tasks/{task}/test_data.json)
-    python contamination_check.py --task gpqamain --input training.jsonl
-
-    # With explicit reference file
-    python contamination_check.py --reference ref.json --input training.jsonl
+    python contamination_check.py --reference test_data.json --input training.jsonl
 
     # From stdin (JSONL)
-    cat training.jsonl | python contamination_check.py --task gpqamain
+    cat training.jsonl | python contamination_check.py --reference test_data.json
 
-    # Plain text from stdin (one document per line)
-    echo "some text" | python contamination_check.py --task gpqamain --input-format text
-
-    # Adjust parameters
-    python contamination_check.py --task gpqamain --input data.jsonl --ngram-size 5 --threshold 0.8
+    # Plain text input (one document per line)
+    echo "some text" | python contamination_check.py --reference test_data.json --input-format text
 """
 
 import argparse
@@ -286,14 +279,6 @@ def read_input_documents(input_file, input_format: str, text_field: str) -> list
     return documents
 
 
-def resolve_reference_path(task: str) -> Path:
-    """Resolve reference data path from task name."""
-    repo_root = Path(__file__).parent.parent.parent.parent
-    path = repo_root / "src" / "eval" / "tasks" / task / "test_data.json"
-    if not path.exists():
-        raise FileNotFoundError(f"Reference data not found: {path}")
-    return path
-
 
 def print_summary(total_docs: int, contaminated_docs: int, total_matches: int, file=sys.stderr):
     """Print a summary table to stderr."""
@@ -315,43 +300,30 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
-    input_group = parser.add_mutually_exclusive_group()
-    input_group.add_argument("--input", "-i", type=str, default=None,
-                             help="Input file (JSONL or text). Reads from stdin if omitted.")
+    parser.add_argument("--input", "-i", type=str, default=None,
+                        help="Input file (JSONL or text). Reads from stdin if omitted.")
     parser.add_argument("--input-format", choices=["jsonl", "text"], default="jsonl",
                         help="Input format: jsonl (default) or text (one doc per line).")
     parser.add_argument("--text-field", default="text",
                         help="JSON field containing document text (default: 'text').")
-
-    ref_group = parser.add_mutually_exclusive_group(required=True)
-    ref_group.add_argument("--task", "-t", type=str,
-                           help="Task name (reads from src/eval/tasks/{task}/test_data.json).")
-    ref_group.add_argument("--reference", "-r", type=str,
-                           help="Path to reference data file (JSON array or JSONL).")
-
-    parser.add_argument("--ngram-size", "-n", type=int, default=NGRAM_SIZE,
-                        help=f"N-gram size (default: {NGRAM_SIZE}).")
-    parser.add_argument("--threshold", type=float, default=CONTAMINATION_THRESHOLD,
-                        help=f"Contamination score threshold (default: {CONTAMINATION_THRESHOLD}).")
+    parser.add_argument("--reference", "-r", type=str, required=True,
+                        help="Path to reference data file (JSON array or JSONL).")
     parser.add_argument("--show-ref", action="store_true",
                         help="Include reference item text in output.")
 
     args = parser.parse_args()
 
     # load reference
-    if args.task:
-        ref_path = resolve_reference_path(args.task)
-    else:
-        ref_path = Path(args.reference)
-        if not ref_path.exists():
-            print(f"Error: reference file not found: {ref_path}", file=sys.stderr)
-            sys.exit(1)
+    ref_path = Path(args.reference)
+    if not ref_path.exists():
+        print(f"Error: reference file not found: {ref_path}", file=sys.stderr)
+        sys.exit(1)
 
     print(f"Loading reference data from {ref_path}...", file=sys.stderr)
     ref_items = read_reference(ref_path)
-    print(f"Building index over {len(ref_items)} reference items (ngram_size={args.ngram_size})...", file=sys.stderr)
-    index = ReferenceIndex(ref_items, args.ngram_size)
-    print(f"Index built: {len(index.ngram_to_items)} unique {args.ngram_size}-grams.", file=sys.stderr)
+    print(f"Building index over {len(ref_items)} reference items (ngram_size={NGRAM_SIZE})...", file=sys.stderr)
+    index = ReferenceIndex(ref_items, NGRAM_SIZE)
+    print(f"Index built: {len(index.ngram_to_items)} unique {NGRAM_SIZE}-grams.", file=sys.stderr)
 
     # read input
     documents = read_input_documents(args.input, args.input_format, args.text_field)
@@ -361,7 +333,7 @@ def main():
     contaminated_docs = 0
 
     for doc in documents:
-        matches = index.query(doc["text"], args.threshold)
+        matches = index.query(doc["text"], CONTAMINATION_THRESHOLD)
         if not matches:
             continue
 

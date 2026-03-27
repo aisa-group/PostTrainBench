@@ -189,6 +189,12 @@ echo "========================================="
 echo "=== RUNNING CONTAMINATION JUDGE ==="
 echo "========================================="
 
+# Make judge helper tooling and benchmark metadata available inside the judge sandbox.
+cp "src/disallowed_usage_judge/judge_tools/contamination_check.py" "${JOB_DIR}/contamination_check.py"
+if [ -f "src/eval/tasks/${EVALUATION_TASK}/test_data.json" ]; then
+    cp "src/eval/tasks/${EVALUATION_TASK}/test_data.json" "${JOB_DIR}/test_data.json"
+fi
+
 JUDGE_TASK=$(python src/disallowed_usage_judge/get_judge_prompt.py --benchmark-id "${EVALUATION_TASK}" --model "${MODEL_TO_TRAIN}")
 
 # Reset codex config to prevent agent-specific settings (e.g. model_reasoning_effort)

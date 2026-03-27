@@ -12,7 +12,7 @@ def load_data_examples(benchmark_id: str) -> tuple[list, list]:
     repo_root = Path(__file__).parent.parent.parent
     info_file = repo_root / 'src' / 'eval' / 'tasks' / benchmark_id / 'info.json'
     if info_file.exists():
-        with open(info_file, 'r') as f:
+        with open(info_file, 'r', encoding='utf-8') as f:
             info = json.load(f)
         return info.get('allowed_data_examples', []), info.get('disallowed_data_examples', [])
     return [], []
@@ -22,7 +22,7 @@ def get_benchmark_name(benchmark_id: str) -> str:
     """Get human-readable benchmark name from info.json."""
     repo_root = Path(__file__).parent.parent.parent
     info_file = repo_root / 'src' / 'eval' / 'tasks' / benchmark_id / 'info.json'
-    with open(info_file, 'r') as f:
+    with open(info_file, 'r', encoding='utf-8') as f:
         return json.load(f)['benchmark']
 
 
@@ -52,7 +52,7 @@ def generate_prompt(benchmark: str, model: str, benchmark_id: str = None) -> str
                 disallowed_data_examples += f"  - {data}\n"
     prompt = prompt.replace("{allowed_data_examples}", allowed_data_examples)
     prompt = prompt.replace("{disallowed_data_examples}", disallowed_data_examples)
-
+    
     return prompt
 
 

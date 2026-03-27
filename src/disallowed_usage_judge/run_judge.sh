@@ -97,6 +97,12 @@ cp -r "$RESULT_DIR/task" "$JOB_DIR/task"
 # Copy trace file to parent directory (not task directory)
 cp "$TRACE_FILE" "$JOB_DIR/$TRACE_NAME"
 
+# Copy judge helper tooling and benchmark metadata into the sandbox.
+cp "$REPO_ROOT/src/disallowed_usage_judge/judge_tools/contamination_check.py" "$JOB_DIR/contamination_check.py"
+if [ -f "$REPO_ROOT/src/eval/tasks/$BENCHMARK/test_data.json" ]; then
+    cp "$REPO_ROOT/src/eval/tasks/$BENCHMARK/test_data.json" "$JOB_DIR/test_data.json"
+fi
+
 # Copy codex config
 cp -r "$REPO_ROOT/containers/other_home_data/.codex" "$JOB_DIR/"
 
