@@ -18,7 +18,44 @@ API_KEY_ENV_VARS = [
     "OPENAI_API_KEY",
     "ANTHROPIC_API_KEY",
     "GEMINI_API_KEY",
-    "MY_HF_TOKEN"
+    "BEN_HF_TOKEN",
+    "HARDIK_HF_TOKEN",
+    "OPENCODE_API_KEY",
+    "ZAI_API_KEY",
+    "DASHSCOPE_API_KEY"
+
+]
+
+API_KEY_PATTERNS = [
+    "sk-proj",      # OpenAI project keys
+    "sk-ant",       # Anthropic keys
+    "AIzaSy",       # Google/Gemini keys
+    # "sk-",        # Generic OpenAI keys - too broad (matches "mask-in", etc). Covered by sk-proj/sk-ant.
+    # "hf_",        # HuggingFace tokens - too broad (matches hf_cache, hf_home etc). Actual tokens redacted via env vars.
+    # not needed
+    # AWS
+    # "AKIA",         # AWS access key IDs
+    # GitHub
+    # "ghp_",         # GitHub personal access tokens
+    # "gho_",         # GitHub OAuth tokens
+    # "ghs_",         # GitHub app installation tokens
+    # "ghr_",         # GitHub refresh tokens
+    # # GitLab
+    # "glpat-",       # GitLab personal access tokens
+    # AI services
+    "sk-or-",       # OpenRouter
+    # "r8_",          # Replicate
+    # "xai-",         # xAI/Grok
+    # "nvapi-",       # NVIDIA
+    # Slack
+    # "xoxb-",        # Slack bot tokens
+    # "xoxp-",        # Slack user tokens
+    # Stripe
+    # "sk_live_",     # Stripe live secret keys
+    # "sk_test_",     # Stripe test secret keys
+    # "whsec_",       # Stripe webhook secrets
+    # Other
+    # "SG.",          # SendGrid API keys
 ]
 
 
@@ -26,38 +63,55 @@ def get_api_keys() -> list[str]:
     """Get API key values from environment variables (non-empty only)."""
     keys = []
     for var in API_KEY_ENV_VARS:
+        if var not in os.environ:
+            raise ValueError(f"Expected environment variable not set: {var}")
         value = os.environ[var]
         keys.append(value)
 
     return keys
 
+_warnings = []
 
-def sanitize_content(content: str, api_keys: list[str]) -> str:
+def warn_if_api_key_in_content(content: str, prefix: str, src_path: str = "") -> None:
+    if prefix in content:
+        idx = content.index(prefix)
+        start = max(0, idx - 50)
+        end = min(len(content), idx + 50)
+        context = content[start:end].replace('\n', '\\n')
+        _warnings.append({
+            "pattern": prefix,
+            "file": src_path,
+            "context": context,
+        })
+
+def sanitize_content(content: str, api_keys: list[str], src_path: str = "") -> str:
     """Replace any API keys found in content with a placeholder."""
+    import re
     for key in api_keys:
         content = content.replace(key, "<omitted-api-key>")
+        # Also redact truncated versions (agent output may truncate keys)
+        # Use the first 10 chars as an anchor and redact the full key-like token
+        if len(key) >= 10:
+            prefix = re.escape(key[:10])
+            content = re.sub(prefix + r'[A-Za-z0-9_\-]+', '<omitted-api-key>', content)
+    for pattern in API_KEY_PATTERNS:
+        warn_if_api_key_in_content(content, pattern, src_path)
+
     return content
 
 
 def copy_file_sanitized(src: Path, dest: Path, api_keys: list[str]) -> None:
     """Copy a file, sanitizing API keys from its content."""
     content = src.read_text(encoding="utf-8")
-    sanitized = sanitize_content(content, api_keys)
-    if content != sanitized:
-        print(f"Sanitized API keys in file: {src}")
+    sanitized = sanitize_content(content, api_keys, src_path=str(src))
     dest.write_text(sanitized, encoding="utf-8")
     # Preserve file metadata
     shutil.copystat(src, dest)
+    return content != sanitized
 
 
 def extract_model_name(dir_name: str) -> str:
-    parts = dir_name.split("h_")
-    if len(parts) > 2:
-        raise ValueError(f"Unexpected directory name format: {dir_name}")
-    if len(parts) == 1:
-        return dir_name
-
-    return parts[0] + "h"
+    return dir_name
 
 
 def get_latest_subdirs(input_dir: Path) -> list[Path]:
@@ -104,43 +158,64 @@ def main():
     output_base = Path(OUTPUT_DIR)
     api_keys = get_api_keys()
 
+    copied_count = 0
+    sanitized_count = 0
+    missing_count = 0
+
     for input_dir_name in args.input_dirs:
         input_dir = RESULTS_BASE / input_dir_name
-        
+
         if not input_dir.is_dir():
-            print(f"Warning: Directory does not exist: {input_dir}")
+            print(f"  SKIP: {input_dir} does not exist")
             continue
-        
+
         model_name = extract_model_name(input_dir_name)
         model_dir = output_base / model_name
         model_dir.mkdir(parents=True, exist_ok=True)
-        
+
+        print(f"\n[{input_dir_name}]")
+
         # Iterate over only the latest subdirectories (highest ID per prefix)
-        for subdir in get_latest_subdirs(input_dir):
+        for subdir in sorted(get_latest_subdirs(input_dir)):
             # Determine source file (prefer solve_parsed.txt)
             src_file = subdir / "solve_parsed.txt"
-            solve_filename = "solve_parsed.txt"
             if not src_file.exists():
                 src_file = subdir / "solve_out.txt"
-                solve_filename = "solve_out.txt"
                 if not src_file.exists():
-                    print(f"Warning: No solve_parsed.txt or solve_out.txt in {subdir}")
+                    print(f"  MISS: {subdir.name} (no trace file)")
+                    missing_count += 1
                     continue
-            
+
             # Create output directory with same name as original subdirectory
             task_name = subdir.name
             dest_dir = model_dir / task_name
             dest_dir.mkdir(parents=True, exist_ok=True)
-            
+
             # Copy solve file with original filename
-            dest_file = dest_dir / solve_filename
-            copy_file_sanitized(src_file, dest_file, api_keys)
-            print(f"Copied: {src_file} -> {dest_file}")
+            dest_file = dest_dir / "trace.txt"
+            was_sanitized = copy_file_sanitized(src_file, dest_file, api_keys)
+            if was_sanitized:
+                sanitized_count += 1
 
             copy_other_files(subdir, dest_dir, 'metrics.json', api_keys=api_keys)
             copy_other_files(subdir, dest_dir, 'contamination_judgement.txt', api_keys=api_keys)
             copy_other_files(subdir, dest_dir, 'disallowed_model_judgement.txt', api_keys=api_keys)
             copy_other_files(subdir, dest_dir, 'error.log', 'judgement.log', api_keys=api_keys)
+
+            tag = " [sanitized]" if was_sanitized else ""
+            print(f"  OK: {subdir.name}{tag}")
+            copied_count += 1
+
+    # Summary
+    print(f"\n{'='*60}")
+    print(f"Done: {copied_count} copied, {sanitized_count} sanitized, {missing_count} missing")
+    print(f"Output: {output_base}")
+
+    if _warnings:
+        print(f"\n--- {len(_warnings)} pattern warnings (review manually) ---")
+        for w in _warnings:
+            print(f"  [{w['pattern']}] {w['file']}")
+            print(f"    ...{w['context']}...")
 
 def copy_other_files(subdir, dest_dir, filename, dest_filename=None, api_keys=None):
     if dest_filename is None:

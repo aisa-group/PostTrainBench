@@ -102,8 +102,8 @@ def aggregate_agent(method_names: list[str], results_dir: str):
 
     for bench in HARDCODED_BENCHMARKS:
         values = run_averages[bench]
-        avg_per_benchmark[bench] = round(mean(values) * 100, 1)
-        std_per_benchmark[bench] = round(stddev(values) * 100, 1)
+        avg_per_benchmark[bench] = mean(values)
+        std_per_benchmark[bench] = stddev(values)
 
     # Compute avg and std across runs for each (model, benchmark) pair
     avg_per_model_benchmark = {}
@@ -114,8 +114,8 @@ def aggregate_agent(method_names: list[str], results_dir: str):
         std_per_model_benchmark[model] = {}
         for bench in HARDCODED_BENCHMARKS:
             values = run_values_per_model[model][bench]
-            avg_per_model_benchmark[model][bench] = round(mean(values) * 100, 1)
-            std_per_model_benchmark[model][bench] = round(stddev(values) * 100, 1)
+            avg_per_model_benchmark[model][bench] = mean(values)
+            std_per_model_benchmark[model][bench] = stddev(values)
 
     return avg_per_benchmark, std_per_benchmark, avg_per_model_benchmark, std_per_model_benchmark, all_models
 

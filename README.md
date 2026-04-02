@@ -1,36 +1,53 @@
-# PostTrainBench: Measuring AI Ability to Perform LLM Post-Training
+# PostTrainBench: Can LLM Agents Automate LLM Post-Training?
 
 [![Website](https://img.shields.io/badge/Website-posttrainbench.com-c17d5a)](http://posttrainbench.com/)
 
 We introduce PostTrainBench, a benchmark that measures the ability of CLI agents to post-train pre-trained large language models (LLMs). In PostTrainBench, the agent's task is to improve the performance of a base LLM on a given benchmark. The agent is given access to an evaluation script and 10 hours on an H100 GPU. Performance is measured by the benchmark score of the post-trained LLM. This setup naturally evaluates an agent's ability to conduct AI R&D.
 
-> **Looking for Collaborators!** We are seeking contributors to help expand tasks and agent scaffolds. Substantial contributions can lead to co-authorship on our paper. See [Contributing](#contributing) for details.
+> [!IMPORTANT]
+> **Harbor support coming soon!** This repository currently targets our internal HPC cluster (HTCondor). We are adding [Harbor](https://github.com/harbor-framework/harbor) support to make it straightforward to run on rented hardware (e.g., cloud GPUs). See our [PR](https://github.com/aisa-group/PostTrainBench/pull/8).
 
 ## Leaderboard
 
-![Main Plot](assets/main_plot_v0_1.png)
+![Main Plot](assets/main_plot_v1.png)
 
-Benchmark scores are computed after post-training, for all but the "base model" score.
+Scores are weighted averages across 7 benchmarks and 4 models (Qwen3-1.7B, Qwen3-4B, SmolLM3-3B, and Gemma-3-4B). Agents with multiple runs show averaged results.
 
-All scores are averages over 4 models (Qwen3-1.7B, Qwen3-4B, SmolLM3-3B, and Gemma-3-4B).
+| Rank | Agent | Scaffold | Avg | AIME 2025 | Arena Hard | BFCL | GPQA | GSM8K | HealthBench | HumanEval |
+|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| - | Official Instruct Models | - | 51.1 | 29.2 | 70.2 | 85.0 | 36.2 | 87.0 | 43.3 | 71.5 |
+| 1 | Opus 4.6 | Claude Code | 23.2 | 5.0 | 7.8 | 75.9 | 25.5 | 41.0 | 18.8 | 24.7 |
+| 2 | Gemini 3.1 Pro | OpenCode | 21.6 | 3.9 | 7.4 | 62.8 | 18.5 | 45.5 | 14.5 | 40.2 |
+| 3 | GPT-5.2 | Codex CLI | 21.4 | 0.8 | 6.6 | 52.5 | 23.7 | 55.9 | 15.8 | 30.2 |
+| 4 | GPT 5.4 | Codex CLI | 20.2 | 0.6 | 10.1 | 31.1 | 28.0 | 48.2 | 17.3 | 27.3 |
+| 5 | GPT 5.1 Codex Max | Codex CLI | 19.7 | 0.6 | 4.0 | 30.8 | 24.0 | 51.6 | 17.8 | 32.0 |
+| 6 | Gemini 3 Pro | Gemini CLI | 18.1 | 1.7 | 6.3 | 42.3 | 21.2 | 39.1 | 17.3 | 22.7 |
+| 7 | GPT 5.3 Codex | Codex CLI | 17.8 | 0.6 | 2.4 | 45.5 | 27.7 | 33.1 | 8.9 | 29.1 |
+| 8 | GPT 5.2 Codex | Codex CLI | 17.2 | 0.3 | 2.5 | 45.2 | 24.1 | 37.6 | 11.5 | 23.8 |
+| 9 | Opus 4.5 | Claude Code | 17.1 | 2.2 | 3.8 | 61.7 | 19.0 | 28.5 | 8.9 | 29.3 |
+| 10 | Sonnet 4.6 | Claude Code | 16.4 | 3.3 | 10.2 | 23.8 | 13.8 | 25.7 | 16.2 | 42.4 |
+| 11 | GLM 5 | OpenCode | 13.9 | 0.8 | 4.2 | 21.5 | 15.2 | 40.3 | 14.6 | 17.4 |
+| 12 | Sonnet 4.5 | Claude Code | 9.9 | 0.8 | 1.0 | 1.8 | 14.6 | 30.9 | 5.0 | 23.0 |
+| - | Base Models | Zero Shot | 7.5 | 1.7 | 1.3 | 1.5 | 8.5 | 20.4 | 9.5 | 12.8 |
 
-| Method              | Average Score | AIME 2025 | BFCL | GPQA (Main) | GSM8K | HumanEval |
-|---------------------|---------------|-----------|------|-------------|-------|-----------|
-| Human Post-Trained* | 61.8          | 29.2      | 85   | 36.2        | 87    | 71.5      |
-| gpt-5.1-codex-max   | 34.9          | 0.8       | 67   | 29.6        | 44.3  | 32.9      |
-| claude opus 4.5     | 20.1          | 3.3       | 40.3 | 6.8         | 26.7  | 23.5      |
-| gemini-3-pro        | 18            | 0.8       | 16.5 | 19.1        | 30.7  | 23        |
-| gpt-5.2             | 17.5          | 0         | 13.5 | 19.9        | 34.4  | 19.5      |
-| claude sonnet 4.5   | 14.7          | 0.8       | 1.5  | 14.6        | 33.4  | 23        |
-| Base model          | 9             | 1.7       | 1.5  | 8.5         | 20.4  | 12.8      |
+"Official Instruct Models" is not directly comparable since it exceeds the 10h + 1 GPU constraint. See the full interactive leaderboard at [posttrainbench.com](http://posttrainbench.com/), which includes OpenCode variants and additional agents.
 
-\* "Human Post-Trained" is not directly comparable since it exceeds the 10h + 1 GPU constraint.
+## Scaffolds
 
-## Time Spent on Post-Training
+Agents are run through one of 4 CLI scaffolds: Claude Code, Codex CLI, Gemini CLI, and OpenCode. 
 
-Different CLI agents demonstrate varying levels of persistence. Some give up well before the time limit expires.
 
-![Time Spent](assets/time_spent_v0_1.png)
+## Evaluation Tasks
+
+PostTrainBench includes 7 benchmarks spanning reasoning, tool use, knowledge, math, health, and code:
+
+1. **AIME 2025** — Math competition problems
+2. **Arena Hard Writing** — Creative writing benchmark adapted from ArenaHard v2
+3. **BFCL** — Berkeley Function Calling Leaderboard (tool use)
+4. **GPQA** — Graduate-level science questions
+5. **GSM8K** — Grade school math
+6. **HealthBench Easy** — Medical knowledge and reasoning
+7. **HumanEval** — Code generation
 
 ## Quick Start
 
@@ -52,49 +69,7 @@ export GEMINI_API_KEY="your-key"
 bash src/commit_utils/commit.sh
 ```
 
-Currently, we only support the HTCondor job scheduler. Slurm support is planned.
-
-## Code Structure
-
-| Directory | Description |
-|-----------|-------------|
-| `agents/` | Agent implementations |
-| `containers/` | Container definition, cache downloads |
-| `dev_utils/` | Development utility scripts |
-| `src/` | Main codebase |
-| `src/commit_utils/` | Job submission utilities (e.g., `bash src/commit_utils/commit.sh`) |
-| `src/baselines/` | Scripts to compute baseline scores |
-| `src/eval/` | Evaluation tasks |
-| `results/` | Evaluation results (baseline runs prefixed with `baseline_`) |
-
-Each evaluation folder in `src/eval/tasks/` contains:
-- `benchmark.txt`: Official benchmark name
-- `evaluate.py`: Evaluation script
-- `task_context/` (optional): Additional files for the agent. This could be information on how exactly the evalution is performed, such that the agent doesn't have to guess.
-
-## Contributing
-
-We welcome contributions! Get in touch through a pull request, by opening an issue, or via [email](#contact).
-
-We are especially interested in:
-- New evaluation tasks
-- New agent scaffolds
-
-### Adding Tasks
-
-Add your code to `src/eval/tasks/<task_name>/` with:
-1. `evaluate.py` - Evaluation script (see existing tasks for examples)
-2. `benchmark.txt` - Official benchmark name
-
-Requirements for new tasks:
-- The task should be achievable by instruction-tuned versions of our test models ([Qwen3-1.7B](https://huggingface.co/Qwen/Qwen3-1.7B), [Qwen3-4B](https://huggingface.co/Qwen/Qwen3-4B), [SmolLM3-3B](https://huggingface.co/HuggingFaceTB/SmolLM3-3B), [Gemma-3-4B](https://huggingface.co/google/gemma-3-4b-it)) - significantly above random chance
-- Evaluation should run in ~15 minutes on an H100 (use vLLM for inference, subsample if needed during development) For the final evaluation, please use the full benchmark
-
-### Adding Agents
-
-Add your code to `agents/<agent_name>/` with `solve.sh` (script that calls the agent).
-
-See `agents/codex/` and `agents/claude/` for examples. Agents should have web access (e.g., via a web-search tool).
+Currently, we only support the HTCondor job scheduler. [Harbor](https://github.com/harbor-framework/harbor) support is planned.
 
 #### API-based agents
 
@@ -140,6 +115,42 @@ The `solve.sh` script unsets API keys and sets `forced_login_method = "chatgpt"`
 The `solve.sh` script reads the token from the file, exports it as `CLAUDE_CODE_OAUTH_TOKEN`, and unsets `ANTHROPIC_API_KEY` to avoid auth conflicts.
 
 **Important:** Auth credential files (`auth.json`, `oauth_token`) are gitignored. They are copied into the job directory only for agents that need them (see the conditional copy in `run_task.sh`).
+
+
+## Code Structure
+
+| Directory | Description |
+|-----------|-------------|
+| `agents/` | Agent implementations |
+| `containers/` | Container definition, cache downloads |
+| `dev_utils/` | Development utility scripts |
+| `src/` | Main codebase |
+| `src/commit_utils/` | Job submission utilities (e.g., `bash src/commit_utils/commit.sh`) |
+| `src/baselines/` | Scripts to compute baseline scores |
+| `src/eval/` | Evaluation tasks |
+| `results/` | Evaluation results (baseline runs prefixed with `baseline_`) |
+
+Each evaluation folder in `src/eval/tasks/` contains:
+- `benchmark.txt`: Official benchmark name
+- `evaluate.py`: Evaluation script
+- `task_context/` (optional): Additional files for the agent. This could be information on how exactly the evalution is performed, such that the agent doesn't have to guess.
+
+## Contributing
+
+We welcome contributions! Get in touch through a pull request, by opening an issue, or via [email](#contact).
+
+We are especially interested in new evaluation tasks.
+
+### Adding Tasks
+
+Add your code to `src/eval/tasks/<task_name>/` with:
+1. `evaluate.py` - Evaluation script (see existing tasks for examples)
+2. `benchmark.txt` - Official benchmark name
+
+Requirements for new tasks:
+- The task should be achievable by instruction-tuned versions of our test models ([Qwen3-1.7B](https://huggingface.co/Qwen/Qwen3-1.7B), [Qwen3-4B](https://huggingface.co/Qwen/Qwen3-4B), [SmolLM3-3B](https://huggingface.co/HuggingFaceTB/SmolLM3-3B), [Gemma-3-4B](https://huggingface.co/google/gemma-3-4b-it)) - significantly above random chance
+- Evaluation should run in ~15 minutes on an H100 (use vLLM for inference, subsample if needed during development) For the final evaluation, please use the full benchmark
+
 
 ## On Reward Hacking
 
@@ -196,12 +207,11 @@ For Claude Code, we add the following line (Claude Code can run tasks in the bac
 
 ## Roadmap
 
-- More evaluation tasks
-- More agent scaffolds and different agents
-- Enhanced data decontamination
-- Enhanced method to detect reward hacking
-- Slurm support
-- Ablation studies (e.g., varying compute budgets)
+- [x] More evaluation tasks (v1: 7 benchmarks, up from 5)
+- [x] More agent scaffolds and agents (v1: 4 scaffolds, 20+ agent configurations)
+- [ ] Enhanced data decontamination
+- [ ] Enhanced method to detect reward hacking
+- [x] Ablation studies (e.g., varying compute budgets)
 
 ## Contact
 
@@ -214,9 +224,13 @@ For Claude Code, we add the following line (Claude Code can run tasks in the bac
 If you found PostTrainBench useful, please cite us as:
 
 ```bibtex
-@misc{posttrainbench_2025,
-  title={PostTrainBench: Measuring AI Ability to Perform LLM Post-Training},
-  author={Rank, Ben and Bhatnagar, Hardik and Bethge, Matthias and Andriushchenko, Maksym},
-  year={2025}
+@article{posttrainbench_2026,
+  title     = {PostTrainBench: Can LLM Agents Automate LLM Post-Training?},
+  author    = {Ben Rank and Hardik Bhatnagar and Ameya Prabhu and Shira Eisenberg and Karina Nguyen and Matthias Bethge and Maksym Andriushchenko},
+  year      = {2026},
+  eprint    = {2603.08640},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.SE},
+  url       = {https://arxiv.org/abs/2603.08640}
 }
 ```

@@ -129,7 +129,7 @@ def main():
         writer = csv.writer(f)
         writer.writerow(["method", "metric"])
         for method_name in sorted(all_metrics.keys()):
-            writer.writerow([method_name, round(all_metrics[method_name] * 100, 1)])
+            writer.writerow([method_name, all_metrics[method_name]])
     print(f"Written: {metrics_path}")
 
     # Compute aggregated metrics for each agent group
@@ -142,8 +142,8 @@ def main():
             metrics.append(metric)
 
         aggregated_results[agent_name] = {
-            "avg": round(mean(metrics) * 100, 1),
-            "std": round(stddev(metrics) * 100, 1),
+            "avg": mean(metrics),
+            "std": stddev(metrics),
             "n": len(metrics),
         }
 

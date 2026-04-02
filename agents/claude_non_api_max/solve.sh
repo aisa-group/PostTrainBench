@@ -15,8 +15,8 @@ fi
 
 export BASH_MAX_TIMEOUT_MS="36000000"
 
-# Set default effort level to high for consistency  
+# Set effort level to max (Opus 4.6 only — absolute maximum reasoning, no token constraints)
+export CLAUDE_CODE_EFFORT_LEVEL="max"
 
 claude --print --verbose --model "$AGENT_CONFIG" --output-format stream-json \
-    --effort high \
     --dangerously-skip-permissions "$PROMPT"

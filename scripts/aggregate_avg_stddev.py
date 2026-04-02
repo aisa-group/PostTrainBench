@@ -87,8 +87,8 @@ def aggregate_runs(agent_name: str, method_names: list[str], results_dir: str):
                 value = float(value_str)
                 values.append(value)
 
-            avg_data[model][bench] = str(round(mean(values) * 100, 1))
-            std_data[model][bench] = str(round(stddev(values) * 100, 1))
+            avg_data[model][bench] = str(mean(values))
+            std_data[model][bench] = str(stddev(values))
 
     # Write average CSV
     avg_path = os.path.join(results_dir, f"aggregated_avg_{agent_name}.csv")

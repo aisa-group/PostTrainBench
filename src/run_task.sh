@@ -9,9 +9,9 @@ AGENT_CONFIG="$6"
 
 source src/commit_utils/set_env_vars.sh
 
-RESULT_PREFIX_SAFE=$(echo "$MODEL_TO_TRAIN" | tr '/:' '_')
+RESULT_PREFIX_SAFE=$(echo "$MODEL_TO_TRAIN" | tr '/:[]' '____')
 
-AGENT_CONFIG_SAFE=$(echo "$AGENT_CONFIG" | tr '/:' '_')
+AGENT_CONFIG_SAFE=$(echo "$AGENT_CONFIG" | tr '/:[]' '____')
 
 RANDOM_UUID=$(uuidgen)
 
@@ -120,6 +120,9 @@ solve_task() {
         --env ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}" \
         --env CODEX_API_KEY="${CODEX_API_KEY}" \
         --env GEMINI_API_KEY="${GEMINI_API_KEY}" \
+        --env OPENCODE_API_KEY="${OPENCODE_API_KEY}" \
+        --env DASHSCOPE_API_KEY="${DASHSCOPE_API_KEY}" \
+        --env ZAI_API_KEY="${ZAI_API_KEY}" \
         --env VLLM_API_KEY="inspectai" \
         --env PYTHONNOUSERSITE="1" \
         --env PROMPT="${PROMPT}" \
@@ -178,6 +181,10 @@ echo "=== RUNNING CONTAMINATION JUDGE ==="
 echo "========================================="
 
 JUDGE_TASK=$(python src/disallowed_usage_judge/get_judge_prompt.py --benchmark "${BENCHMARK}" --model "${MODEL_TO_TRAIN}")
+
+# Reset codex config to prevent agent-specific settings (e.g. model_reasoning_effort)
+# from leaking into the judge, which uses a different model
+cp -r "containers/other_home_data/.codex" "${JOB_DIR}/"
 
 with_huggingface_overlay apptainer exec \
     --nv \
