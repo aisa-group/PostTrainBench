@@ -10,10 +10,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shlex
 import shutil
 from pathlib import Path
 from typing import Any
+
+TIMESTAMP_PREFIX_RE = re.compile(r'^\[(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)\] ')
 
 DETECT_LINES = 200
 DETECT_PREFIX = '{"type":"thread.started"'
@@ -61,7 +64,12 @@ def is_structured_json(input_path: Path) -> bool:
         for i, line in enumerate(f):
             if i >= DETECT_LINES:
                 break
-            if line.lstrip().startswith(DETECT_PREFIX):
+            stripped = line.lstrip()
+            # Strip [timestamp] prefix if present
+            ts_match = TIMESTAMP_PREFIX_RE.match(stripped)
+            if ts_match:
+                stripped = stripped[ts_match.end():]
+            if stripped.startswith(DETECT_PREFIX):
                 return True
     return False
 
@@ -137,7 +145,7 @@ def format_command(command: list[str] | str) -> str:
     return str(command)
 
 
-def format_event(index: int, data: dict[str, Any]) -> str:
+def format_event(index: int, data: dict[str, Any], wall_ts: str | None = None) -> str:
     """Format a Codex event for display."""
     # Codex events are wrapped: {"id": "...", "msg": {...}}
     # The actual event type is in msg.type
@@ -148,6 +156,8 @@ def format_event(index: int, data: dict[str, Any]) -> str:
     header_bits: list[str] = [f"type: {event_type}"]
     if event_id:
         header_bits.append(f"id: {event_id}")
+    if wall_ts:
+        header_bits.append(f"ts: {wall_ts}")
 
     header_extra = " | ".join(header_bits)
     lines: list[str] = [f"=== Event {index} | {header_extra} ==="]
@@ -463,6 +473,14 @@ def main() -> None:
             stripped = raw_line.strip()
             if not stripped:
                 continue
+
+            # Strip [timestamp] prefix added by timestamp_lines.py
+            wall_ts = None
+            ts_match = TIMESTAMP_PREFIX_RE.match(stripped)
+            if ts_match:
+                wall_ts = ts_match.group(1)
+                stripped = stripped[ts_match.end():]
+
             try:
                 event = json.loads(stripped)
             except json.JSONDecodeError as exc:
@@ -489,7 +507,7 @@ def main() -> None:
             else:
                 flush_deltas()
                 event_counter += 1
-                formatted_events.append(format_event(event_counter, event))
+                formatted_events.append(format_event(event_counter, event, wall_ts))
 
     flush_deltas()
 

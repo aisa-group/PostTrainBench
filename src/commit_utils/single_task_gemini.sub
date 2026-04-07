@@ -1,5 +1,6 @@
 executable = /bin/bash
-arguments = src/run_task.sh $(eval) $(agent) $(model_to_train) $(Cluster) $(num_hours) $(agent_config)
+num_gpus = 1
+arguments = src/run_task.sh $(eval) $(agent) $(model_to_train) $(Cluster) $(num_hours) $(agent_config) $(num_gpus)
 environment = "OPENAI_API_KEY=$ENV(OPENAI_API_KEY) ANTHROPIC_API_KEY=$ENV(ANTHROPIC_API_KEY) GEMINI_API_KEY=$ENV(GEMINI_API_KEY) HOME=$ENV(HOME) POST_TRAIN_BENCH_RESULTS_DIR=$ENV(POST_TRAIN_BENCH_RESULTS_DIR) POST_TRAIN_BENCH_CONTAINERS_DIR=$ENV(POST_TRAIN_BENCH_CONTAINERS_DIR) POST_TRAIN_BENCH_CONTAINER_NAME=$ENV(POST_TRAIN_BENCH_CONTAINER_NAME) POST_TRAIN_BENCH_JOB_SCHEDULER=$ENV(POST_TRAIN_BENCH_JOB_SCHEDULER) POST_TRAIN_BENCH_EXPERIMENT_NAME=$ENV(POST_TRAIN_BENCH_EXPERIMENT_NAME) HF_HOME=$ENV(HF_HOME) POST_TRAIN_BENCH_PROMPT=$ENV(POST_TRAIN_BENCH_PROMPT)"
 error = test_$(Cluster).err
 output = test_$(Cluster).out
@@ -7,7 +8,7 @@ log = test_$(Cluster).log
 concurrency_limits=user.gemini:1250
 request_memory = 131072
 request_cpus = 16
-request_gpus = 1
+request_gpus = $(num_gpus)
 requirements = TARGET.CUDADeviceName == "NVIDIA H100 80GB HBM3"
 request_disk=400G
 +BypassLXCfs="true"

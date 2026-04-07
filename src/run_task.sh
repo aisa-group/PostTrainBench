@@ -6,6 +6,7 @@ MODEL_TO_TRAIN="$3"
 CLUSTER_ID="$4"
 NUM_HOURS="$5"
 AGENT_CONFIG="$6"
+NUM_GPUS="${7:-1}"
 
 source src/commit_utils/set_env_vars.sh
 
@@ -15,7 +16,12 @@ AGENT_CONFIG_SAFE=$(echo "$AGENT_CONFIG" | tr '/:[]' '____')
 
 RANDOM_UUID=$(uuidgen)
 
-export EVAL_DIR="${POST_TRAIN_BENCH_RESULTS_DIR}/${AGENT}_${AGENT_CONFIG_SAFE}_${NUM_HOURS}h${POST_TRAIN_BENCH_EXPERIMENT_NAME}/${EVALUATION_TASK}_${RESULT_PREFIX_SAFE}_${CLUSTER_ID}"
+GPU_SUFFIX=""
+if [ "$NUM_GPUS" -gt 1 ] 2>/dev/null; then
+    GPU_SUFFIX="_${NUM_GPUS}gpu"
+fi
+
+export EVAL_DIR="${POST_TRAIN_BENCH_RESULTS_DIR}/${AGENT}_${AGENT_CONFIG_SAFE}_${NUM_HOURS}h${GPU_SUFFIX}${POST_TRAIN_BENCH_EXPERIMENT_NAME}/${EVALUATION_TASK}_${RESULT_PREFIX_SAFE}_${CLUSTER_ID}"
 
 mkdir -p ${EVAL_DIR}
 
@@ -50,7 +56,7 @@ fi
 cp -r "containers/other_home_data/.codex" "${JOB_DIR}/"
 
 BENCHMARK=$(cat src/eval/tasks/${EVALUATION_TASK}/benchmark.txt)
-PROMPT=$(python src/eval/general/get_prompt.py --model-to-train "$MODEL_TO_TRAIN" --benchmark-id "$EVALUATION_TASK" --num-hours "$NUM_HOURS" --agent "${AGENT}")
+PROMPT=$(python src/eval/general/get_prompt.py --model-to-train "$MODEL_TO_TRAIN" --benchmark-id "$EVALUATION_TASK" --num-hours "$NUM_HOURS" --num-gpus "$NUM_GPUS" --agent "${AGENT}")
 echo "$PROMPT" > "${EVAL_DIR}/prompt.txt"
 
 bash src/utils/create_timer.sh $NUM_HOURS $JOB_DIR/task/timer.sh
@@ -65,6 +71,8 @@ fi
 # Copy scripts needed inside the container
 cp src/utils/check_cuda.py "${JOB_DIR}/check_cuda.py"
 cp src/utils/check_cuda_writing.py "${JOB_DIR}/check_cuda_writing.py"
+cp src/utils/system_monitor.sh "${JOB_DIR}/system_monitor.sh"
+cp src/utils/timestamp_lines.py "${JOB_DIR}/timestamp_lines.py"
 cp "agents/${AGENT}/solve.sh" "${JOB_DIR}/agent_solve.sh"
 
 # Copy agent-specific auth if present (e.g. for non-API agents)
@@ -125,6 +133,7 @@ solve_task() {
         --env ZAI_API_KEY="${ZAI_API_KEY}" \
         --env VLLM_API_KEY="inspectai" \
         --env PYTHONNOUSERSITE="1" \
+        --env NUM_GPUS="${NUM_GPUS}" \
         --env PROMPT="${PROMPT}" \
         --env AGENT_CONFIG="${AGENT_CONFIG}" \
         --bind "${JOB_TMP}:/tmp" \
@@ -133,7 +142,7 @@ solve_task() {
         --pwd "/home/ben/task" \
         --writable-tmpfs \
         "${POST_TRAIN_BENCH_CONTAINERS_DIR}/${POST_TRAIN_BENCH_CONTAINER_NAME}.sif" \
-        bash -c "python /home/ben/check_cuda.py && python /home/ben/check_cuda_writing.py && bash /home/ben/agent_solve.sh" > "${SOLVE_OUT}" 2>&1
+        bash -c "{ python /home/ben/check_cuda.py && python /home/ben/check_cuda_writing.py || exit 1; bash /home/ben/system_monitor.sh & MONITOR_PID=\$!; bash /home/ben/agent_solve.sh; kill \$MONITOR_PID 2>/dev/null; } 2>&1 | python /home/ben/timestamp_lines.py" > "${SOLVE_OUT}" 2>&1
 }
 
 echo "================================"
@@ -217,6 +226,10 @@ echo "================================"
 
 if [ -d "${JOB_DIR}/task/final_model" ]; then
     cp -r "${JOB_DIR}/task/final_model" "$EVAL_DIR/final_model"
+fi
+
+if [ -f "${JOB_DIR}/task/system_monitor.log" ]; then
+    cp "${JOB_DIR}/task/system_monitor.log" "$EVAL_DIR/system_monitor.log"
 fi
 
 python containers/delete_hf_models.py "${JOB_DIR}/task"

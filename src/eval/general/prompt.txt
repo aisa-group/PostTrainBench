@@ -15,7 +15,7 @@ Store your best trained model in the folder \`final_model\`.
 ## Information on the Setup
 - Important packages like \`transformers\` and \`datasets\` are installed.
 - The packages are installed via \`uv pip install --system\`.
-- The machine is equiped with an Nvidia H100 GPU.
+{gpu_info}
 - Consider the --limit option of the evaluate.py script for faster iteration during development.
 {setup_other}
 ## Rules

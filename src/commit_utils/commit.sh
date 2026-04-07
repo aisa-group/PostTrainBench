@@ -17,7 +17,7 @@ evals=(
     "humaneval"
     "healthbench"
 )
-export POST_TRAIN_BENCH_EXPERIMENT_NAME="_run3"
+# export POST_TRAIN_BENCH_EXPERIMENT_NAME="_pushed"
 for model in "${models[@]}"; do
     for eval in "${evals[@]}"; do
         echo ""
@@ -38,6 +38,14 @@ for model in "${models[@]}"; do
             condor_submit_bid 100 -a "agent=codex_non_api_high" -a "agent_config=gpt-5.2" -a "eval=$eval" -a "model_to_train=$model" -a "num_hours=10" src/commit_utils/single_task.sub
             condor_submit_bid 100 -a "agent=claude_non_api" -a "agent_config=claude-opus-4-6[1m]" -a "eval=$eval" -a "model_to_train=$model" -a "num_hours=10" src/commit_utils/single_task.sub
             condor_submit_bid 100 -a "agent=claude_non_api" -a "agent_config=claude-opus-4-6[1m]" -a "eval=$eval" -a "model_to_train=$model" -a "num_hours=50" src/commit_utils/single_task.sub
+
+            # Multi-GPU runs might need more than 8 CPUs and 128 GB of RAM (use 512 GB to be safe)
+            condor_submit_bid 100 -a "agent=claude_non_api" -a "agent_config=claude-opus-4-6[1m]" -a "eval=$eval" -a "model_to_train=$model" -a "num_gpus=8" -a "num_hours=50" -a "request_memory=524288" -a "request_cpus=128" src/commit_utils/single_task.sub   
+            condor_submit_bid 500 -a "agent=claude_non_api" -a "agent_config=claude-opus-4-6[1m]" -a "eval=$eval" -a "model_to_train=$model" -a "num_gpus=8" -a "num_hours=50" src/commit_utils/single_task.sub
+
+            # Reprompted variant to push the agent (such as GPT 5.4)
+            condor_submit_bid 100 -a "agent=codex_non_api_high_reprompt" -a "agent_config=gpt-5.4" -a "eval=$eval" -a "model_to_train=$model" -a "num_hours=10" src/commit_utils/single_task.sub
+
             condor_submit_bid 100 -a "agent=codex_non_api_high" -a "agent_config=gpt-5.4" -a "eval=$eval" -a "model_to_train=$model" -a "num_hours=10" src/commit_utils/single_task.sub
             condor_submit_bid 100 -a "agent=codex_non_api_xhigh" -a "agent_config=gpt-5.3-codex" -a "eval=$eval" -a "model_to_train=$model" -a "num_hours=10" src/commit_utils/single_task.sub
             condor_submit_bid 100 -a "agent=claude_non_api_max" -a "agent_config=claude-opus-4-6" -a "eval=$eval" -a "model_to_train=$model" -a "num_hours=10" src/commit_utils/single_task.sub

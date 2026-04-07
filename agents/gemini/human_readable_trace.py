@@ -5,9 +5,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shlex
 from pathlib import Path
 from typing import Any
+
+TIMESTAMP_PREFIX_RE = re.compile(r'^\[(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)\] ')
 
 
 def parse_args() -> argparse.Namespace:
@@ -424,6 +427,12 @@ def main() -> None:
             stripped = raw_line.strip()
             if not stripped:
                 continue
+
+            # Strip [timestamp] prefix added by timestamp_lines.py
+            ts_match = TIMESTAMP_PREFIX_RE.match(stripped)
+            if ts_match:
+                stripped = stripped[ts_match.end():]
+
             try:
                 event = json.loads(stripped)
             except json.JSONDecodeError as exc:

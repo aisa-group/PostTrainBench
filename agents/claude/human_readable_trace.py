@@ -5,9 +5,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
+
+TIMESTAMP_PREFIX_RE = re.compile(r'^\[(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)\] ')
 
 
 def parse_args() -> argparse.Namespace:
@@ -149,6 +152,8 @@ class TranscriptFormatter:
         self.turn_counters[role_key] = self.turn_counters.get(role_key, 0) + 1
         turn_number = self.turn_counters[role_key]
         header = f"{role.title()} — turn {turn_number}"
+        if wall_ts := event.get("_wall_ts"):
+            header += f" | {wall_ts}"
         self.lines.append(header)
 
         for block in message.get("content", []):
@@ -283,8 +288,19 @@ def load_events(path: str) -> Iterable[Tuple[int, Dict[str, Any]]]:
         stripped = raw.strip()
         if not stripped:
             continue
+
+        # Strip [timestamp] prefix added by timestamp_lines.py
+        wall_ts = None
+        ts_match = TIMESTAMP_PREFIX_RE.match(stripped)
+        if ts_match:
+            wall_ts = ts_match.group(1)
+            stripped = stripped[ts_match.end():]
+
         try:
-            yield line_no, json.loads(stripped)
+            event = json.loads(stripped)
+            if wall_ts:
+                event['_wall_ts'] = wall_ts
+            yield line_no, event
         except json.JSONDecodeError as exc:
             # Output unparsable lines
             print(f"NOT PARSABLE (line {line_no}): {exc}", file=sys.stderr)

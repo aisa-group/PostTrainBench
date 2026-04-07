@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from pathlib import Path
+import os
 import subprocess
 import torch
 
@@ -22,44 +23,45 @@ def get_gpu_processes(gpu_index):
         return None
 
 def check_h100():
+    expected_gpus = int(os.environ.get("NUM_GPUS", "1"))
+
     if not torch.cuda.is_available():
         print("❌ CUDA is not available")
         return False
-    
+
     device_count = torch.cuda.device_count()
-    print(f"✓ CUDA available with {device_count} device(s)")
-    if device_count != 1:
+    print(f"✓ CUDA available with {device_count} device(s) (expected {expected_gpus})")
+    if device_count != expected_gpus:
+        print(f"❌ Expected {expected_gpus} GPU(s), got {device_count}")
         return False
-    
+
     h100_found = False
-    h100_index = None
     for i in range(device_count):
         name = torch.cuda.get_device_name(i)
         props = torch.cuda.get_device_properties(i)
         print(f"  GPU {i}: {name} ({props.total_memory / 1e9:.1f} GB)")
-        
+
         if "H100" in name:
             h100_found = True
-            h100_index = i
-    
+
+            # Check for running processes on this GPU
+            processes = get_gpu_processes(i)
+            if processes is None:
+                print(f"  ⚠ Could not check processes on GPU {i} (nvidia-smi failed)")
+            elif processes:
+                print(f"  ❌ GPU {i} has {len(processes)} process(es) running:")
+                for pid, mem in processes:
+                    print(f"      PID {pid}: {mem:.1f} MiB")
+                return False
+            else:
+                print(f"  ✓ GPU {i} is idle")
+
     if h100_found:
-        print("✓ H100 detected")
+        print(f"✓ H100 detected ({device_count} GPU(s))")
     else:
         print("❌ No H100 found")
         return False
-    
-    # Check for running processes on the H100
-    processes = get_gpu_processes(h100_index)
-    if processes is None:
-        print("⚠ Could not check processes (nvidia-smi failed)")
-    elif processes:
-        print(f"❌ H100 has {len(processes)} process(es) running:")
-        for pid, mem in processes:
-            print(f"    PID {pid}: {mem:.1f} MiB")
-        return False
-    else:
-        print("✓ H100 is idle (no processes running)")
-    
+
     return True
 
 if __name__ == "__main__":

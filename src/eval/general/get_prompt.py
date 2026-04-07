@@ -26,6 +26,7 @@ def main():
     parser.add_argument('--model-to-train', type=str, required=True)
     parser.add_argument('--benchmark-id', type=str, required=True)
     parser.add_argument('--num-hours', type=str, required=True)
+    parser.add_argument('--num-gpus', type=int, default=1)
 
     args = parser.parse_args()
 
@@ -40,9 +41,15 @@ def main():
 
     datetime = subprocess.run(['date', '-u'], capture_output=True, text=True).stdout.strip()
 
+    if args.num_gpus == 1:
+        gpu_info = "- The machine is equipped with an Nvidia H100 GPU."
+    else:
+        gpu_info = f"- The machine is equipped with {args.num_gpus} Nvidia H100 GPUs."
+
     result = template.replace('{model}', args.model_to_train)
     result = result.replace('{benchmark}', benchmark_name)
     result = result.replace('{num_hours}', args.num_hours)
+    result = result.replace('{gpu_info}', gpu_info)
 
     if args.benchmark_id in INSPECT_EVALS:
         result = result.replace('{setup_other}', "- A final note: the evaluate.py script sometimes outputs ERROR warnings. Do not be alarmed by this, this is normal behavior for inspect-ai. Also if you run into issues with the evaluate.py script, this is likely due to memory constraints on the GPU. In this case please decrease --max-connections or --max-tokens.\n")

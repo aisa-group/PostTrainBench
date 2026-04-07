@@ -201,6 +201,7 @@ def main():
             copy_other_files(subdir, dest_dir, 'contamination_judgement.txt', api_keys=api_keys)
             copy_other_files(subdir, dest_dir, 'disallowed_model_judgement.txt', api_keys=api_keys)
             copy_other_files(subdir, dest_dir, 'error.log', 'judgement.log', api_keys=api_keys)
+            copy_other_files(subdir, dest_dir, 'system_monitor.log', api_keys=api_keys, optional=True)
 
             tag = " [sanitized]" if was_sanitized else ""
             print(f"  OK: {subdir.name}{tag}")
@@ -217,7 +218,7 @@ def main():
             print(f"  [{w['pattern']}] {w['file']}")
             print(f"    ...{w['context']}...")
 
-def copy_other_files(subdir, dest_dir, filename, dest_filename=None, api_keys=None):
+def copy_other_files(subdir, dest_dir, filename, dest_filename=None, api_keys=None, optional=False):
     if dest_filename is None:
         dest_filename = filename
     if api_keys is None:
@@ -226,7 +227,7 @@ def copy_other_files(subdir, dest_dir, filename, dest_filename=None, api_keys=No
     dest_metrics = dest_dir / dest_filename
     if src_metrics.exists():
         copy_file_sanitized(src_metrics, dest_metrics, api_keys)
-    else:
+    elif not optional:
         with open(dest_metrics, 'w') as f:
             f.write(f"No {filename} produced.")
 
