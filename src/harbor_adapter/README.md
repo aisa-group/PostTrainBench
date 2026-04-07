@@ -160,3 +160,29 @@ The verifier extracts the accuracy metric from `metrics.json` as the reward (0-1
 - `/logs/verifier/reward.txt` - Accuracy score
 - `/logs/verifier/contamination_judgement.txt` - Data contamination verdict
 - `/logs/verifier/disallowed_model_judgement.txt` - Model usage verdict
+
+## Verifier Isolation
+
+Harbor runs the verifier in the same container as the agent. To mitigate reward hacking via `evaluate.py` modification, the adapter embeds a SHA256 hash of `evaluate.py` into `test.sh` at task-generation time. If the agent modifies `evaluate.py`, the verifier detects the mismatch and outputs a score of 0.
+
+The `tests/` directory (containing `test.sh`) is copied by Harbor separately from the agent's workspace, so the agent cannot alter the verifier script.
+
+## Artifact Collection
+
+Two levels of artifact collection are provided:
+
+**Automatic (convention directory):** After verification, `test.sh` copies the agent's workspace to `/logs/artifacts/workspace/`, excluding large model weight files (`*.safetensors`, `*.bin`, `*.pt`, `*.pth`, `*.ckpt`). Harbor auto-collects `/logs/artifacts/` with no extra configuration.
+
+**Full workspace (config-driven):** Each generated task includes a `job.yaml` with a commented-out `artifacts` block. Uncomment it to also download the complete agent workspace including model weights:
+
+```yaml
+artifacts:
+  - source: /home/agent/workspace
+    destination: full-workspace
+```
+
+Run the task using the job.yaml instead of passing flags manually:
+
+```bash
+harbor run -c ./tasks/posttrainbench-gsm8k-qwen3-1.7b/job.yaml
+```

@@ -1,3 +1,4 @@
+import hashlib
 import json
 import shutil
 from dataclasses import dataclass
@@ -285,14 +286,26 @@ fi
         metadata_path.write_text(json.dumps(metadata, indent=2))
 
     def generate_tests(self, task_dir: Path) -> None:
-        """Generate the tests directory with verification script."""
+        """Generate the tests directory with verification script.
+
+        Computes the SHA256 of evaluate.py at task-generation time and embeds
+        it into test.sh so the verifier can detect if the agent tampered with
+        the evaluation script (reward hacking mitigation).
+        """
         tests_dir = task_dir / "tests"
         tests_dir.mkdir(parents=True, exist_ok=True)
 
-        # Copy test.sh
+        # Compute SHA256 of the evaluate.py that was copied into the environment
+        evaluate_py = task_dir / "environment" / "evaluate.py"
+        sha256 = hashlib.sha256(evaluate_py.read_bytes()).hexdigest()
+
+        # Read template, inject hash, and write
         test_sh_src = TEMPLATE_DIR / "tests" / "test.sh"
+        content = test_sh_src.read_text()
+        content = content.replace("PLACEHOLDER_SHA256", sha256)
+
         test_sh_dst = tests_dir / "test.sh"
-        shutil.copy(test_sh_src, test_sh_dst)
+        test_sh_dst.write_text(content)
         test_sh_dst.chmod(0o755)
 
     def generate_task(
@@ -339,10 +352,54 @@ fi
         self.generate_task_toml(task_dir, benchmark_id)
         self.generate_instruction(task_dir, model_info, benchmark_info, benchmark_id)
         self.generate_environment(task_dir, benchmark_id, model_info, benchmark_info)
-        self.generate_tests(task_dir)
+        self.generate_tests(task_dir)  # must come after generate_environment (needs evaluate.py)
+        self.generate_job_yaml(task_dir, benchmark_id, model_info)
 
         print(f"Task generated at: {task_dir}")
         return task_dir
+
+    def generate_job_yaml(self, task_dir: Path, benchmark_id: str, model_info: "ModelInfo") -> Path:
+        """Generate a job.yaml alongside the task directory.
+
+        The job.yaml provides config-driven artifact collection for the full
+        agent workspace (including model weights), which cannot be auto-collected
+        via /logs/artifacts/ due to size. Users can run with this config instead
+        of passing all flags by hand:
+
+            harbor run -c <task_dir>/job.yaml
+        """
+        task_name = task_dir.name
+        job_yaml = f"""\
+# Harbor job configuration for {task_name}
+# Run with: harbor run -c {task_dir}/job.yaml
+#
+# Artifact collection:
+#   - /logs/artifacts/workspace/  collected automatically (scripts, configs, logs)
+#   - /home/agent/workspace/      collected via config below (includes model weights)
+#
+# Uncomment the `artifacts` section to download the full agent workspace,
+# including model weight files. Warning: this can be many GB.
+
+jobs_dir: jobs
+n_attempts: 1
+
+# artifacts:
+#   - source: /home/agent/workspace
+#     destination: full-workspace
+
+tasks:
+  - path: {task_dir}
+
+agents:
+  - name: claude-code
+    model: anthropic/claude-sonnet-4-6
+
+# environment:
+#   type: modal   # Use Modal for cloud GPU runs
+"""
+        job_yaml_path = task_dir / "job.yaml"
+        job_yaml_path.write_text(job_yaml)
+        return job_yaml_path
 
     def generate_all_tasks(self) -> list[Path]:
         """Generate tasks for all benchmark + model combinations."""

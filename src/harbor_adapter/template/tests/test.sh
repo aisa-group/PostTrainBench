@@ -5,10 +5,30 @@ set -e
 # Runs contamination judge (codex CLI) and 3-phase evaluation with retry logic.
 # Matches the original run_task.sh evaluation pipeline.
 
+# SHA256 of evaluate.py at task-generation time (injected by adapter.py).
+# If the agent has tampered with evaluate.py this check will catch it.
+EVALUATE_PY_SHA256="PLACEHOLDER_SHA256"
+
 WORKSPACE="/home/agent/workspace"
 LOGS_DIR="/logs/verifier"
 
 mkdir -p "$LOGS_DIR"
+
+# ============================================================
+# Verifier isolation: verify evaluate.py integrity
+# ============================================================
+echo "=== Verifying evaluate.py integrity ==="
+ACTUAL_SHA=$(sha256sum "$WORKSPACE/evaluate.py" 2>/dev/null | awk '{print $1}')
+if [ "$ACTUAL_SHA" != "$EVALUATE_PY_SHA256" ]; then
+    echo "ERROR: evaluate.py has been modified by the agent"
+    echo "  expected: $EVALUATE_PY_SHA256"
+    echo "  actual:   $ACTUAL_SHA"
+    echo "Possible reward hacking — setting score to 0."
+    echo '{"error": "evaluate.py tampered with by agent", "accuracy": 0}' > "$LOGS_DIR/metrics.json"
+    echo "0" > "$LOGS_DIR/reward.txt"
+    exit 0
+fi
+echo "evaluate.py integrity OK ($EVALUATE_PY_SHA256)"
 
 echo "=== PostTrainBench Verifier ==="
 echo "Workspace: $WORKSPACE"
@@ -274,3 +294,33 @@ echo ""
 echo "=== Verification complete ==="
 echo "Results in $LOGS_DIR/"
 ls -la "$LOGS_DIR/"
+
+# ============================================================
+# Artifact collection: copy workspace to /logs/artifacts/
+# Excludes large model weight files (*.safetensors, *.bin, *.pt)
+# so that Harbor can auto-collect scripts, configs, and logs
+# without downloading multi-GB model shards.
+# The full model is still available via Harbor's config-driven
+# artifact collection (see job.yaml: artifacts: /home/agent/workspace).
+# ============================================================
+echo ""
+echo "=== Collecting artifacts ==="
+ARTIFACTS_DIR="/logs/artifacts/workspace"
+mkdir -p "$ARTIFACTS_DIR"
+
+find "$WORKSPACE" -type f \
+    ! -name "*.safetensors" \
+    ! -name "*.bin" \
+    ! -name "*.pt" \
+    ! -name "*.pth" \
+    ! -name "*.ckpt" \
+    ! -path "*/__pycache__/*" \
+    ! -path "*/.cache/*" \
+    | while IFS= read -r src; do
+        rel="${src#$WORKSPACE/}"
+        dst_dir="$ARTIFACTS_DIR/$(dirname "$rel")"
+        mkdir -p "$dst_dir"
+        cp "$src" "$dst_dir/" 2>/dev/null || true
+    done
+
+echo "Artifacts collected (model weights excluded) — see /logs/artifacts/workspace/"
