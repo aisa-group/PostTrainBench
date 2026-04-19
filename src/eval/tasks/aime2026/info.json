@@ -1,0 +1,11 @@
+{
+  "benchmark": "American Invitational Mathematics Examination (AIME) 2026",
+  "disallowed_data_examples": [
+    "opencompass/AIME2026",
+    "yentinglin/aime_2026",
+    "MathArena/aime_2026"
+  ],
+  "allowed_data_examples": [
+    "Maxwell-Jia/AIME_2024"
+  ]
+}
