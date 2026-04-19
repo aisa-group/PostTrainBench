@@ -97,64 +97,29 @@ def download_arenahardwriting():
 
 
 def download_bfcl():
-    log("Downloading bfcl from HuggingFace (gorilla-llm/Berkeley-Function-Calling-Leaderboard, v1+v2+v3)...")
-    from huggingface_hub import list_repo_files, hf_hub_download
+    log("Downloading bfcl from HuggingFace (gorilla-llm/Berkeley-Function-Calling-Leaderboard, BFCL_v3_exec_simple)...")
+    from huggingface_hub import hf_hub_download
 
     REPO_ID = "gorilla-llm/Berkeley-Function-Calling-Leaderboard"
+    FILENAME = "BFCL_v3_exec_simple.json"
 
-    # Three versions with different commits, file prefixes, and formats
-    VERSIONS = [
-        {
-            "name": "v1",
-            "revision": "023218c807d73c3684cdb354efd426a52ea4f159",
-            "prefix": "gorilla_openfunctions_v1_test_",
-        },
-        {
-            "name": "v2",
-            "revision": "1726e89933a8001f196acd30a2e8e92254f75c5c",
-            "prefix": "BFCL_v2_",
-        },
-        {
-            "name": "v3",
-            "revision": None,  # latest
-            "prefix": "BFCL_v3_",
-        },
-    ]
+    log(f"  Fetching {FILENAME}")
+    path = hf_hub_download(REPO_ID, FILENAME, repo_type="dataset")
+    with open(path) as f:
+        raw = f.read()
 
-    seen_questions = set()
     data = []
+    for obj in _iter_jsonl(raw):
+        question_parts = obj.get("question", [])
+        question_str = json.dumps(question_parts, ensure_ascii=False) if not isinstance(question_parts, str) else question_parts
+        ground_truth = obj.get("ground_truth", "")
+        gt_str = json.dumps(ground_truth, ensure_ascii=False) if not isinstance(ground_truth, str) else ground_truth
+        data.append({
+            "question": question_str,
+            "answer": gt_str,
+        })
 
-    for ver in VERSIONS:
-        revision = ver["revision"]
-        prefix = ver["prefix"]
-        all_files = list_repo_files(REPO_ID, repo_type="dataset", revision=revision)
-        json_files = sorted(
-            f for f in all_files
-            if f.startswith(prefix) and f.endswith(".json")
-        )
-        log(f"  {ver['name']}: found {len(json_files)} files")
-
-        for filename in json_files:
-            log(f"    Fetching {filename}")
-            path = hf_hub_download(REPO_ID, filename, repo_type="dataset", revision=revision)
-            with open(path) as f:
-                raw = f.read()
-            # Files are named .json but contain JSONL (one JSON object per line)
-            for obj in _iter_jsonl(raw):
-                question_parts = obj.get("question", [])
-                question_str = json.dumps(question_parts, ensure_ascii=False) if not isinstance(question_parts, str) else question_parts
-                ground_truth = obj.get("ground_truth", "")
-                gt_str = json.dumps(ground_truth, ensure_ascii=False) if not isinstance(ground_truth, str) else ground_truth
-
-                if question_str in seen_questions:
-                    continue
-                seen_questions.add(question_str)
-                data.append({
-                    "question": question_str,
-                    "answer": gt_str,
-                })
-
-    log(f"  Total: {len(data)} unique items (deduped by question)")
+    log(f"  Total: {len(data)} items")
     save_test_data("bfcl", data)
 
 

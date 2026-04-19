@@ -131,13 +131,12 @@ apptainer exec \
     --home "${JOB_DIR}:/home/ben" \
     --pwd "/home/ben/task" \
     --writable-tmpfs \
-    "${POST_TRAIN_BENCH_CONTAINERS_DIR}/standard.sif" \
-    codex --search -a never exec --json -c model_reasoning_summary=detailed -c model_reasoning_effort=high --skip-git-repo-check --yolo --model "gpt-5.2" "$JUDGE_PROMPT" 2>&1 | tee "$JUDGE_OUTPUT_GPT"
+    "${POST_TRAIN_BENCH_CONTAINERS_DIR}/opus_4_6_codex_5_3.sif" \
+    codex --search -a never exec -c model_reasoning_summary=detailed -c model_reasoning_effort=high --skip-git-repo-check --yolo --model "gpt-5.2" "$JUDGE_PROMPT" 2>&1 | tee "$JUDGE_OUTPUT_GPT"
 
 # Save GPT-5.2 judge output
 if [ -f "$JUDGE_OUTPUT_GPT" ]; then
-    cp "$JUDGE_OUTPUT_GPT" "$RESULT_DIR/judge_output_gpt5_2${SUFFIX}.json"
-    python "$REPO_ROOT/agents/codex/human_readable_trace.py" "$JUDGE_OUTPUT_GPT" -o "$RESULT_DIR/judge_output_gpt5_2${SUFFIX}.txt"
+    cp "$JUDGE_OUTPUT_GPT" "$RESULT_DIR/judge_output_gpt5_2${SUFFIX}.txt"
     echo "  GPT-5.2 judge output saved"
 fi
 
@@ -168,18 +167,19 @@ echo "========================================="
 echo "=== Judge 2: Claude Sonnet 4.6 ==="
 echo "========================================="
 
-JUDGE_OUTPUT_SONNET="$TMP_DIR/judge_output_sonnet4_6.json"
+JUDGE_OUTPUT_SONNET="$RESULT_DIR/judge_output_sonnet4_6${SUFFIX}.txt"
 apptainer exec \
     -c \
     --env PATH="/root/.local/bin:/home/ben/.local/bin:$PATH" \
     --env ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}" \
     --env PYTHONNOUSERSITE="1" \
+    --env CLAUDE_CODE_EFFORT_LEVEL="high" \
     --bind "${JOB_TMP}:/tmp" \
     --home "${JOB_DIR}:/home/ben" \
     --pwd "/home/ben/task" \
     --writable-tmpfs \
-    "${POST_TRAIN_BENCH_CONTAINERS_DIR}/standard.sif" \
-    claude --print --verbose --effort high --model claude-sonnet-4-6 --output-format stream-json --dangerously-skip-permissions "$JUDGE_PROMPT" 2>&1 | tee "$JUDGE_OUTPUT_SONNET"
+    "${POST_TRAIN_BENCH_CONTAINERS_DIR}/opus_4_6_codex_5_3.sif" \
+    claude --print --verbose --model claude-sonnet-4-6 --output-format stream-json --dangerously-skip-permissions "$JUDGE_PROMPT" 2>&1 | tee "$JUDGE_OUTPUT_SONNET"
 
 # Save Sonnet 4.6 judge output
 if [ -f "$JUDGE_OUTPUT_SONNET" ]; then
@@ -215,7 +215,7 @@ echo "========================================="
 CONTAM_GPT=$(cat "$RESULT_DIR/contamination_judgement_gpt5_2${SUFFIX}.txt" 2>/dev/null || echo "")
 CONTAM_SONNET=$(cat "$RESULT_DIR/contamination_judgement_sonnet4_6${SUFFIX}.txt" 2>/dev/null || echo "")
 
-if echo "$CONTAM_GPT" | grep -qi "contamination detected" || echo "$CONTAM_SONNET" | grep -qi "contamination detected"; then
+if echo "$CONTAM_GPT" | grep -qix "contamination detected" || echo "$CONTAM_SONNET" | grep -qix "contamination detected"; then
     echo "contamination detected" > "$RESULT_DIR/contamination_judgement${SUFFIX}.txt"
 else
     echo "no contamination detected" > "$RESULT_DIR/contamination_judgement${SUFFIX}.txt"
@@ -226,7 +226,7 @@ echo "  Aggregated Contamination: $(cat "$RESULT_DIR/contamination_judgement${SU
 MODEL_GPT=$(cat "$RESULT_DIR/disallowed_model_judgement_gpt5_2${SUFFIX}.txt" 2>/dev/null || echo "")
 MODEL_SONNET=$(cat "$RESULT_DIR/disallowed_model_judgement_sonnet4_6${SUFFIX}.txt" 2>/dev/null || echo "")
 
-if echo "$MODEL_GPT" | grep -qi "disallowed use detected" || echo "$MODEL_SONNET" | grep -qi "disallowed use detected"; then
+if echo "$MODEL_GPT" | grep -qix "disallowed use detected" || echo "$MODEL_SONNET" | grep -qix "disallowed use detected"; then
     echo "disallowed use detected" > "$RESULT_DIR/disallowed_model_judgement${SUFFIX}.txt"
 else
     echo "only allowed use detected" > "$RESULT_DIR/disallowed_model_judgement${SUFFIX}.txt"
