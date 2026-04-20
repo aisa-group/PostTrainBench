@@ -94,6 +94,11 @@ mkdir -p "$JOB_DIR" "$JOB_TMP"
 # Copy task directory
 cp -r "$RESULT_DIR/task" "$JOB_DIR/task"
 
+# Remove any pre-existing judgement files from the task dir so stale values
+# from earlier runs can't leak into this judge's output when the CLI crashes.
+rm -f "$JOB_DIR/task/contamination_judgement.txt"
+rm -f "$JOB_DIR/task/disallowed_model_judgement.txt"
+
 # Copy trace file to parent directory (not task directory)
 cp "$TRACE_FILE" "$JOB_DIR/$TRACE_NAME"
 
@@ -106,12 +111,39 @@ fi
 # Copy codex config
 cp -r "$REPO_ROOT/containers/other_home_data/.codex" "$JOB_DIR/"
 
+# Set up ChatGPT Pro subscription auth for codex judge (mirrors src/run_task.sh)
+if [ -f "$REPO_ROOT/agents/codex_non_api/auth.json" ]; then
+    cp "$REPO_ROOT/agents/codex_non_api/auth.json" "$JOB_DIR/.codex/auth.json"
+else
+    echo "ERROR: agents/codex_non_api/auth.json not found — GPT-5.2 judge needs subscription auth" >&2
+    exit 1
+fi
+if ! grep -q "forced_login_method" "$JOB_DIR/.codex/config.toml" 2>/dev/null; then
+    printf '\nforced_login_method = "chatgpt"\n' >> "$JOB_DIR/.codex/config.toml"
+fi
+
+# Load Claude Max subscription OAuth token for claude judge (mirrors src/run_task.sh)
+JUDGE_OAUTH_TOKEN=""
+if [ -f "$REPO_ROOT/agents/claude_non_api/oauth_token" ]; then
+    JUDGE_OAUTH_TOKEN="$(cat "$REPO_ROOT/agents/claude_non_api/oauth_token")"
+else
+    echo "ERROR: agents/claude_non_api/oauth_token not found — Sonnet 4.6 judge needs subscription auth" >&2
+    exit 1
+fi
+
 # Determine output file suffix based on mode
 if [ "$RERUN_MODE" = true ]; then
     SUFFIX="_rerun"
 else
     SUFFIX=""
 fi
+
+# Remove any pre-existing per-judge output files in the result dir so stale
+# values from earlier runs can't be confused with fresh output when a CLI fails.
+rm -f "$RESULT_DIR/contamination_judgement_gpt5_2${SUFFIX}.txt"
+rm -f "$RESULT_DIR/disallowed_model_judgement_gpt5_2${SUFFIX}.txt"
+rm -f "$RESULT_DIR/contamination_judgement_sonnet4_6${SUFFIX}.txt"
+rm -f "$RESULT_DIR/disallowed_model_judgement_sonnet4_6${SUFFIX}.txt"
 
 # ============================================================
 # Judge 1: GPT-5.2 via codex CLI
@@ -125,7 +157,8 @@ JUDGE_OUTPUT_GPT="$TMP_DIR/judge_output_gpt5_2.json"
 apptainer exec \
     -c \
     --env PATH="/root/.local/bin:/home/ben/.local/bin:$PATH" \
-    --env CODEX_API_KEY="${OPENAI_API_KEY}" \
+    --env CODEX_API_KEY="" \
+    --env OPENAI_API_KEY="" \
     --env PYTHONNOUSERSITE="1" \
     --bind "${JOB_TMP}:/tmp" \
     --home "${JOB_DIR}:/home/ben" \
@@ -171,7 +204,8 @@ JUDGE_OUTPUT_SONNET="$RESULT_DIR/judge_output_sonnet4_6${SUFFIX}.txt"
 apptainer exec \
     -c \
     --env PATH="/root/.local/bin:/home/ben/.local/bin:$PATH" \
-    --env ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}" \
+    --env ANTHROPIC_API_KEY="" \
+    --env CLAUDE_CODE_OAUTH_TOKEN="${JUDGE_OAUTH_TOKEN}" \
     --env PYTHONNOUSERSITE="1" \
     --env CLAUDE_CODE_EFFORT_LEVEL="high" \
     --bind "${JOB_TMP}:/tmp" \
