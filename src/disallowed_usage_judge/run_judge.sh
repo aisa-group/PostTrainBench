@@ -104,6 +104,16 @@ cp "$TRACE_FILE" "$JOB_DIR/$TRACE_NAME"
 
 # Copy judge helper tooling and benchmark metadata into the sandbox.
 cp "$REPO_ROOT/src/disallowed_usage_judge/judge_tools/contamination_check.py" "$JOB_DIR/contamination_check.py"
+cp "$REPO_ROOT/src/disallowed_usage_judge/judge_tools/model_identity_check.py" "$JOB_DIR/model_identity_check.py"
+cp -r "$REPO_ROOT/src/disallowed_usage_judge/judge_tools/reference_configs" "$JOB_DIR/reference_configs"
+
+# Expose final_model/config.json to the judge as ../final_model_config.json so
+# model_identity_check.py can compare it against the reference. Only the
+# config.json is needed for the architecture-identity check, not the weights.
+if [ -f "$RESULT_DIR/final_model/config.json" ]; then
+    cp "$RESULT_DIR/final_model/config.json" "$JOB_DIR/final_model_config.json"
+fi
+
 if [ -f "$REPO_ROOT/src/eval/tasks/$BENCHMARK/test_data.json" ]; then
     cp "$REPO_ROOT/src/eval/tasks/$BENCHMARK/test_data.json" "$JOB_DIR/test_data.json"
 fi

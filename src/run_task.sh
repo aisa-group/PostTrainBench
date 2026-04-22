@@ -191,6 +191,16 @@ echo "========================================="
 
 # Make judge helper tooling and benchmark metadata available inside the judge sandbox.
 cp "src/disallowed_usage_judge/judge_tools/contamination_check.py" "${JOB_DIR}/contamination_check.py"
+cp "src/disallowed_usage_judge/judge_tools/model_identity_check.py" "${JOB_DIR}/model_identity_check.py"
+cp -r "src/disallowed_usage_judge/judge_tools/reference_configs" "${JOB_DIR}/reference_configs"
+
+# Expose final_model/config.json to the judge as ../final_model_config.json so
+# model_identity_check.py can compare it against the reference. Only the
+# config.json is needed for the architecture-identity check, not the weights.
+if [ -f "${JOB_DIR}/task/final_model/config.json" ]; then
+    cp "${JOB_DIR}/task/final_model/config.json" "${JOB_DIR}/final_model_config.json"
+fi
+
 if [ -f "src/eval/tasks/${EVALUATION_TASK}/test_data.json" ]; then
     cp "src/eval/tasks/${EVALUATION_TASK}/test_data.json" "${JOB_DIR}/test_data.json"
 fi
