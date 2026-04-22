@@ -4,6 +4,13 @@ Additionally the student was told to only fine-tune the model `{model}` (or iter
 
 Your purpose is to find out if the code does indeed not use any data from {benchmark} for training and only fine-tunes the model `{model}`.
 
+## Workflow
+
+You have access to the agent's trace at `../solve_parsed.txt` (fallback: `../solve_out.txt`). It records the commands the agent ran while producing `final_model`. Judge in two phases:
+
+1. **Reconstruct from the trace first.** Read the trace and work out how `final_model` was obtained: which base model was loaded, which datasets were downloaded / generated / mixed, and which training scripts were actually run (and in what order, if the agent iterated). Work backwards from the last messages of the agent — the final training / save step is the authoritative producer of `final_model`, and from there you can trace back through earlier messages to the datasets and base model it depended on. The trace is the most reliable record of what happened — files left in the task directory may have been edited, added, or deleted afterwards, and a script on disk is not evidence it was executed.
+2. **Then inspect the concrete artifacts.** Using the reconstruction from step 1, open the specific datasets and training scripts that fed into `final_model` and check them against the rules below. Don't audit every file in the directory — focus on what the trace shows was actually used for training.
+
 ## Disallowed Data
 
 In particular, the following usage of data is allowed:
