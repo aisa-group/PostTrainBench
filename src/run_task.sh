@@ -211,8 +211,8 @@ JUDGE_TASK=$(python src/disallowed_usage_judge/get_judge_prompt.py --benchmark-i
 # from leaking into the judge, which uses a different model
 cp -r "containers/other_home_data/.codex" "${JOB_DIR}/"
 
-# ---- Judge 1: GPT-5.2 via codex CLI (subscription) ----
-echo "=== Judge 1: GPT-5.2 (codex CLI, subscription) ==="
+# ---- Judge 1: GPT-5.4 via codex CLI (subscription) ----
+echo "=== Judge 1: GPT-5.4 (codex CLI, subscription) ==="
 
 # Set up ChatGPT Pro subscription auth for codex judge
 cp "agents/codex_non_api/auth.json" "${JOB_DIR}/.codex/auth.json"
@@ -234,13 +234,13 @@ with_huggingface_overlay apptainer exec \
     --home "${JOB_DIR}:/home/ben" \
     --pwd "/home/ben/task" \
     --writable-tmpfs \
-    ${POST_TRAIN_BENCH_CONTAINERS_DIR}/opus_4_6_codex_5_3.sif codex --search -a never exec -c model_reasoning_summary=detailed -c model_reasoning_effort=high --skip-git-repo-check --yolo --model "gpt-5.2" "$JUDGE_TASK" 2>&1 | tee "${EVAL_DIR}/judge_output_gpt5_2.txt"
+    ${POST_TRAIN_BENCH_CONTAINERS_DIR}/opus_4_6_codex_5_3.sif codex --search -a never exec -c model_reasoning_summary=detailed -c model_reasoning_effort=xhigh --skip-git-repo-check --yolo --model "gpt-5.4" "$JUDGE_TASK" 2>&1 | tee "${EVAL_DIR}/judge_output_gpt5_4.txt"
 
 if [ -f "${JOB_DIR}/task/contamination_judgement.txt" ]; then
-    cp "${JOB_DIR}/task/contamination_judgement.txt" "${EVAL_DIR}/contamination_judgement_gpt5_2.txt"
+    cp "${JOB_DIR}/task/contamination_judgement.txt" "${EVAL_DIR}/contamination_judgement_gpt5_4.txt"
 fi
 if [ -f "${JOB_DIR}/task/disallowed_model_judgement.txt" ]; then
-    cp "${JOB_DIR}/task/disallowed_model_judgement.txt" "${EVAL_DIR}/disallowed_model_judgement_gpt5_2.txt"
+    cp "${JOB_DIR}/task/disallowed_model_judgement.txt" "${EVAL_DIR}/disallowed_model_judgement_gpt5_4.txt"
 fi
 
 # Clean judgement files so the next judge starts fresh
@@ -287,7 +287,7 @@ fi
 # ---- Aggregate: flag if either judge flags ----
 echo "=== Aggregating Judge Results ==="
 
-CONTAM_GPT=$(cat "${EVAL_DIR}/contamination_judgement_gpt5_2.txt" 2>/dev/null || echo "")
+CONTAM_GPT=$(cat "${EVAL_DIR}/contamination_judgement_gpt5_4.txt" 2>/dev/null || echo "")
 CONTAM_SONNET=$(cat "${EVAL_DIR}/contamination_judgement_sonnet4_6.txt" 2>/dev/null || echo "")
 
 if echo "$CONTAM_GPT" | grep -qix "contamination detected" || echo "$CONTAM_SONNET" | grep -qix "contamination detected"; then
@@ -296,7 +296,7 @@ else
     echo "no contamination detected" > "${EVAL_DIR}/contamination_judgement.txt"
 fi
 
-MODEL_GPT=$(cat "${EVAL_DIR}/disallowed_model_judgement_gpt5_2.txt" 2>/dev/null || echo "")
+MODEL_GPT=$(cat "${EVAL_DIR}/disallowed_model_judgement_gpt5_4.txt" 2>/dev/null || echo "")
 MODEL_SONNET=$(cat "${EVAL_DIR}/disallowed_model_judgement_sonnet4_6.txt" 2>/dev/null || echo "")
 
 if echo "$MODEL_GPT" | grep -qix "disallowed use detected" || echo "$MODEL_SONNET" | grep -qix "disallowed use detected"; then

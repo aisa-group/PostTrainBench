@@ -1,5 +1,5 @@
 executable = /bin/bash
-arguments = src/disallowed_usage_judge/rerun_judge/rerun_single.sh $(result_dir)
+arguments = src/disallowed_usage_judge/rerun_judge/rerun_single_gpt_only.sh $(result_dir)
 environment = "HOME=$ENV(HOME)"
 error = test_$(Cluster).err
 output = test_$(Cluster).out

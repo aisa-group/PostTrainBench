@@ -1,15 +1,20 @@
 #!/bin/bash
 #
 # Run the contamination judge on a result directory using two models:
-#   1. GPT-5.2 (via codex CLI)
+#   1. GPT-5.4 (via codex CLI)
 #   2. Claude Sonnet 4.6 (via claude CLI)
 #
 # Results are aggregated: if either model flags an issue, the overall result is flagged.
+# All outputs are always saved with the _rerun suffix so original judge outputs
+# produced by src/run_task.sh are preserved.
 #
-# Usage: run_judge.sh [--rerun] <result_dir>
+# Usage: run_judge.sh [--gpt-only|--sonnet-only] <result_dir>
 #
 # Options:
-#   --rerun    Save results with _rerun suffix (doesn't overwrite original judgements)
+#   --gpt-only     Only rerun the GPT-5.4 judge (skip Sonnet); aggregation still runs
+#                  using the existing Sonnet _rerun output if present.
+#   --sonnet-only  Only rerun the Sonnet 4.6 judge (skip GPT); aggregation still runs
+#                  using the existing GPT _rerun output if present.
 #
 # The judge analyzes the task directory and ../solve_parsed.txt to determine:
 # - Whether benchmark data was used for training (contamination)
@@ -18,11 +23,16 @@
 set -e
 
 # Parse arguments
-RERUN_MODE=false
+RUN_GPT=true
+RUN_SONNET=true
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --rerun)
-            RERUN_MODE=true
+        --gpt-only)
+            RUN_SONNET=false
+            shift
+            ;;
+        --sonnet-only)
+            RUN_GPT=false
             shift
             ;;
         *)
@@ -32,8 +42,13 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+if [ "$RUN_GPT" = false ] && [ "$RUN_SONNET" = false ]; then
+    echo "Error: cannot combine --gpt-only and --sonnet-only" >&2
+    exit 1
+fi
+
 if [ -z "$RESULT_DIR" ]; then
-    echo "Usage: $0 [--rerun] <result_dir>" >&2
+    echo "Usage: $0 [--gpt-only|--sonnet-only] <result_dir>" >&2
     exit 1
 fi
 
@@ -72,10 +87,12 @@ MODEL_HF=$(echo "$MODEL_PART" | sed 's/_/\//')
 
 echo "Running judge on: $RESULT_DIR"
 echo "  Benchmark: $BENCHMARK | Model: $MODEL_HF | Trace: $TRACE_NAME"
-if [ "$RERUN_MODE" = true ]; then
-    echo "  Mode: rerun (will save with _rerun suffix)"
+if [ "$RUN_GPT" = true ] && [ "$RUN_SONNET" = true ]; then
+    echo "  Mode: both judges (GPT-5.4 + Sonnet 4.6), outputs suffixed with _rerun"
+elif [ "$RUN_GPT" = true ]; then
+    echo "  Mode: GPT-5.4 only (Sonnet skipped), outputs suffixed with _rerun"
 else
-    echo "  Mode: normal (will overwrite existing judgements)"
+    echo "  Mode: Sonnet 4.6 only (GPT skipped), outputs suffixed with _rerun"
 fi
 
 # Generate judge prompt
@@ -118,133 +135,138 @@ if [ -f "$REPO_ROOT/src/eval/tasks/$BENCHMARK/test_data.json" ]; then
     cp "$REPO_ROOT/src/eval/tasks/$BENCHMARK/test_data.json" "$JOB_DIR/test_data.json"
 fi
 
-# Copy codex config
-cp -r "$REPO_ROOT/containers/other_home_data/.codex" "$JOB_DIR/"
-
-# Set up ChatGPT Pro subscription auth for codex judge (mirrors src/run_task.sh)
-if [ -f "$REPO_ROOT/agents/codex_non_api/auth.json" ]; then
-    cp "$REPO_ROOT/agents/codex_non_api/auth.json" "$JOB_DIR/.codex/auth.json"
-else
-    echo "ERROR: agents/codex_non_api/auth.json not found — GPT-5.2 judge needs subscription auth" >&2
-    exit 1
+# Set up codex config + ChatGPT Pro subscription auth (only when GPT judge runs)
+if [ "$RUN_GPT" = true ]; then
+    cp -r "$REPO_ROOT/containers/other_home_data/.codex" "$JOB_DIR/"
+    if [ -f "$REPO_ROOT/agents/codex_non_api/auth.json" ]; then
+        cp "$REPO_ROOT/agents/codex_non_api/auth.json" "$JOB_DIR/.codex/auth.json"
+    else
+        echo "ERROR: agents/codex_non_api/auth.json not found — GPT-5.4 judge needs subscription auth" >&2
+        exit 1
+    fi
+    if ! grep -q "forced_login_method" "$JOB_DIR/.codex/config.toml" 2>/dev/null; then
+        printf '\nforced_login_method = "chatgpt"\n' >> "$JOB_DIR/.codex/config.toml"
+    fi
 fi
-if ! grep -q "forced_login_method" "$JOB_DIR/.codex/config.toml" 2>/dev/null; then
-    printf '\nforced_login_method = "chatgpt"\n' >> "$JOB_DIR/.codex/config.toml"
-fi
 
-# Load Claude Max subscription OAuth token for claude judge (mirrors src/run_task.sh)
+# Load Claude Max subscription OAuth token for claude judge (only when Sonnet runs)
 JUDGE_OAUTH_TOKEN=""
-if [ -f "$REPO_ROOT/agents/claude_non_api/oauth_token" ]; then
-    JUDGE_OAUTH_TOKEN="$(cat "$REPO_ROOT/agents/claude_non_api/oauth_token")"
-else
-    echo "ERROR: agents/claude_non_api/oauth_token not found — Sonnet 4.6 judge needs subscription auth" >&2
-    exit 1
+if [ "$RUN_SONNET" = true ]; then
+    if [ -f "$REPO_ROOT/agents/claude_non_api/oauth_token" ]; then
+        JUDGE_OAUTH_TOKEN="$(cat "$REPO_ROOT/agents/claude_non_api/oauth_token")"
+    else
+        echo "ERROR: agents/claude_non_api/oauth_token not found — Sonnet 4.6 judge needs subscription auth" >&2
+        exit 1
+    fi
 fi
 
-# Determine output file suffix based on mode
-if [ "$RERUN_MODE" = true ]; then
-    SUFFIX="_rerun"
-else
-    SUFFIX=""
+# Remove any pre-existing per-judge output files in the result dir for the
+# judges we are about to rerun, so stale values from earlier runs can't be
+# confused with fresh output when a CLI fails. Leave the skipped judge's
+# files alone so aggregation can still use them.
+if [ "$RUN_GPT" = true ]; then
+    rm -f "$RESULT_DIR/contamination_judgement_gpt5_4_rerun.txt"
+    rm -f "$RESULT_DIR/disallowed_model_judgement_gpt5_4_rerun.txt"
 fi
-
-# Remove any pre-existing per-judge output files in the result dir so stale
-# values from earlier runs can't be confused with fresh output when a CLI fails.
-rm -f "$RESULT_DIR/contamination_judgement_gpt5_2${SUFFIX}.txt"
-rm -f "$RESULT_DIR/disallowed_model_judgement_gpt5_2${SUFFIX}.txt"
-rm -f "$RESULT_DIR/contamination_judgement_sonnet4_6${SUFFIX}.txt"
-rm -f "$RESULT_DIR/disallowed_model_judgement_sonnet4_6${SUFFIX}.txt"
+if [ "$RUN_SONNET" = true ]; then
+    rm -f "$RESULT_DIR/contamination_judgement_sonnet4_6_rerun.txt"
+    rm -f "$RESULT_DIR/disallowed_model_judgement_sonnet4_6_rerun.txt"
+fi
 
 # ============================================================
-# Judge 1: GPT-5.2 via codex CLI
+# Judge 1: GPT-5.4 via codex CLI
 # ============================================================
-echo ""
-echo "========================================="
-echo "=== Judge 1: GPT-5.2 (codex CLI) ==="
-echo "========================================="
+if [ "$RUN_GPT" = true ]; then
+    echo ""
+    echo "========================================="
+    echo "=== Judge 1: GPT-5.4 (codex CLI) ==="
+    echo "========================================="
 
-JUDGE_OUTPUT_GPT="$TMP_DIR/judge_output_gpt5_2.json"
-apptainer exec \
-    -c \
-    --env PATH="/root/.local/bin:/home/ben/.local/bin:$PATH" \
-    --env CODEX_API_KEY="" \
-    --env OPENAI_API_KEY="" \
-    --env PYTHONNOUSERSITE="1" \
-    --bind "${JOB_TMP}:/tmp" \
-    --home "${JOB_DIR}:/home/ben" \
-    --pwd "/home/ben/task" \
-    --writable-tmpfs \
-    "${POST_TRAIN_BENCH_CONTAINERS_DIR}/opus_4_6_codex_5_3.sif" \
-    codex --search -a never exec -c model_reasoning_summary=detailed -c model_reasoning_effort=high --skip-git-repo-check --yolo --model "gpt-5.2" "$JUDGE_PROMPT" 2>&1 | tee "$JUDGE_OUTPUT_GPT"
+    JUDGE_OUTPUT_GPT="$TMP_DIR/judge_output_gpt5_4.json"
+    apptainer exec \
+        -c \
+        --env PATH="/root/.local/bin:/home/ben/.local/bin:$PATH" \
+        --env CODEX_API_KEY="" \
+        --env OPENAI_API_KEY="" \
+        --env PYTHONNOUSERSITE="1" \
+        --bind "${JOB_TMP}:/tmp" \
+        --home "${JOB_DIR}:/home/ben" \
+        --pwd "/home/ben/task" \
+        --writable-tmpfs \
+        "${POST_TRAIN_BENCH_CONTAINERS_DIR}/opus_4_6_codex_5_3.sif" \
+        codex --search -a never exec -c model_reasoning_summary=detailed -c model_reasoning_effort=xhigh --skip-git-repo-check --yolo --model "gpt-5.4" "$JUDGE_PROMPT" 2>&1 | tee "$JUDGE_OUTPUT_GPT"
 
-# Save GPT-5.2 judge output
-if [ -f "$JUDGE_OUTPUT_GPT" ]; then
-    cp "$JUDGE_OUTPUT_GPT" "$RESULT_DIR/judge_output_gpt5_2${SUFFIX}.txt"
-    echo "  GPT-5.2 judge output saved"
+    # Save GPT-5.4 judge output
+    if [ -f "$JUDGE_OUTPUT_GPT" ]; then
+        cp "$JUDGE_OUTPUT_GPT" "$RESULT_DIR/judge_output_gpt5_4_rerun.txt"
+        echo "  GPT-5.4 judge output saved"
+    fi
+
+    # Save GPT-5.4 judgements with model-specific suffix
+    if [ -f "$JOB_DIR/task/contamination_judgement.txt" ]; then
+        cp "$JOB_DIR/task/contamination_judgement.txt" "$RESULT_DIR/contamination_judgement_gpt5_4_rerun.txt"
+        echo "  GPT-5.4 Contamination: $(cat "$RESULT_DIR/contamination_judgement_gpt5_4_rerun.txt")"
+    else
+        echo "  Warning: contamination_judgement.txt not created by GPT-5.4 judge"
+    fi
+
+    if [ -f "$JOB_DIR/task/disallowed_model_judgement.txt" ]; then
+        cp "$JOB_DIR/task/disallowed_model_judgement.txt" "$RESULT_DIR/disallowed_model_judgement_gpt5_4_rerun.txt"
+        echo "  GPT-5.4 Model usage: $(cat "$RESULT_DIR/disallowed_model_judgement_gpt5_4_rerun.txt")"
+    else
+        echo "  Warning: disallowed_model_judgement.txt not created by GPT-5.4 judge"
+    fi
+
+    # Clean judgement files so the next judge starts fresh
+    rm -f "$JOB_DIR/task/contamination_judgement.txt"
+    rm -f "$JOB_DIR/task/disallowed_model_judgement.txt"
 fi
-
-# Save GPT-5.2 judgements with model-specific suffix
-if [ -f "$JOB_DIR/task/contamination_judgement.txt" ]; then
-    cp "$JOB_DIR/task/contamination_judgement.txt" "$RESULT_DIR/contamination_judgement_gpt5_2${SUFFIX}.txt"
-    echo "  GPT-5.2 Contamination: $(cat "$RESULT_DIR/contamination_judgement_gpt5_2${SUFFIX}.txt")"
-else
-    echo "  Warning: contamination_judgement.txt not created by GPT-5.2 judge"
-fi
-
-if [ -f "$JOB_DIR/task/disallowed_model_judgement.txt" ]; then
-    cp "$JOB_DIR/task/disallowed_model_judgement.txt" "$RESULT_DIR/disallowed_model_judgement_gpt5_2${SUFFIX}.txt"
-    echo "  GPT-5.2 Model usage: $(cat "$RESULT_DIR/disallowed_model_judgement_gpt5_2${SUFFIX}.txt")"
-else
-    echo "  Warning: disallowed_model_judgement.txt not created by GPT-5.2 judge"
-fi
-
-# Clean judgement files so the next judge starts fresh
-rm -f "$JOB_DIR/task/contamination_judgement.txt"
-rm -f "$JOB_DIR/task/disallowed_model_judgement.txt"
 
 # ============================================================
 # Judge 2: Claude Sonnet 4.6 via claude CLI
 # ============================================================
-echo ""
-echo "========================================="
-echo "=== Judge 2: Claude Sonnet 4.6 ==="
-echo "========================================="
+if [ "$RUN_SONNET" = true ]; then
+    echo ""
+    echo "========================================="
+    echo "=== Judge 2: Claude Sonnet 4.6 ==="
+    echo "========================================="
 
-JUDGE_OUTPUT_SONNET="$RESULT_DIR/judge_output_sonnet4_6${SUFFIX}.txt"
-apptainer exec \
-    -c \
-    --env PATH="/root/.local/bin:/home/ben/.local/bin:$PATH" \
-    --env ANTHROPIC_API_KEY="" \
-    --env CLAUDE_CODE_OAUTH_TOKEN="${JUDGE_OAUTH_TOKEN}" \
-    --env PYTHONNOUSERSITE="1" \
-    --env CLAUDE_CODE_EFFORT_LEVEL="high" \
-    --bind "${JOB_TMP}:/tmp" \
-    --home "${JOB_DIR}:/home/ben" \
-    --pwd "/home/ben/task" \
-    --writable-tmpfs \
-    "${POST_TRAIN_BENCH_CONTAINERS_DIR}/opus_4_6_codex_5_3.sif" \
-    claude --print --verbose --model claude-sonnet-4-6 --output-format stream-json --dangerously-skip-permissions "$JUDGE_PROMPT" 2>&1 | tee "$JUDGE_OUTPUT_SONNET"
+    JUDGE_OUTPUT_SONNET="$RESULT_DIR/judge_output_sonnet4_6_rerun.txt"
+    apptainer exec \
+        -c \
+        --env PATH="/root/.local/bin:/home/ben/.local/bin:$PATH" \
+        --env ANTHROPIC_API_KEY="" \
+        --env CLAUDE_CODE_OAUTH_TOKEN="${JUDGE_OAUTH_TOKEN}" \
+        --env PYTHONNOUSERSITE="1" \
+        --env CLAUDE_CODE_EFFORT_LEVEL="high" \
+        --bind "${JOB_TMP}:/tmp" \
+        --home "${JOB_DIR}:/home/ben" \
+        --pwd "/home/ben/task" \
+        --writable-tmpfs \
+        "${POST_TRAIN_BENCH_CONTAINERS_DIR}/opus_4_6_codex_5_3.sif" \
+        claude --print --verbose --model claude-sonnet-4-6 --output-format stream-json --dangerously-skip-permissions "$JUDGE_PROMPT" 2>&1 | tee "$JUDGE_OUTPUT_SONNET"
 
-# Save Sonnet 4.6 judge output
-if [ -f "$JUDGE_OUTPUT_SONNET" ]; then
-    cp "$JUDGE_OUTPUT_SONNET" "$RESULT_DIR/judge_output_sonnet4_6${SUFFIX}.json"
-    python "$REPO_ROOT/agents/claude/human_readable_trace.py" "$JUDGE_OUTPUT_SONNET" -o "$RESULT_DIR/judge_output_sonnet4_6${SUFFIX}.txt"
-    echo "  Sonnet 4.6 judge output saved"
-fi
+    # Save Sonnet 4.6 judge output
+    if [ -f "$JUDGE_OUTPUT_SONNET" ]; then
+        cp "$JUDGE_OUTPUT_SONNET" "$RESULT_DIR/judge_output_sonnet4_6_rerun.json"
+        python "$REPO_ROOT/agents/claude/human_readable_trace.py" "$JUDGE_OUTPUT_SONNET" -o "$RESULT_DIR/judge_output_sonnet4_6_rerun.txt"
+        echo "  Sonnet 4.6 judge output saved"
+    fi
 
-# Save Sonnet 4.6 judgements with model-specific suffix
-if [ -f "$JOB_DIR/task/contamination_judgement.txt" ]; then
-    cp "$JOB_DIR/task/contamination_judgement.txt" "$RESULT_DIR/contamination_judgement_sonnet4_6${SUFFIX}.txt"
-    echo "  Sonnet 4.6 Contamination: $(cat "$RESULT_DIR/contamination_judgement_sonnet4_6${SUFFIX}.txt")"
-else
-    echo "  Warning: contamination_judgement.txt not created by Sonnet 4.6 judge"
-fi
+    # Save Sonnet 4.6 judgements with model-specific suffix
+    if [ -f "$JOB_DIR/task/contamination_judgement.txt" ]; then
+        cp "$JOB_DIR/task/contamination_judgement.txt" "$RESULT_DIR/contamination_judgement_sonnet4_6_rerun.txt"
+        echo "  Sonnet 4.6 Contamination: $(cat "$RESULT_DIR/contamination_judgement_sonnet4_6_rerun.txt")"
+    else
+        echo "  Warning: contamination_judgement.txt not created by Sonnet 4.6 judge"
+    fi
 
-if [ -f "$JOB_DIR/task/disallowed_model_judgement.txt" ]; then
-    cp "$JOB_DIR/task/disallowed_model_judgement.txt" "$RESULT_DIR/disallowed_model_judgement_sonnet4_6${SUFFIX}.txt"
-    echo "  Sonnet 4.6 Model usage: $(cat "$RESULT_DIR/disallowed_model_judgement_sonnet4_6${SUFFIX}.txt")"
-else
-    echo "  Warning: disallowed_model_judgement.txt not created by Sonnet 4.6 judge"
+    if [ -f "$JOB_DIR/task/disallowed_model_judgement.txt" ]; then
+        cp "$JOB_DIR/task/disallowed_model_judgement.txt" "$RESULT_DIR/disallowed_model_judgement_sonnet4_6_rerun.txt"
+        echo "  Sonnet 4.6 Model usage: $(cat "$RESULT_DIR/disallowed_model_judgement_sonnet4_6_rerun.txt")"
+    else
+        echo "  Warning: disallowed_model_judgement.txt not created by Sonnet 4.6 judge"
+    fi
 fi
 
 # ============================================================
@@ -256,26 +278,26 @@ echo "=== Aggregating Judge Results ==="
 echo "========================================="
 
 # Aggregate contamination judgement
-CONTAM_GPT=$(cat "$RESULT_DIR/contamination_judgement_gpt5_2${SUFFIX}.txt" 2>/dev/null || echo "")
-CONTAM_SONNET=$(cat "$RESULT_DIR/contamination_judgement_sonnet4_6${SUFFIX}.txt" 2>/dev/null || echo "")
+CONTAM_GPT=$(cat "$RESULT_DIR/contamination_judgement_gpt5_4_rerun.txt" 2>/dev/null || echo "")
+CONTAM_SONNET=$(cat "$RESULT_DIR/contamination_judgement_sonnet4_6_rerun.txt" 2>/dev/null || echo "")
 
 if echo "$CONTAM_GPT" | grep -qix "contamination detected" || echo "$CONTAM_SONNET" | grep -qix "contamination detected"; then
-    echo "contamination detected" > "$RESULT_DIR/contamination_judgement${SUFFIX}.txt"
+    echo "contamination detected" > "$RESULT_DIR/contamination_judgement_rerun.txt"
 else
-    echo "no contamination detected" > "$RESULT_DIR/contamination_judgement${SUFFIX}.txt"
+    echo "no contamination detected" > "$RESULT_DIR/contamination_judgement_rerun.txt"
 fi
-echo "  Aggregated Contamination: $(cat "$RESULT_DIR/contamination_judgement${SUFFIX}.txt")"
+echo "  Aggregated Contamination: $(cat "$RESULT_DIR/contamination_judgement_rerun.txt")"
 
 # Aggregate disallowed model judgement
-MODEL_GPT=$(cat "$RESULT_DIR/disallowed_model_judgement_gpt5_2${SUFFIX}.txt" 2>/dev/null || echo "")
-MODEL_SONNET=$(cat "$RESULT_DIR/disallowed_model_judgement_sonnet4_6${SUFFIX}.txt" 2>/dev/null || echo "")
+MODEL_GPT=$(cat "$RESULT_DIR/disallowed_model_judgement_gpt5_4_rerun.txt" 2>/dev/null || echo "")
+MODEL_SONNET=$(cat "$RESULT_DIR/disallowed_model_judgement_sonnet4_6_rerun.txt" 2>/dev/null || echo "")
 
 if echo "$MODEL_GPT" | grep -qix "disallowed use detected" || echo "$MODEL_SONNET" | grep -qix "disallowed use detected"; then
-    echo "disallowed use detected" > "$RESULT_DIR/disallowed_model_judgement${SUFFIX}.txt"
+    echo "disallowed use detected" > "$RESULT_DIR/disallowed_model_judgement_rerun.txt"
 else
-    echo "only allowed use detected" > "$RESULT_DIR/disallowed_model_judgement${SUFFIX}.txt"
+    echo "only allowed use detected" > "$RESULT_DIR/disallowed_model_judgement_rerun.txt"
 fi
-echo "  Aggregated Model usage: $(cat "$RESULT_DIR/disallowed_model_judgement${SUFFIX}.txt")"
+echo "  Aggregated Model usage: $(cat "$RESULT_DIR/disallowed_model_judgement_rerun.txt")"
 
 echo ""
-echo "Judge completed successfully (GPT-5.2 + Sonnet 4.6)"
+echo "Judge completed successfully (GPT-5.4 + Sonnet 4.6)"
