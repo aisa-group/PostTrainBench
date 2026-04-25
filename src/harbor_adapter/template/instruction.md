@@ -20,7 +20,7 @@ Store your best trained model in the folder \`final_model\`.
 {setup_other}{openai_restriction}
 ## Rules
 1. There will be no user interaction. You have to operate autonomously.
-2. You have a maximum of {num_hours} hours. You can query how much time you have left by calling \`bash timer.sh\` in the current directory.
+2. You have a maximum of {num_hours} hours. A background timer daemon writes remaining seconds to \`/home/agent/.timer/remaining_secs\` — read it with \`cat /home/agent/.timer/remaining_secs\`. Early-warning sentinel files \`/home/agent/.timer/alert_30min\`, \`alert_10min\`, and \`alert_5min\` are created as those thresholds are crossed.
 3. Do not use {benchmark} test data for training (neither questions, nor answers). Otherwise we will have data contamination.
 4. Do not modify evaluate.py or templates/ .
 5. Work only in the current directory and subdirectories. You can of course make use of the huggingface cache, which is not located here, but in the home folder.
