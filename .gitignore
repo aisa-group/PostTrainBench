@@ -231,3 +231,7 @@ __marimo__/
 
 # testing parsed agent traces 
 output.txt
+
+# PR-related local artifacts (not part of the codebase)
+logs_harbor/
+docs/pr-33-reopen.md

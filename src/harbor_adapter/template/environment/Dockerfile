@@ -27,8 +27,9 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
 # Install uv
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Install vllm
-RUN uv pip install --system --no-cache vllm==0.11.0 --torch-backend=auto
+# Install vllm. Repinned from 0.11.0 → 0.19.1: 0.11.0 required
+# xformers==0.0.32.post1 which is no longer on PyPI for manylinux_x86_64.
+RUN uv pip install --system --no-cache vllm==0.19.1 --torch-backend=auto
 
 # Install AI CLI tools via npm (agents can use these)
 RUN npm install -g \
@@ -62,12 +63,12 @@ RUN uv pip install --system --no-cache \
 # Note: flash_attn requires GPU to compile - install at runtime if needed:
 # pip install flash_attn --no-build-isolation
 
-# Install inspect evals
-RUN mkdir -p /opt && \
-    cd /opt && \
-    git clone --depth=1 https://github.com/UKGovernmentBEIS/inspect_evals.git && \
-    cd /opt/inspect_evals && \
-    uv pip install --system --no-cache .
+# Install inspect_evals pinned to commit 03cb4bc2 (2026-03-15), the last
+# commit on `main` that still declares `requires-python = ">=3.10"`. The
+# next commit (b4d1356a) bumps to >=3.11, which clashes with the
+# python3.10 we install above.
+RUN uv pip install --system --no-cache \
+    "inspect_evals @ git+https://github.com/UKGovernmentBEIS/inspect_evals.git@03cb4bc212890a828d9cc73c17e6c491ec24fbee"
 
 # Setup workspace
 RUN mkdir -p /home/agent/workspace
