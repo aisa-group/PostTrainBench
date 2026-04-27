@@ -14,6 +14,9 @@ CLAUDE.md
 logs
 .vscode
 
+# Cluster-ID logs from recompute_selected_methods_gpt_only.sh submissions
+src/disallowed_usage_judge/rerun_judge/recompute_selected_methods_gpt_only_runs/
+
 containers/empty_dot_git
 
 # Downloaded benchmark test data for contamination checking
