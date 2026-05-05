@@ -1,0 +1,15 @@
+executable = /bin/bash
+num_gpus = 1
+n = 5
+arguments = scripts/rerun_eval_n_times.sh $(eval_dir) $(n)
+environment = "OPENAI_API_KEY=$ENV(OPENAI_API_KEY) HOME=$ENV(HOME) POST_TRAIN_BENCH_RESULTS_DIR=$ENV(POST_TRAIN_BENCH_RESULTS_DIR) POST_TRAIN_BENCH_CONTAINERS_DIR=$ENV(POST_TRAIN_BENCH_CONTAINERS_DIR) POST_TRAIN_BENCH_CONTAINER_NAME=$ENV(POST_TRAIN_BENCH_CONTAINER_NAME) POST_TRAIN_BENCH_JOB_SCHEDULER=$ENV(POST_TRAIN_BENCH_JOB_SCHEDULER) HF_HOME=$ENV(HF_HOME)"
+error = rerun_$(Cluster).err
+output = rerun_$(Cluster).out
+log = rerun_$(Cluster).log
+request_memory = 131072
+request_cpus = 16
+request_gpus = $(num_gpus)
+requirements = TARGET.CUDADeviceName == "NVIDIA H100 80GB HBM3" && Machine != "i104.internal.cluster.is.localnet"
+request_disk=400G
++BypassLXCfs="true"
+queue
