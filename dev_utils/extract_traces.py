@@ -153,6 +153,11 @@ def main():
         nargs="+",
         help="Input directory names (relative to RESULTS_BASE) to process"
     )
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Copy all runs, not just the latest per task (default: latest only)"
+    )
     args = parser.parse_args()
 
     output_base = Path(OUTPUT_DIR)
@@ -175,8 +180,12 @@ def main():
 
         print(f"\n[{input_dir_name}]")
 
-        # Iterate over only the latest subdirectories (highest ID per prefix)
-        for subdir in sorted(get_latest_subdirs(input_dir)):
+        # Iterate over subdirectories (latest per task by default, all with --all)
+        if args.all:
+            subdirs = sorted(d for d in input_dir.iterdir() if d.is_dir())
+        else:
+            subdirs = sorted(get_latest_subdirs(input_dir))
+        for subdir in subdirs:
             # Determine source file (prefer solve_parsed.txt)
             src_file = subdir / "solve_parsed.txt"
             if not src_file.exists():
@@ -201,6 +210,7 @@ def main():
             copy_other_files(subdir, dest_dir, 'contamination_judgement.txt', api_keys=api_keys)
             copy_other_files(subdir, dest_dir, 'disallowed_model_judgement.txt', api_keys=api_keys)
             copy_other_files(subdir, dest_dir, 'error.log', 'judgement.log', api_keys=api_keys)
+            copy_other_files(subdir, dest_dir, 'time_taken.txt', api_keys=api_keys)
             copy_other_files(subdir, dest_dir, 'system_monitor.log', api_keys=api_keys, optional=True)
 
             tag = " [sanitized]" if was_sanitized else ""

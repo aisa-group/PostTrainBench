@@ -62,7 +62,13 @@ HARDCODED_AGENT_MAP = {
     "claude_non_api_claude-opus-4-6_1m__10h_run1",
     "claude_non_api_claude-opus-4-6_1m__10h_run2",
     "claude_non_api_claude-opus-4-6_1m__10h_run3"
-    ]
+    ],
+
+    "Opus-4.7":[
+    "claude_non_api_claude-opus-4-7_10h",
+    "claude_non_api_claude-opus-4-7_10h_run2",
+    "claude_non_api_claude-opus-4-7_10h_run3"
+    ] 
 
 }
 
