@@ -38,3 +38,23 @@ CODEX_API_KEY = "${OPENAI_API_KEY}"
 
 [agent]
 timeout_sec = 36000.0
+
+# Artifacts collected after the trial finishes. Harbor downloads each entry
+# from the sandbox into <trial_dir>/artifacts/<destination>/. Failures are
+# best-effort — they don't fail the trial.
+#
+# We collect:
+#   1. final_model/  — the agent's trained weights, what the verifier
+#      evaluated. Pulled separately for easy access in postmortem.
+#   2. workspace/    — everything the agent wrote (training scripts,
+#      data dumps, intermediate configs). Excludes final_model (already
+#      pulled), Python cache, and common bulk dirs.
+
+[[artifacts]]
+source = "/home/agent/workspace/final_model"
+destination = "final_model"
+
+[[artifacts]]
+source = "/home/agent/workspace"
+destination = "workspace"
+exclude = ["final_model", "__pycache__", "*.pyc", ".git", ".venv", "venv"]
