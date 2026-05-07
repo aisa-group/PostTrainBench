@@ -184,20 +184,23 @@ class PostTrainBenchAdapter:
     def generate_timer_sh(self, env_dir: Path) -> None:
         """Generate timer.sh script that tracks remaining time.
 
-        Uses a sentinel file to record the actual start time on first
-        invocation, so the timer is accurate even if the task is generated
-        long before the agent runs.
+        Reads the start timestamp from the absolute path /timer_start, which
+        is written by the task.toml healthcheck immediately before the agent
+        launches. Using an absolute path makes the timer immune to the
+        agent's `cd`s (the previous sentinel-file approach used
+        `dirname "$0"` which resolved differently per cwd).
         """
         timer_script = f"""#!/bin/bash
 
 NUM_HOURS={self.num_hours}
+START_FILE="/timer_start"
 
-START_FILE="$(dirname "$0")/.timer_start"
 if [ ! -f "$START_FILE" ]; then
-    date +%s > "$START_FILE"
+    echo "Timer not initialized (healthcheck has not run yet)."
+    exit 1
 fi
-START_DATE=$(cat "$START_FILE")
 
+START_DATE=$(cat "$START_FILE")
 DEADLINE=$((START_DATE + NUM_HOURS * 3600))
 NOW=$(date +%s)
 REMAINING=$((DEADLINE - NOW))
@@ -234,6 +237,32 @@ fi
         dockerignore_src = TEMPLATE_DIR / "environment" / ".dockerignore"
         if dockerignore_src.exists():
             shutil.copy(dockerignore_src, env_dir / ".dockerignore")
+
+        # Copy entrypoint.sh — Dockerfile installs it at /usr/local/bin/
+        # and sets it as ENTRYPOINT so its stdout becomes Modal's live log
+        # stream (see template/environment/entrypoint.sh).
+        entrypoint_src = TEMPLATE_DIR / "environment" / "entrypoint.sh"
+        entrypoint_dst = env_dir / "entrypoint.sh"
+        shutil.copy(entrypoint_src, entrypoint_dst)
+        entrypoint_dst.chmod(0o755)
+
+        # Copy system_monitor.sh — kicked off by entrypoint.sh as a
+        # background daemon; ports condor's src/utils/system_monitor.sh.
+        monitor_src = TEMPLATE_DIR / "environment" / "system_monitor.sh"
+        monitor_dst = env_dir / "system_monitor.sh"
+        shutil.copy(monitor_src, monitor_dst)
+        monitor_dst.chmod(0o755)
+
+        # Copy containers/requirements-direct.txt into the build context.
+        # The Dockerfile pins ML deps from this file (mirrors the condor
+        # opus_4_6_1m.def pipeline). 
+        reqs_src = self.posttrainbench_root / "containers" / "requirements-direct.txt"
+        if not reqs_src.exists():
+            raise FileNotFoundError(
+                f"requirements-direct.txt not found at {reqs_src}; "
+                f"the Dockerfile expects it in the build context."
+            )
+        shutil.copy(reqs_src, env_dir / "requirements-direct.txt")
 
         # Copy evaluate.py from the benchmark
         eval_src = self.posttrainbench_root / "src" / "eval" / "tasks" / benchmark_id / "evaluate.py"

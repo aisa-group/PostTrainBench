@@ -1,11 +1,20 @@
 FROM nvidia/cuda:12.9.1-cudnn-devel-ubuntu22.04
 
+# This Dockerfile mirrors containers/opus_4_6_1m.def (the apptainer
+# image used by the HTCondor pipeline) for cross-environment parity.
+# Differences vs. apptainer build:
+#   - --torch-backend=cu128 is explicit. Modal's build VM has no
+#     nvidia-smi/CUDA driver, so --torch-backend=auto would resolve to CPU
+#     torch and fail to satisfy vllm's CUDA-only xformers dependency.
+#   - ENTRYPOINT streams /logs/agent/*.txt to PID 1 stdout so Modal's
+#     dashboard shows live agent output (apptainer doesn't need this).
+
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PATH="/root/.local/bin:$PATH"
 ENV NO_PROXY="localhost,127.0.0.1"
 ENV no_proxy="localhost,127.0.0.1"
 
-# Update and install system dependencies
+# System dependencies
 RUN apt-get update && apt-get install -y \
     python3.10 \
     python3-dev \
@@ -16,66 +25,70 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Create python3 symlink
+# Python symlinks
 RUN ln -sf /usr/bin/python3.10 /usr/bin/python3 && \
     ln -sf /usr/bin/python3.10 /usr/bin/python
 
-# Install Node.js (LTS version 22.x) for npm
+# Node.js 22.x (for the agent CLIs)
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     apt-get install -y nodejs
 
-# Install uv
+# uv
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Install vllm
-RUN uv pip install --system --no-cache vllm==0.11.0 --torch-backend=auto
+# vllm. Pin torch backend to CUDA 12.8 wheels explicitly (Modal build VM
+# has no GPU/nvidia-smi, so --torch-backend=auto falls back to CPU and
+# breaks the CUDA-only xformers requirement).
+RUN uv pip install --system --no-cache vllm==0.11.0 --torch-backend=cu128
 
-# Install AI CLI tools via npm (agents can use these)
+# Pinned ML deps (synced from containers/requirements-direct.txt; adapter
+# copies that file into the build context).
+COPY requirements-direct.txt /opt/requirements-direct.txt
+RUN uv pip install --system --no-cache -r /opt/requirements-direct.txt
+
+RUN uv pip install --system --no-cache flash-attn==2.8.3 --no-build-isolation
+
+# Pinned agent CLIs (matches opus_4_6_1m.def).
 RUN npm install -g \
-    @anthropic-ai/claude-code \
-    @openai/codex \
-    @google/gemini-cli
+    @anthropic-ai/claude-code@2.1.76 \
+    @openai/codex@0.98.0 \
+    @google/gemini-cli@0.18.4 \
+    opencode-ai@1.1.59
 
-RUN uv pip install --system --no-cache ninja packaging
-
-# Install the required ML packages
-RUN uv pip install --system --no-cache \
-    accelerate \
-    boto3 \
-    bitsandbytes \
-    datasets \
-    evaluate \
-    lm-eval \
-    openai \
-    pandas \
-    scikit-learn \
-    shortuuid \
-    tokenizers \
-    transformers \
-    trl \
-    peft \
-    tiktoken \
-    inspect-ai \
-    matplotlib \
-    certifi
-
-# Note: flash_attn requires GPU to compile - install at runtime if needed:
-# pip install flash_attn --no-build-isolation
-
-# Install inspect evals
 RUN mkdir -p /opt && \
     cd /opt && \
-    git clone --depth=1 https://github.com/UKGovernmentBEIS/inspect_evals.git && \
+    git clone https://github.com/UKGovernmentBEIS/inspect_evals.git && \
     cd /opt/inspect_evals && \
+    git checkout 06001a83e6d7c709c2ede0570dce7f1031a0bad8 && \
     uv pip install --system --no-cache .
 
-# Setup workspace
+RUN cd /opt && \
+    git clone https://github.com/rank-and-file/inspect_ai_vllm_stdout.git && \
+    cd inspect_ai_vllm_stdout && \
+    uv pip install --system --no-cache .
+
+# Entrypoint streams /logs/{agent,verifier}/*.txt to PID 1 stdout so Modal's
+# sandbox dashboard shows live agent + verifier output. Also kicks off a
+# system monitor daemon (parity with condor's src/utils/system_monitor.sh).
+# Healthcheck (in task.toml) writes /timer_start once the streaming daemon
+# is up.
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY system_monitor.sh /usr/local/bin/system_monitor.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/system_monitor.sh
+
+# Workspace
 RUN mkdir -p /home/agent/workspace
 WORKDIR /home/agent/workspace
 
-# Copy all task files (populated by adapter; .dockerignore excludes Dockerfile)
+# Task files. The Dockerfile is excluded via .dockerignore. entrypoint.sh,
+# system_monitor.sh, and requirements-direct.txt land here too via `COPY .`,
+# but they're container-internal — strip them from the workspace.
 COPY . /home/agent/workspace/
+RUN rm -f /home/agent/workspace/entrypoint.sh \
+          /home/agent/workspace/system_monitor.sh \
+          /home/agent/workspace/requirements-direct.txt
 
-# Set permissions
 RUN chmod -R a+rw /home/agent/workspace/ && \
     chmod +x /home/agent/workspace/timer.sh
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

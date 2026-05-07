@@ -7,14 +7,27 @@ tags = ["post-training", "llm", "fine-tuning", "gpu"]
 
 [environment]
 gpus = 1
-# Note: Duplicate GPU type is a workaround for Harbor bug in modal.py line 94
-# (checks len > 1 instead of >= 1). Without this, gpu_type defaults to "any".
-gpu_types = ["H100", "H100"]
+gpu_types = ["H100"]
 cpus = 8
 memory_mb = 65536
 storage_mb = 102400
-build_timeout_sec = 1800.0
+build_timeout_sec = 3600.0
 allow_internet = true
+
+# Healthcheck runs after entrypoint.sh comes up and before the agent starts.
+# Two jobs:
+#   1. Verify the log-streaming daemon (tail -F /logs/agent/*) is running so
+#      the agent's output reaches Modal's dashboard live.
+#   2. Idempotently record the timer start time at /timer_start. Aligning the
+#      write with healthcheck means the timer starts essentially at agent
+#      launch, not at container boot.
+[environment.healthcheck]
+command = "pgrep -f 'tail -F' > /dev/null && (test -f /timer_start || date +%s > /timer_start)"
+interval_sec = 2
+timeout_sec = 5
+start_period_sec = 5
+start_interval_sec = 1
+retries = 3
 
 [verifier]
 timeout_sec = 10800.0
