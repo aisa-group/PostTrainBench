@@ -264,45 +264,74 @@ fi
             )
         shutil.copy(reqs_src, env_dir / "requirements-direct.txt")
 
-        # Copy evaluate.py from the benchmark
+        # Eval files: evaluate.py, templates/, optional evaluation_code/
+        # and task_context contents, plus contamination_judge.py and
+        # metadata.json. The agent gets these in /home/agent/workspace
+        # (via the Dockerfile's `COPY .`) for fast iteration during
+        # training. They are *also* copied into the tests/ dir by
+        # generate_tests, and that's the copy the verifier uses.
+        self._copy_eval_files(env_dir, benchmark_id, model_info, benchmark_info)
+
+        # Generate timer.sh (workspace-only — agent reads it during the run)
+        self.generate_timer_sh(env_dir)
+
+    def _copy_eval_files(
+        self,
+        target_dir: Path,
+        benchmark_id: str,
+        model_info: "ModelInfo",
+        benchmark_info: "BenchmarkInfo",
+    ) -> None:
+        """Copy the evaluation pipeline files into target_dir.
+
+        Used for both:
+          - environment/ (so the agent has them in /home/agent/workspace
+            for iterative testing during training)
+          - tests/ (so the verifier runs against an untampered copy that
+            Harbor uploads only after the agent process exits)
+
+        Files copied:
+          - evaluate.py            (benchmark-specific)
+          - templates/             (chat templates for all model families)
+          - evaluation_code/       (arenahardwriting, healthbench only)
+          - task_context/<*>       (bfcl has bfcl_evaluation_code.py)
+          - contamination_judge.py (judge prompt builder)
+          - metadata.json          (benchmark + model info for verifier)
+        """
+        # evaluate.py
         eval_src = self.posttrainbench_root / "src" / "eval" / "tasks" / benchmark_id / "evaluate.py"
-        if eval_src.exists():
-            shutil.copy(eval_src, env_dir / "evaluate.py")
-        else:
+        if not eval_src.exists():
             raise FileNotFoundError(f"evaluate.py not found: {eval_src}")
+        shutil.copy(eval_src, target_dir / "evaluate.py")
 
-        # Copy templates directory
+        # templates/
         templates_src = self.posttrainbench_root / "src" / "eval" / "templates"
-        templates_dst = env_dir / "templates"
-        if templates_src.exists():
-            shutil.copytree(templates_src, templates_dst, dirs_exist_ok=True)
-        else:
+        if not templates_src.exists():
             raise FileNotFoundError(f"templates directory not found: {templates_src}")
+        shutil.copytree(templates_src, target_dir / "templates", dirs_exist_ok=True)
 
-        # Copy evaluation_code/ if it exists (arenahardwriting, healthbench)
+        # evaluation_code/ (arenahardwriting, healthbench)
         eval_code_src = self.posttrainbench_root / "src" / "eval" / "tasks" / benchmark_id / "evaluation_code"
         if eval_code_src.is_dir():
-            shutil.copytree(eval_code_src, env_dir / "evaluation_code", dirs_exist_ok=True)
+            shutil.copytree(eval_code_src, target_dir / "evaluation_code", dirs_exist_ok=True)
 
-        # Copy task_context/* contents if they exist (bfcl has bfcl_evaluation_code.py)
+        # task_context/* (bfcl has bfcl_evaluation_code.py)
         task_context_src = self.posttrainbench_root / "src" / "eval" / "tasks" / benchmark_id / "task_context"
         if task_context_src.is_dir():
             for item in task_context_src.iterdir():
-                dst = env_dir / item.name
+                dst = target_dir / item.name
                 if item.is_dir():
                     shutil.copytree(item, dst, dirs_exist_ok=True)
                 else:
                     shutil.copy(item, dst)
 
-        # Copy contamination judge script
+        # contamination judge script (kept in template/environment/ as
+        # the canonical source, copied into both env_dir and tests_dir)
         judge_src = TEMPLATE_DIR / "environment" / "contamination_judge.py"
         if judge_src.exists():
-            shutil.copy(judge_src, env_dir / "contamination_judge.py")
+            shutil.copy(judge_src, target_dir / "contamination_judge.py")
 
-        # Generate timer.sh (matches original PostTrainBench behavior)
-        self.generate_timer_sh(env_dir)
-
-        # Generate metadata.json for verifier (used by contamination judge)
+        # metadata.json
         metadata = {
             "benchmark_id": benchmark_id,
             "benchmark_name": benchmark_info.benchmark_name,
@@ -310,19 +339,37 @@ fi
             "model_short_name": model_info.short_name,
             "num_hours": self.num_hours,
         }
-        metadata_path = env_dir / "metadata.json"
-        metadata_path.write_text(json.dumps(metadata, indent=2))
+        (target_dir / "metadata.json").write_text(json.dumps(metadata, indent=2))
 
-    def generate_tests(self, task_dir: Path) -> None:
-        """Generate the tests directory with verification script."""
+    def generate_tests(
+        self,
+        task_dir: Path,
+        benchmark_id: str,
+        model_info: "ModelInfo",
+        benchmark_info: "BenchmarkInfo",
+    ) -> None:
+        """Generate the tests directory with verification script + eval files.
+
+        Harbor uploads tests/ to /tests in the sandbox AFTER the agent
+        process exits, so files placed here cannot be modified by the
+        agent. test.sh runs evaluate.py and the contamination judge
+        against these copies (not the agent's workspace copies) for
+        tamper-resistance parity with the condor pipeline's separate
+        verifier container.
+        """
         tests_dir = task_dir / "tests"
         tests_dir.mkdir(parents=True, exist_ok=True)
 
-        # Copy test.sh
+        # Copy test.sh (the verifier orchestrator)
         test_sh_src = TEMPLATE_DIR / "tests" / "test.sh"
         test_sh_dst = tests_dir / "test.sh"
         shutil.copy(test_sh_src, test_sh_dst)
         test_sh_dst.chmod(0o755)
+
+        # Copy the same eval files into tests/ so the verifier reads from
+        # an untamperable location (matches condor's "verifier runs in a
+        # separate container with fresh files" behavior at the file level).
+        self._copy_eval_files(tests_dir, benchmark_id, model_info, benchmark_info)
 
     def generate_task(
         self,
@@ -368,7 +415,7 @@ fi
         self.generate_task_toml(task_dir, benchmark_id)
         self.generate_instruction(task_dir, model_info, benchmark_info, benchmark_id)
         self.generate_environment(task_dir, benchmark_id, model_info, benchmark_info)
-        self.generate_tests(task_dir)
+        self.generate_tests(task_dir, benchmark_id, model_info, benchmark_info)
 
         print(f"Task generated at: {task_dir}")
         return task_dir

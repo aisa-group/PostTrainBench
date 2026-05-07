@@ -4,13 +4,33 @@ set -e
 # PostTrainBench verification script
 # Runs contamination judge (codex CLI) and 3-phase evaluation with retry logic.
 # Matches the original run_task.sh evaluation pipeline.
+#
+# Tamper-resistance design:
+#   - Verifier-side files (evaluate.py, templates/, contamination_judge.py,
+#     metadata.json, evaluation_code/, bfcl_evaluation_code.py) live under
+#     /tests, which Harbor uploads only AFTER the agent process exits.
+#     The agent never has write access to /tests, so cannot modify the
+#     evaluation pipeline to inflate its score.
+#   - The agent's workspace at /home/agent/workspace still contains its
+#     own COPIES (placed at build time) — agents use those for fast
+#     iteration during training. The verifier ignores them.
+#   - The agent's final_model is read from /home/agent/workspace/final_model
+#     (it has to be — that's where the agent put it).
+#
+# Residual attack vector NOT closed by this design: the agent could pip-
+# install tampered Python packages (e.g. inspect_evals) that the verifier
+# imports. Closing that requires either a separate verifier sandbox
+# (Harbor doesn't support per-trial today) or a restore-on-verify pass
+# that reinstalls pinned packages before evaluating.
 
+TESTS="/tests"
 WORKSPACE="/home/agent/workspace"
 LOGS_DIR="/logs/verifier"
 
 mkdir -p "$LOGS_DIR"
 
 echo "=== PostTrainBench Verifier ==="
+echo "Tests dir: $TESTS"
 echo "Workspace: $WORKSPACE"
 echo "Logs dir: $LOGS_DIR"
 
@@ -19,7 +39,7 @@ echo ""
 echo "=== GPU Check ==="
 nvidia-smi 2>&1 | tee "$LOGS_DIR/gpu_check.txt" || echo "nvidia-smi failed"
 
-# Check if final_model exists
+# Check if final_model exists in agent's workspace
 echo ""
 echo "=== Checking final_model ==="
 if [ ! -d "$WORKSPACE/final_model" ]; then
@@ -53,16 +73,17 @@ ls -la "$WORKSPACE/final_model/"*token* 2>/dev/null || echo "No tokenizer files 
 ls -la "$WORKSPACE/final_model/"*.json 2>/dev/null || echo "No json files found"
 
 # ============================================================
-# Read metadata for benchmark and model info
+# Read metadata for benchmark and model info — from /tests, NOT workspace,
+# so the agent can't redirect the verifier by overwriting metadata.json.
 # ============================================================
 BENCHMARK_ID=""
 BENCHMARK_NAME=""
 MODEL_ID=""
 
-if [ -f "$WORKSPACE/metadata.json" ]; then
-    BENCHMARK_ID=$(python3 -c "import json; print(json.load(open('$WORKSPACE/metadata.json'))['benchmark_id'])" 2>/dev/null || echo "")
-    BENCHMARK_NAME=$(python3 -c "import json; print(json.load(open('$WORKSPACE/metadata.json'))['benchmark_name'])" 2>/dev/null || echo "Unknown")
-    MODEL_ID=$(python3 -c "import json; print(json.load(open('$WORKSPACE/metadata.json'))['model_id'])" 2>/dev/null || echo "Unknown")
+if [ -f "$TESTS/metadata.json" ]; then
+    BENCHMARK_ID=$(python3 -c "import json; print(json.load(open('$TESTS/metadata.json'))['benchmark_id'])" 2>/dev/null || echo "")
+    BENCHMARK_NAME=$(python3 -c "import json; print(json.load(open('$TESTS/metadata.json'))['benchmark_name'])" 2>/dev/null || echo "Unknown")
+    MODEL_ID=$(python3 -c "import json; print(json.load(open('$TESTS/metadata.json'))['model_id'])" 2>/dev/null || echo "Unknown")
     echo "Benchmark ID: $BENCHMARK_ID"
     echo "Benchmark Name: $BENCHMARK_NAME"
     echo "Model: $MODEL_ID"
@@ -70,14 +91,21 @@ fi
 
 # ============================================================
 # Run contamination judge (codex CLI)
-# Matches run_task.sh lines 180-201
+# Matches run_task.sh lines 180-201.
+#
+# The judge prompt is built by /tests/contamination_judge.py (untamperable).
+# Codex still runs with cwd=$WORKSPACE so its read tools naturally see the
+# agent's training code. Codex writes contamination_judgement.txt and
+# disallowed_model_judgement.txt into cwd; we copy them out to LOGS_DIR.
+# (This matches condor's behavior; agent could pre-place these files but
+# codex normally overwrites them when it produces a verdict.)
 # ============================================================
 echo ""
 echo "=== Running Contamination Judge ==="
 
-if [ -f "$WORKSPACE/contamination_judge.py" ] && [ -n "$BENCHMARK_NAME" ]; then
-    # Generate the judge prompt
-    JUDGE_TASK=$(python3 "$WORKSPACE/contamination_judge.py" \
+if [ -f "$TESTS/contamination_judge.py" ] && [ -n "$BENCHMARK_NAME" ]; then
+    # Generate the judge prompt from the untampered /tests/ copy
+    JUDGE_TASK=$(python3 "$TESTS/contamination_judge.py" \
         --model "$MODEL_ID" \
         --benchmark "$BENCHMARK_NAME" 2>/dev/null) || true
 
@@ -111,19 +139,25 @@ if [ -f "$WORKSPACE/contamination_judge.py" ] && [ -n "$BENCHMARK_NAME" ]; then
         echo "only allowed use detected (judge skipped - no API key)" > "$LOGS_DIR/disallowed_model_judgement.txt"
     fi
 else
-    echo "Warning: contamination_judge.py or metadata not found, skipping judge"
+    echo "Warning: contamination_judge.py or metadata not found in /tests, skipping judge"
     echo "no contamination detected (judge not available)" > "$LOGS_DIR/contamination_judgement.txt"
     echo "only allowed use detected (judge not available)" > "$LOGS_DIR/disallowed_model_judgement.txt"
 fi
 
 # ============================================================
 # Evaluation with 3-phase retry logic
-# Matches run_task.sh evaluation pipeline
+# Matches run_task.sh evaluation pipeline.
+#
+# evaluate.py is run from /tests (untamperable). Some evaluate.py scripts
+# (arenahardwriting, healthbench) `from evaluation_code.X import Y`, so
+# /tests must be cwd for the import to resolve. final_model lives in
+# the agent's workspace (only place it could exist), so --model-path is
+# absolute.
 # ============================================================
 echo ""
 echo "=== Running evaluation on final_model ==="
 
-cd "$WORKSPACE"
+cd "$TESTS"
 
 EVAL_COUNTER=0
 
@@ -150,10 +184,10 @@ run_evaluation() {
     kill_gpu_processes
 
     set +e
-    python3 evaluate.py \
-        --model-path final_model \
+    python3 "$TESTS/evaluate.py" \
+        --model-path "$WORKSPACE/final_model" \
         --json-output-file "$LOGS_DIR/metrics.json" \
-        --templates-dir templates/ \
+        --templates-dir "$TESTS/templates" \
         --limit -1 \
         ${max_tokens_arg} \
         2>&1 | tee "$LOGS_DIR/final_eval_${eval_num}.txt"
