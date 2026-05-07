@@ -1,3 +1,4 @@
+import hashlib
 import json
 import shutil
 from dataclasses import dataclass
@@ -182,38 +183,23 @@ class PostTrainBenchAdapter:
         target_path.write_text(content)
 
     def generate_timer_sh(self, env_dir: Path) -> None:
-        """Generate timer.sh script that tracks remaining time.
+        """Copy the timer daemon and its entrypoint into the environment.
 
-        Uses a sentinel file to record the actual start time on first
-        invocation, so the timer is accurate even if the task is generated
-        long before the agent runs.
+        The timer is a long-running daemon started by entrypoint.sh at container
+        boot (and by bashrc/profile.d as a Modal-exec fallback). START_EPOCH is
+        captured when the daemon starts, so the clock tracks actual wall-clock
+        from sandbox creation — not task-generation time.
+
+        Both files are placed in env_dir so they are part of the Docker build
+        context; the Dockerfile copies them to /home/agent/ (outside the agent
+        workspace) so the agent-writable task folder does not contain the
+        authoritative copies.
         """
-        timer_script = f"""#!/bin/bash
-
-NUM_HOURS={self.num_hours}
-
-START_FILE="$(dirname "$0")/.timer_start"
-if [ ! -f "$START_FILE" ]; then
-    date +%s > "$START_FILE"
-fi
-START_DATE=$(cat "$START_FILE")
-
-DEADLINE=$((START_DATE + NUM_HOURS * 3600))
-NOW=$(date +%s)
-REMAINING=$((DEADLINE - NOW))
-
-if [ $REMAINING -le 0 ]; then
-    echo "Timer expired!"
-else
-    echo "Remaining time (hours:minutes)":
-    HOURS=$((REMAINING / 3600))
-    MINUTES=$(((REMAINING % 3600) / 60))
-    printf "%d:%02d\\n" $HOURS $MINUTES
-fi
-"""
-        timer_path = env_dir / "timer.sh"
-        timer_path.write_text(timer_script)
-        timer_path.chmod(0o755)
+        for name in ("timer.sh", "entrypoint.sh"):
+            src = TEMPLATE_DIR / "environment" / name
+            dst = env_dir / name
+            shutil.copy(src, dst)
+            dst.chmod(0o755)
 
     def generate_environment(
         self,
@@ -226,11 +212,15 @@ fi
         env_dir = task_dir / "environment"
         env_dir.mkdir(parents=True, exist_ok=True)
 
-        # Copy Dockerfile template and .dockerignore
-        shutil.copy(
-            TEMPLATE_DIR / "environment" / "Dockerfile",
-            env_dir / "Dockerfile"
+        # Copy Dockerfile template and .dockerignore. The Dockerfile has a
+        # {task_budget_secs} placeholder that is filled from num_hours so the
+        # timer daemon (started at container boot) knows the budget.
+        dockerfile_src = TEMPLATE_DIR / "environment" / "Dockerfile"
+        dockerfile_content = dockerfile_src.read_text()
+        dockerfile_content = dockerfile_content.replace(
+            "{task_budget_secs}", str(self.num_hours * 3600)
         )
+        (env_dir / "Dockerfile").write_text(dockerfile_content)
         dockerignore_src = TEMPLATE_DIR / "environment" / ".dockerignore"
         if dockerignore_src.exists():
             shutil.copy(dockerignore_src, env_dir / ".dockerignore")
@@ -285,14 +275,26 @@ fi
         metadata_path.write_text(json.dumps(metadata, indent=2))
 
     def generate_tests(self, task_dir: Path) -> None:
-        """Generate the tests directory with verification script."""
+        """Generate the tests directory with verification script.
+
+        Computes the SHA256 of evaluate.py at task-generation time and embeds
+        it into test.sh so the verifier can detect if the agent tampered with
+        the evaluation script (reward hacking mitigation).
+        """
         tests_dir = task_dir / "tests"
         tests_dir.mkdir(parents=True, exist_ok=True)
 
-        # Copy test.sh
+        # Compute SHA256 of the evaluate.py that was copied into the environment
+        evaluate_py = task_dir / "environment" / "evaluate.py"
+        sha256 = hashlib.sha256(evaluate_py.read_bytes()).hexdigest()
+
+        # Read template, inject hash, and write
         test_sh_src = TEMPLATE_DIR / "tests" / "test.sh"
+        content = test_sh_src.read_text()
+        content = content.replace("PLACEHOLDER_SHA256", sha256)
+
         test_sh_dst = tests_dir / "test.sh"
-        shutil.copy(test_sh_src, test_sh_dst)
+        test_sh_dst.write_text(content)
         test_sh_dst.chmod(0o755)
 
     def generate_task(
@@ -339,10 +341,52 @@ fi
         self.generate_task_toml(task_dir, benchmark_id)
         self.generate_instruction(task_dir, model_info, benchmark_info, benchmark_id)
         self.generate_environment(task_dir, benchmark_id, model_info, benchmark_info)
-        self.generate_tests(task_dir)
+        self.generate_tests(task_dir)  # must come after generate_environment (needs evaluate.py)
+        self.generate_job_yaml(task_dir, benchmark_id, model_info)
 
         print(f"Task generated at: {task_dir}")
         return task_dir
+
+    def generate_job_yaml(self, task_dir: Path, benchmark_id: str, model_info: "ModelInfo") -> Path:
+        """Generate a job.yaml for this task.
+
+        Run with:  harbor run -c <task_dir>/job.yaml
+
+        Requires Harbor >= 0.2.0 (context_dir fix for Image.from_dockerfile
+        and 4 MB chunked parallel file transfers both landed in 0.2.0).
+        """
+        task_name = task_dir.name
+        job_yaml = f"""\
+# Harbor job configuration for {task_name}
+# Run with: harbor run -c {task_dir}/job.yaml
+# Requires Harbor >= 0.2.0.
+
+jobs_dir: jobs
+n_attempts: 1
+
+environment:
+  type: modal
+
+tasks:
+  - path: {task_dir}
+
+agents:
+  - name: claude-code
+    model: anthropic/claude-sonnet-4-6
+
+# Bulk artifact collection via Harbor's top-level `artifacts:` block. Includes
+# /home/agent/.timer so the reviewer can confirm the timer daemon started at
+# container boot. Add /home/agent/workspace to pull the full agent workspace
+# (including model weights — can be multi-GB).
+artifacts:
+  - /logs/verifier
+  - /logs/agent
+  - /home/agent/.timer
+  # - /home/agent/workspace
+"""
+        job_yaml_path = task_dir / "job.yaml"
+        job_yaml_path.write_text(job_yaml)
+        return job_yaml_path
 
     def generate_all_tasks(self) -> list[Path]:
         """Generate tasks for all benchmark + model combinations."""

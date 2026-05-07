@@ -3,12 +3,76 @@ set -e
 
 # PostTrainBench verification script
 # Runs contamination judge (codex CLI) and 3-phase evaluation with retry logic.
-# Matches the original run_task.sh evaluation pipeline.
+
+# SHA256 of evaluate.py at task-generation time (injected by adapter.py).
+# If the agent tampered with evaluate.py this check catches it.
+EVALUATE_PY_SHA256="PLACEHOLDER_SHA256"
 
 WORKSPACE="/home/agent/workspace"
 LOGS_DIR="/logs/verifier"
+TIMER_DIR="/home/agent/.timer"
 
 mkdir -p "$LOGS_DIR"
+
+# Centralized failure path: record a reason, write reward 0, include the
+# timer daemon state snapshot so the reviewer can confirm the clock was
+# running at container-boot time. Exits 0 so Harbor scores the trial.
+fail() {
+    local reason="$1"
+    echo "FAIL: $reason"
+    python3 -c "import json, sys; json.dump({'error': sys.argv[1], 'accuracy': 0}, open(sys.argv[2], 'w'))" \
+        "$reason" "$LOGS_DIR/metrics.json"
+    echo "0" > "$LOGS_DIR/reward.txt"
+    # Snapshot timer state for post-mortem. Never fails.
+    if [ -d "$TIMER_DIR" ]; then
+        mkdir -p "$LOGS_DIR/timer"
+        cp -a "$TIMER_DIR/." "$LOGS_DIR/timer/" 2>/dev/null || true
+    fi
+    exit 0
+}
+
+# ============================================================
+# Anti-cheat 1: evaluate.py integrity
+# ============================================================
+echo "=== Verifying evaluate.py integrity ==="
+ACTUAL_SHA=$(sha256sum "$WORKSPACE/evaluate.py" 2>/dev/null | awk '{print $1}')
+if [ "$ACTUAL_SHA" != "$EVALUATE_PY_SHA256" ]; then
+    echo "  expected: $EVALUATE_PY_SHA256"
+    echo "  actual:   $ACTUAL_SHA"
+    fail "evaluate.py tampered with by agent (sha256 mismatch)"
+fi
+echo "OK: evaluate.py integrity verified ($EVALUATE_PY_SHA256)"
+
+# ============================================================
+# Anti-cheat 2: timer/entrypoint shebang intact
+# The root agent can't stop us from reading /home/agent/timer.sh, but a
+# sloppy tamper (e.g. rewriting them to no-ops) shows up as a broken
+# shebang. Belt-and-suspenders for the timer daemon guarantee.
+# ============================================================
+for immutable in /home/agent/timer.sh /home/agent/entrypoint.sh; do
+    if [ -f "$immutable" ]; then
+        first_line="$(head -1 "$immutable" 2>/dev/null || true)"
+        case "$first_line" in
+            '#!/usr/bin/env bash'|'#!/bin/bash')
+                ;;
+            *)
+                fail "$(basename "$immutable") was tampered with (shebang mismatch)"
+                ;;
+        esac
+    fi
+done
+echo "OK: timer.sh and entrypoint.sh shebangs intact"
+
+# ============================================================
+# Snapshot timer daemon state (for PR-evidence / debug)
+# ============================================================
+if [ -d "$TIMER_DIR" ]; then
+    mkdir -p "$LOGS_DIR/timer"
+    cp -a "$TIMER_DIR/." "$LOGS_DIR/timer/" 2>/dev/null || true
+    echo "OK: timer state snapshotted"
+else
+    echo "WARN: $TIMER_DIR does not exist — timer daemon may not have run"
+fi
 
 echo "=== PostTrainBench Verifier ==="
 echo "Workspace: $WORKSPACE"
@@ -23,11 +87,8 @@ nvidia-smi 2>&1 | tee "$LOGS_DIR/gpu_check.txt" || echo "nvidia-smi failed"
 echo ""
 echo "=== Checking final_model ==="
 if [ ! -d "$WORKSPACE/final_model" ]; then
-    echo "ERROR: final_model directory not found"
     ls -la "$WORKSPACE" > "$LOGS_DIR/workspace_listing.txt" 2>&1
-    echo '{"error": "final_model not found", "accuracy": 0}' > "$LOGS_DIR/metrics.json"
-    echo "0" > "$LOGS_DIR/reward.txt"
-    exit 0
+    fail "final_model directory not found"
 fi
 
 # Check if final_model has required files
@@ -35,10 +96,7 @@ echo "Contents of final_model:"
 ls -la "$WORKSPACE/final_model" | tee "$LOGS_DIR/final_model_listing.txt"
 
 if [ ! -f "$WORKSPACE/final_model/config.json" ]; then
-    echo "ERROR: final_model/config.json not found - not a valid model"
-    echo '{"error": "invalid model - no config.json", "accuracy": 0}' > "$LOGS_DIR/metrics.json"
-    echo "0" > "$LOGS_DIR/reward.txt"
-    exit 0
+    fail "final_model/config.json missing — not a valid model"
 fi
 
 # Show model config
@@ -274,3 +332,5 @@ echo ""
 echo "=== Verification complete ==="
 echo "Results in $LOGS_DIR/"
 ls -la "$LOGS_DIR/"
+# Full-workspace artifact collection is handled by Harbor's top-level
+# artifacts: config in job.yaml, not by this script.
