@@ -36,6 +36,54 @@ timeout_sec = 10800.0
 OPENAI_API_KEY = "${OPENAI_API_KEY}"
 CODEX_API_KEY = "${OPENAI_API_KEY}"
 
+# Isolated verifier sandbox. The verifier runs in a separate container
+# from the agent so an adversarial agent can't tamper with evaluate.py,
+# the contamination judge, the Python interpreter, or any installed
+# package the verifier relies on. Mirrors the condor pipeline's
+# vllm_debug.sif (separate container for evaluation).
+#
+# The build context is identical to [environment] (same Dockerfile,
+# entrypoint, system_monitor, eval files), so any Python the verifier
+# imports resolves identically. Only the trained model is ferried over
+# from the agent env via [[verifier_environment.inputs]] — the agent's
+# training scripts in /home/agent/workspace are NOT uploaded (would
+# defeat tamper-resistance). evaluate.py + templates come from /tests/
+# which Harbor uploads from the canonical adapter-generated source.
+[verifier_environment]
+gpus = 1
+gpu_types = ["H100"]
+cpus = 8
+memory_mb = 65536
+storage_mb = 102400
+build_timeout_sec = 3600.0
+allow_internet = true
+
+[verifier_environment.healthcheck]
+command = "pgrep -f 'tail -F' > /dev/null && (test -f /timer_start || date +%s > /timer_start)"
+interval_sec = 2
+timeout_sec = 5
+start_period_sec = 5
+start_interval_sec = 1
+retries = 3
+
+[[verifier_environment.inputs]]
+source = "/home/agent/workspace/final_model"
+destination = "/home/agent/workspace/final_model"
+
+# Agent's full workspace (training scripts, configs, intermediate
+# artifacts). The contamination judge in test.sh runs `cd $WORKSPACE &&
+# codex exec ...` and reads the agent's code to detect benchmark-data
+# contamination and disallowed model usage. Without this input the
+# isolated verifier env has an empty workspace and the judge has
+# nothing to read.
+#
+# Excludes mirror the [[artifacts]] block (final_model is already
+# ferried separately above; caches are pure noise).
+[[verifier_environment.inputs]]
+source = "/home/agent/workspace"
+destination = "/home/agent/workspace"
+exclude = ["final_model", "__pycache__", "*.pyc", ".git", ".venv", "venv"]
+
 [agent]
 timeout_sec = 36000.0
 

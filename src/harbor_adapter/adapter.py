@@ -227,6 +227,43 @@ fi
     ) -> None:
         """Generate the environment directory with Dockerfile and task files."""
         env_dir = task_dir / "environment"
+        self._populate_env_dir(env_dir, benchmark_id, model_info, benchmark_info)
+
+    def generate_verifier_environment(
+        self,
+        task_dir: Path,
+        benchmark_id: str,
+        model_info: "ModelInfo",
+        benchmark_info: "BenchmarkInfo",
+    ) -> None:
+        """Generate the verifier_environment directory.
+
+        Used by harbor's [verifier_environment] feature to run the verifier
+        in an isolated sandbox. Same Dockerfile + support files as the
+        agent env so a verifier-side `import vllm` resolves identically;
+        the only practical difference is what gets uploaded at runtime
+        (no agent CLIs are exercised, and `inputs` ferries the trained
+        model in from the agent env).
+        """
+        verifier_env_dir = task_dir / "verifier_environment"
+        self._populate_env_dir(
+            verifier_env_dir, benchmark_id, model_info, benchmark_info
+        )
+
+    def _populate_env_dir(
+        self,
+        env_dir: Path,
+        benchmark_id: str,
+        model_info: "ModelInfo",
+        benchmark_info: "BenchmarkInfo",
+    ) -> None:
+        """Populate an environment dir with Dockerfile + task files.
+
+        Shared between generate_environment (agent) and
+        generate_verifier_environment (verifier) — both need the same
+        build context so the resulting images are interchangeable for any
+        Python eval-time code that the verifier might run.
+        """
         env_dir.mkdir(parents=True, exist_ok=True)
 
         # Copy Dockerfile template and .dockerignore
@@ -255,7 +292,7 @@ fi
 
         # Copy containers/requirements-direct.txt into the build context.
         # The Dockerfile pins ML deps from this file (mirrors the condor
-        # opus_4_6_1m.def pipeline). 
+        # opus_4_6_1m.def pipeline).
         reqs_src = self.posttrainbench_root / "containers" / "requirements-direct.txt"
         if not reqs_src.exists():
             raise FileNotFoundError(
@@ -415,6 +452,9 @@ fi
         self.generate_task_toml(task_dir, benchmark_id)
         self.generate_instruction(task_dir, model_info, benchmark_info, benchmark_id)
         self.generate_environment(task_dir, benchmark_id, model_info, benchmark_info)
+        self.generate_verifier_environment(
+            task_dir, benchmark_id, model_info, benchmark_info
+        )
         self.generate_tests(task_dir, benchmark_id, model_info, benchmark_info)
 
         print(f"Task generated at: {task_dir}")
