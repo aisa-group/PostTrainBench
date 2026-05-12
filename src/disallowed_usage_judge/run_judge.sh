@@ -190,7 +190,7 @@ if [ "$RUN_GPT" = true ]; then
         --home "${JOB_DIR}:/home/ben" \
         --pwd "/home/ben/task" \
         --writable-tmpfs \
-        "${POST_TRAIN_BENCH_CONTAINERS_DIR}/opus_4_6_codex_5_3.sif" \
+        "${POST_TRAIN_BENCH_CONTAINERS_DIR}/gpt_5_5.sif" \
         codex --search -a never exec -c model_reasoning_summary=detailed -c model_reasoning_effort=xhigh --skip-git-repo-check --yolo --model "gpt-5.4" "$JUDGE_PROMPT" 2>&1 | tee "$JUDGE_OUTPUT_GPT"
 
     # Save GPT-5.4 judge output
@@ -204,7 +204,8 @@ if [ "$RUN_GPT" = true ]; then
         cp "$JOB_DIR/task/judgement.json" "$RESULT_DIR/judgement_gpt5_4_rerun.json"
         echo "  GPT-5.4 judgement: $(cat "$RESULT_DIR/judgement_gpt5_4_rerun.json")"
     else
-        echo "  Warning: judgement.json not created by GPT-5.4 judge"
+        echo "ERROR: judgement.json not created by GPT-5.4 judge (see $RESULT_DIR/judge_output_gpt5_4_rerun.txt)" >&2
+        exit 1
     fi
 
     # Clean judgement file so the next judge starts fresh
@@ -232,7 +233,7 @@ if [ "$RUN_SONNET" = true ]; then
         --home "${JOB_DIR}:/home/ben" \
         --pwd "/home/ben/task" \
         --writable-tmpfs \
-        "${POST_TRAIN_BENCH_CONTAINERS_DIR}/opus_4_6_codex_5_3.sif" \
+        "${POST_TRAIN_BENCH_CONTAINERS_DIR}/gpt_5_5.sif" \
         claude --print --verbose --model claude-sonnet-4-6 --output-format stream-json --dangerously-skip-permissions "$JUDGE_PROMPT" 2>&1 | tee "$JUDGE_OUTPUT_SONNET"
 
     # Save Sonnet 4.6 judge output
@@ -247,7 +248,8 @@ if [ "$RUN_SONNET" = true ]; then
         cp "$JOB_DIR/task/judgement.json" "$RESULT_DIR/judgement_sonnet4_6_rerun.json"
         echo "  Sonnet 4.6 judgement: $(cat "$RESULT_DIR/judgement_sonnet4_6_rerun.json")"
     else
-        echo "  Warning: judgement.json not created by Sonnet 4.6 judge"
+        echo "ERROR: judgement.json not created by Sonnet 4.6 judge (see $RESULT_DIR/judge_output_sonnet4_6_rerun.txt)" >&2
+        exit 1
     fi
 fi
 

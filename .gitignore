@@ -4,7 +4,7 @@ test*.log
 
 # Agent auth tokens 
 agents/*/auth.json
-agents/*/oauth_token
+agents/*/oauth_token*
 
 .claude 
 

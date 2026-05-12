@@ -234,7 +234,7 @@ with_huggingface_overlay apptainer exec \
     --home "${JOB_DIR}:/home/ben" \
     --pwd "/home/ben/task" \
     --writable-tmpfs \
-    ${POST_TRAIN_BENCH_CONTAINERS_DIR}/opus_4_6_codex_5_3.sif codex --search -a never exec -c model_reasoning_summary=detailed -c model_reasoning_effort=xhigh --skip-git-repo-check --yolo --model "gpt-5.4" "$JUDGE_TASK" 2>&1 | tee "${EVAL_DIR}/judge_output_gpt5_4.txt"
+    ${POST_TRAIN_BENCH_CONTAINERS_DIR}/gpt_5_5.sif codex --search -a never exec -c model_reasoning_summary=detailed -c model_reasoning_effort=xhigh --skip-git-repo-check --yolo --model "gpt-5.4" "$JUDGE_TASK" 2>&1 | tee "${EVAL_DIR}/judge_output_gpt5_4.txt"
 
 if [ -f "${JOB_DIR}/task/judgement.json" ]; then
     cp "${JOB_DIR}/task/judgement.json" "${EVAL_DIR}/judgement_gpt5_4.json"
@@ -269,7 +269,7 @@ with_huggingface_overlay apptainer exec \
     --home "${JOB_DIR}:/home/ben" \
     --pwd "/home/ben/task" \
     --writable-tmpfs \
-    ${POST_TRAIN_BENCH_CONTAINERS_DIR}/opus_4_6_codex_5_3.sif claude --print --verbose --model claude-sonnet-4-6 --output-format stream-json --dangerously-skip-permissions "$JUDGE_TASK" 2>&1 | tee "${EVAL_DIR}/judge_output_sonnet4_6.json"
+    ${POST_TRAIN_BENCH_CONTAINERS_DIR}/gpt_5_5.sif claude --print --verbose --model claude-sonnet-4-6 --output-format stream-json --dangerously-skip-permissions "$JUDGE_TASK" 2>&1 | tee "${EVAL_DIR}/judge_output_sonnet4_6.json"
 
 python agents/claude/human_readable_trace.py "${EVAL_DIR}/judge_output_sonnet4_6.json" -o "${EVAL_DIR}/judge_output_sonnet4_6.txt"
 

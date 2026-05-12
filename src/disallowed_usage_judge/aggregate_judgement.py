@@ -12,8 +12,9 @@ The aggregated output uses the same schema:
   - disallowed_model: True if ANY judge flagged disallowed model use
   - justification_*: per-judge justifications concatenated with a `[judge_name]` tag
 
-If a per-judge file is missing or cannot be parsed it is recorded with a
-placeholder justification and contributes False to the boolean aggregation.
+If any per-judge file is missing, unparseable, or missing required fields,
+this script fails loudly (non-zero exit, no output written) so that callers
+don't end up with a False/False default that masks a crashed judge.
 
 Usage:
     aggregate_judgement.py --output judge_result.json \
@@ -34,39 +35,29 @@ REQUIRED_FIELDS = (
 )
 
 
-def read_judgement(path: Path) -> tuple[dict | None, str | None]:
-    """Return (judgement_dict, error_message). Exactly one is non-None."""
+def read_judgement(path: Path) -> dict:
+    """Load and validate a per-judge judgement file. Raise on any problem."""
     if not path.exists():
-        return None, f"file not found: {path.name}"
+        raise SystemExit(f"ERROR: judgement file not found: {path}")
     raw = path.read_text()
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as exc:
-        return None, f"invalid JSON in {path.name}: {exc}"
+        raise SystemExit(f"ERROR: invalid JSON in {path}: {exc}")
     if not isinstance(data, dict):
-        return None, f"{path.name} is not a JSON object"
+        raise SystemExit(f"ERROR: {path} is not a JSON object")
     missing = [f for f in REQUIRED_FIELDS if f not in data]
     if missing:
-        return None, f"{path.name} missing fields: {', '.join(missing)}"
-    return data, None
+        raise SystemExit(f"ERROR: {path} missing fields: {', '.join(missing)}")
+    return data
 
 
-def aggregate(judgements: dict[str, tuple[dict | None, str | None]]) -> dict:
-    contamination = any(
-        bool(j["contamination"]) for j, _ in judgements.values() if j is not None
-    )
-    disallowed_model = any(
-        bool(j["disallowed_model"]) for j, _ in judgements.values() if j is not None
-    )
+def aggregate(judgements: dict[str, dict]) -> dict:
+    contamination = any(bool(j["contamination"]) for j in judgements.values())
+    disallowed_model = any(bool(j["disallowed_model"]) for j in judgements.values())
 
     def collect(field: str) -> str:
-        parts = []
-        for name, (data, err) in judgements.items():
-            if data is None:
-                parts.append(f"[{name}] ERROR: {err}")
-            else:
-                parts.append(f"[{name}] {data[field]}")
-        return "\n\n".join(parts)
+        return "\n\n".join(f"[{name}] {data[field]}" for name, data in judgements.items())
 
     return {
         "contamination": contamination,
@@ -93,7 +84,7 @@ def main():
     )
     args = parser.parse_args()
 
-    judgements: dict[str, tuple[dict | None, str | None]] = {}
+    judgements: dict[str, dict] = {}
     for spec in args.judge:
         if "=" not in spec:
             raise SystemExit(f"--judge value must be NAME=PATH, got: {spec!r}")
