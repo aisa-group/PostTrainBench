@@ -183,7 +183,7 @@ if [ "$RUN_GPT" = true ]; then
     echo "=== Judge 1: GPT-5.4 (codex CLI) ==="
     echo "========================================="
 
-    JUDGE_OUTPUT_GPT="$TMP_DIR/judge_output_gpt5_4.json"
+    JUDGE_OUTPUT_GPT="$RESULT_DIR/judge_output_gpt5_4_rerun.json"
     apptainer exec \
         -c \
         --env PATH="/root/.local/bin:/home/ben/.local/bin:$PATH" \
@@ -196,13 +196,11 @@ if [ "$RUN_GPT" = true ]; then
         --pwd "/home/ben/task" \
         --writable-tmpfs \
         "${POST_TRAIN_BENCH_CONTAINERS_DIR}/gpt_5_5.sif" \
-        codex --search -a never exec -c model_reasoning_summary=detailed -c model_reasoning_effort=xhigh --skip-git-repo-check --yolo --model "gpt-5.4" "$JUDGE_PROMPT" 2>&1 | tee "$JUDGE_OUTPUT_GPT"
+        codex --search -a never exec --json -c model_reasoning_summary=detailed -c model_reasoning_effort=xhigh --skip-git-repo-check --yolo --model "gpt-5.4" "$JUDGE_PROMPT" 2>&1 | tee "$JUDGE_OUTPUT_GPT"
 
-    # Save GPT-5.4 judge output
-    if [ -f "$JUDGE_OUTPUT_GPT" ]; then
-        cp "$JUDGE_OUTPUT_GPT" "$RESULT_DIR/judge_output_gpt5_4_rerun.txt"
-        echo "  GPT-5.4 judge output saved"
-    fi
+    # Decode the codex JSON trace into a human-readable text report
+    python "$REPO_ROOT/agents/codex/human_readable_trace.py" "$JUDGE_OUTPUT_GPT" -o "$RESULT_DIR/judge_output_gpt5_4_rerun.txt"
+    echo "  GPT-5.4 judge output saved"
 
     # Save GPT-5.4 judgement JSON with model-specific suffix
     if [ -f "$JOB_DIR/task/judgement.json" ]; then
