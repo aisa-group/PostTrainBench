@@ -1,0 +1,104 @@
+version = "1.0"
+
+[metadata]
+author_name = "PostTrainBench Team"
+category = "ml-training"
+tags = ["post-training", "llm", "fine-tuning", "gpu"]
+
+[environment]
+gpus = 1
+gpu_types = ["H100"]
+cpus = 8
+memory_mb = 65536
+storage_mb = 102400
+build_timeout_sec = 3600.0
+allow_internet = true
+
+# Healthcheck runs after entrypoint.sh comes up and before the agent starts.
+# Two jobs:
+#   1. Verify the log-streaming daemon (tail -F /logs/agent/*) is running so
+#      the agent's output reaches Modal's dashboard live.
+#   2. Idempotently record the timer start time at /timer_start. Aligning the
+#      write with healthcheck means the timer starts essentially at agent
+#      launch, not at container boot.
+[environment.healthcheck]
+command = "pgrep -f 'tail -F' > /dev/null && (test -f /timer_start || date +%s > /timer_start)"
+interval_sec = 2
+timeout_sec = 5
+start_period_sec = 5
+start_interval_sec = 1
+retries = 3
+
+# Verifier runs in a separate container from the agent so an
+# adversarial agent can't tamper with evaluate.py, the contamination
+# judge, the Python interpreter, or any installed package the verifier
+# relies on. Mirrors the condor pipeline's vllm_debug.sif (separate
+# container for evaluation).
+#
+# Wires into harbor's native [verifier.environment] feature
+# (https://www.harborframework.com/docs/tasks#verifier-environment-shared-vs-separate).
+# The verifier image is built from the task's tests/ directory — its
+# Dockerfile bakes test.sh + evaluate.py + templates/ + contamination
+# judge into /tests/. Harbor does NOT upload tests/ at runtime in
+# separate mode, so everything the verifier reads must be in the image.
+#
+# The trained model and agent workspace get transferred from the agent
+# env to the verifier env automatically by harbor — see [[artifacts]]
+# below; harbor uploads each entry to the SAME in-container path on the
+# verifier side. (Note: harbor's transfer does not honor the artifact
+# `exclude` list today, so the workspace transfer includes the
+# excluded paths too. Wasteful but harmless.)
+[verifier]
+timeout_sec = 10800.0
+environment_mode = "separate"
+
+[verifier.env]
+OPENAI_API_KEY = "${OPENAI_API_KEY}"
+CODEX_API_KEY = "${OPENAI_API_KEY}"
+
+[verifier.environment]
+gpus = 1
+gpu_types = ["H100"]
+cpus = 8
+memory_mb = 65536
+storage_mb = 102400
+build_timeout_sec = 3600.0
+allow_internet = true
+
+[verifier.environment.healthcheck]
+command = "pgrep -f 'tail -F' > /dev/null && (test -f /timer_start || date +%s > /timer_start)"
+interval_sec = 2
+timeout_sec = 5
+start_period_sec = 5
+start_interval_sec = 1
+retries = 3
+
+[agent]
+timeout_sec = 36000.0
+
+# Artifacts collected after the trial finishes. Harbor downloads each
+# entry from the sandbox into <trial_dir>/artifacts/<destination>/.
+# Failures are best-effort — they don't fail the trial.
+#
+# In separate-verifier mode, harbor ALSO uses this list to ferry files
+# from the agent env to the verifier env at the SAME in-container path.
+# So `final_model` and `workspace` here serve double duty:
+#   - host postmortem (downloaded to <trial_dir>/artifacts/<dest>/)
+#   - verifier inputs (uploaded to verifier env at the source path so
+#     evaluate.py and the contamination judge can read them)
+#
+# We collect:
+#   1. final_model/  — the agent's trained weights, what the verifier
+#      evaluated. Pulled separately for easy access in postmortem.
+#   2. workspace/    — everything the agent wrote (training scripts,
+#      data dumps, intermediate configs). Excludes final_model (already
+#      pulled), Python cache, and common bulk dirs.
+
+[[artifacts]]
+source = "/home/agent/workspace/final_model"
+destination = "final_model"
+
+[[artifacts]]
+source = "/home/agent/workspace"
+destination = "workspace"
+exclude = ["final_model", "__pycache__", "*.pyc", ".git", ".venv", "venv"]
