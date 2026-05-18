@@ -4,7 +4,7 @@
 #
 # Three judges:
 #   1. GPT-5.4 contamination/base-model judge (via codex CLI)
-#   2. Claude Sonnet 4.6 contamination/base-model judge (via claude CLI)
+#   2. DeepSeek V4 Flash Free contamination/base-model judge (via opencode CLI)
 #   3. GPT-5.4 third-party API usage judge (via codex CLI)
 #
 # Results from judges 1 and 2 are aggregated into judge_result_rerun.json:
@@ -18,34 +18,34 @@
 # All outputs are always saved with the _rerun suffix so original judge
 # outputs produced by src/run_task.sh are preserved.
 #
-# Usage: run_judge.sh [--gpt-only|--sonnet-only|--api-only] <result_dir>
+# Usage: run_judge.sh [--gpt-only|--deepseek-only|--api-only] <result_dir>
 #
 # Options:
-#   --gpt-only     Only rerun the GPT-5.4 contamination judge + the API judge
-#                  (skip Sonnet); aggregation still runs using the existing
-#                  Sonnet _rerun output if present.
-#   --sonnet-only  Only rerun the Sonnet 4.6 contamination judge (skip both
-#                  GPT-based judges); aggregation still runs using the existing
-#                  GPT _rerun output if present.
-#   --api-only     Only rerun the GPT-5.4 third-party API usage judge
-#                  (skip both contamination judges and skip aggregation).
+#   --gpt-only      Only rerun the GPT-5.4 contamination judge + the API judge
+#                   (skip DeepSeek); aggregation still runs using the existing
+#                   DeepSeek _rerun output if present.
+#   --deepseek-only Only rerun the DeepSeek V4 Flash Free contamination judge
+#                   (skip both GPT-based judges); aggregation still runs using
+#                   the existing GPT _rerun output if present.
+#   --api-only      Only rerun the GPT-5.4 third-party API usage judge
+#                   (skip both contamination judges and skip aggregation).
 
 set -e
 
 # Parse arguments
 RUN_GPT=true
-RUN_SONNET=true
+RUN_DEEPSEEK=true
 RUN_API=true
 MODE="all"
 while [[ $# -gt 0 ]]; do
     case $1 in
         --gpt-only)
             MODE="gpt-only"
-            RUN_SONNET=false
+            RUN_DEEPSEEK=false
             shift
             ;;
-        --sonnet-only)
-            MODE="sonnet-only"
+        --deepseek-only)
+            MODE="deepseek-only"
             RUN_GPT=false
             RUN_API=false
             shift
@@ -53,7 +53,7 @@ while [[ $# -gt 0 ]]; do
         --api-only)
             MODE="api-only"
             RUN_GPT=false
-            RUN_SONNET=false
+            RUN_DEEPSEEK=false
             shift
             ;;
         *)
@@ -64,7 +64,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [ -z "$RESULT_DIR" ]; then
-    echo "Usage: $0 [--gpt-only|--sonnet-only|--api-only] <result_dir>" >&2
+    echo "Usage: $0 [--gpt-only|--deepseek-only|--api-only] <result_dir>" >&2
     exit 1
 fi
 
@@ -104,14 +104,14 @@ MODEL_HF=$(echo "$MODEL_PART" | sed 's/_/\//')
 echo "Running judge on: $RESULT_DIR"
 echo "  Benchmark: $BENCHMARK | Model: $MODEL_HF | Trace: $TRACE_NAME"
 case "$MODE" in
-    all)         echo "  Mode: all judges (GPT-5.4 contamination + Sonnet 4.6 contamination + GPT-5.4 API), outputs suffixed with _rerun" ;;
-    gpt-only)    echo "  Mode: GPT-5.4 contamination + GPT-5.4 API (Sonnet skipped), outputs suffixed with _rerun" ;;
-    sonnet-only) echo "  Mode: Sonnet 4.6 contamination only (GPT-based judges skipped), outputs suffixed with _rerun" ;;
-    api-only)    echo "  Mode: GPT-5.4 API only (contamination judges skipped), outputs suffixed with _rerun" ;;
+    all)           echo "  Mode: all judges (GPT-5.4 contamination + DeepSeek V4 Flash Free contamination + GPT-5.4 API), outputs suffixed with _rerun" ;;
+    gpt-only)      echo "  Mode: GPT-5.4 contamination + GPT-5.4 API (DeepSeek skipped), outputs suffixed with _rerun" ;;
+    deepseek-only) echo "  Mode: DeepSeek V4 Flash Free contamination only (GPT-based judges skipped), outputs suffixed with _rerun" ;;
+    api-only)      echo "  Mode: GPT-5.4 API only (contamination judges skipped), outputs suffixed with _rerun" ;;
 esac
 
 # Generate judge prompts
-if [ "$RUN_GPT" = true ] || [ "$RUN_SONNET" = true ]; then
+if [ "$RUN_GPT" = true ] || [ "$RUN_DEEPSEEK" = true ]; then
     JUDGE_PROMPT=$(python "$SCRIPT_DIR/get_judge_prompt.py" \
         --benchmark-id "$BENCHMARK" \
         --model "$MODEL_HF")
@@ -175,13 +175,11 @@ if [ "$RUN_GPT" = true ] || [ "$RUN_API" = true ]; then
     fi
 fi
 
-# Load Claude Max subscription OAuth token for claude judge (only when Sonnet runs)
-JUDGE_OAUTH_TOKEN=""
-if [ "$RUN_SONNET" = true ]; then
-    if [ -f "$REPO_ROOT/agents/claude_non_api/oauth_token" ]; then
-        JUDGE_OAUTH_TOKEN="$(cat "$REPO_ROOT/agents/claude_non_api/oauth_token")"
-    else
-        echo "ERROR: agents/claude_non_api/oauth_token not found — Sonnet 4.6 judge needs subscription auth" >&2
+# Ensure OPENCODE_API_KEY is available when the DeepSeek judge runs. opencode
+# reads it via {env:OPENCODE_API_KEY} from opencode.json (see solve.sh).
+if [ "$RUN_DEEPSEEK" = true ]; then
+    if [ -z "${OPENCODE_API_KEY:-}" ]; then
+        echo "ERROR: OPENCODE_API_KEY is not set — DeepSeek V4 Flash Free judge needs an opencode API key" >&2
         exit 1
     fi
 fi
@@ -193,8 +191,8 @@ fi
 if [ "$RUN_GPT" = true ]; then
     rm -f "$RESULT_DIR/judgement_gpt5_4_rerun.json"
 fi
-if [ "$RUN_SONNET" = true ]; then
-    rm -f "$RESULT_DIR/judgement_sonnet4_6_rerun.json"
+if [ "$RUN_DEEPSEEK" = true ]; then
+    rm -f "$RESULT_DIR/judgement_deepseek_rerun.json"
 fi
 if [ "$RUN_API" = true ]; then
     rm -f "$RESULT_DIR/judgement_api_rerun.json"
@@ -242,42 +240,53 @@ if [ "$RUN_GPT" = true ]; then
 fi
 
 # ============================================================
-# Judge 2: Claude Sonnet 4.6 via claude CLI
+# Judge 2: DeepSeek V4 Flash Free via opencode CLI
 # ============================================================
-if [ "$RUN_SONNET" = true ]; then
+if [ "$RUN_DEEPSEEK" = true ]; then
     echo ""
     echo "========================================="
-    echo "=== Judge 2: Claude Sonnet 4.6 ==="
+    echo "=== Judge 2: DeepSeek V4 Flash Free (opencode CLI) ==="
     echo "========================================="
 
-    JUDGE_OUTPUT_SONNET="$RESULT_DIR/judge_output_sonnet4_6_rerun.txt"
+    # opencode requires opencode.json in the working directory for provider
+    # config and auto-approval. Write it into the task pwd that apptainer uses.
+    cat > "$JOB_DIR/task/opencode.json" << 'OPENCODE_EOF'
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": "allow",
+  "provider": {
+    "opencode": {
+      "options": {
+        "apiKey": "{env:OPENCODE_API_KEY}"
+      }
+    }
+  }
+}
+OPENCODE_EOF
+
+    JUDGE_OUTPUT_DEEPSEEK="$RESULT_DIR/judge_output_deepseek_rerun.json"
     apptainer exec \
         -c \
         --env PATH="/root/.local/bin:/home/ben/.local/bin:$PATH" \
-        --env ANTHROPIC_API_KEY="" \
-        --env CLAUDE_CODE_OAUTH_TOKEN="${JUDGE_OAUTH_TOKEN}" \
+        --env OPENCODE_API_KEY="${OPENCODE_API_KEY}" \
         --env PYTHONNOUSERSITE="1" \
-        --env CLAUDE_CODE_EFFORT_LEVEL="high" \
         --bind "${JOB_TMP}:/tmp" \
         --home "${JOB_DIR}:/home/ben" \
         --pwd "/home/ben/task" \
         --writable-tmpfs \
         "${POST_TRAIN_BENCH_CONTAINERS_DIR}/gpt_5_5.sif" \
-        claude --print --verbose --model claude-sonnet-4-6 --output-format stream-json --dangerously-skip-permissions "$JUDGE_PROMPT" 2>&1 | tee "$JUDGE_OUTPUT_SONNET"
+        opencode run --model "opencode/deepseek-v4-flash-free" --format json "$JUDGE_PROMPT" 2>&1 | tee "$JUDGE_OUTPUT_DEEPSEEK"
 
-    # Save Sonnet 4.6 judge output
-    if [ -f "$JUDGE_OUTPUT_SONNET" ]; then
-        cp "$JUDGE_OUTPUT_SONNET" "$RESULT_DIR/judge_output_sonnet4_6_rerun.json"
-        python "$REPO_ROOT/agents/claude/human_readable_trace.py" "$JUDGE_OUTPUT_SONNET" -o "$RESULT_DIR/judge_output_sonnet4_6_rerun.txt"
-        echo "  Sonnet 4.6 judge output saved"
-    fi
+    # Decode the opencode JSONL trace into a human-readable text report
+    python "$REPO_ROOT/agents/opencode/human_readable_trace.py" "$JUDGE_OUTPUT_DEEPSEEK" -o "$RESULT_DIR/judge_output_deepseek_rerun.txt"
+    echo "  DeepSeek V4 Flash Free judge output saved"
 
-    # Save Sonnet 4.6 judgement JSON with model-specific suffix
+    # Save DeepSeek judgement JSON with model-specific suffix
     if [ -f "$JOB_DIR/task/judgement.json" ]; then
-        cp "$JOB_DIR/task/judgement.json" "$RESULT_DIR/judgement_sonnet4_6_rerun.json"
-        echo "  Sonnet 4.6 judgement: $(cat "$RESULT_DIR/judgement_sonnet4_6_rerun.json")"
+        cp "$JOB_DIR/task/judgement.json" "$RESULT_DIR/judgement_deepseek_rerun.json"
+        echo "  DeepSeek V4 Flash Free judgement: $(cat "$RESULT_DIR/judgement_deepseek_rerun.json")"
     else
-        echo "ERROR: judgement.json not created by Sonnet 4.6 judge (see $RESULT_DIR/judge_output_sonnet4_6_rerun.txt)" >&2
+        echo "ERROR: judgement.json not created by DeepSeek V4 Flash Free judge (see $RESULT_DIR/judge_output_deepseek_rerun.txt)" >&2
         exit 1
     fi
 
@@ -334,7 +343,7 @@ echo "========================================="
 
 python "$SCRIPT_DIR/aggregate_judgement.py" \
     --judge "gpt5_4=$RESULT_DIR/judgement_gpt5_4_rerun.json" \
-    --judge "sonnet4_6=$RESULT_DIR/judgement_sonnet4_6_rerun.json" \
+    --judge "deepseek=$RESULT_DIR/judgement_deepseek_rerun.json" \
     --judge "api=$RESULT_DIR/judgement_api_rerun.json" \
     --output "$RESULT_DIR/judge_result_rerun.json"
 

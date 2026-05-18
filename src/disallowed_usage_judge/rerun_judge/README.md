@@ -89,15 +89,15 @@ python src/disallowed_usage_judge/rerun_judge/aggregate_rerun_results.py --csv r
 
 When running with `--rerun` flag, new files are created in each result directory (originals preserved):
 - `judgement_gpt5_4_rerun.json`
-- `judgement_sonnet4_6_rerun.json`
+- `judgement_deepseek_rerun.json`
 - `judge_result_rerun.json` (aggregated)
-- `judge_output_gpt5_4_rerun.txt` / `judge_output_sonnet4_6_rerun.{json,txt}` (raw judge transcripts)
+- `judge_output_gpt5_4_rerun.txt` / `judge_output_deepseek_rerun.{json,txt}` (raw judge transcripts)
 
 When running without `--rerun`, the original files are overwritten:
 - `judgement_gpt5_4.json`
-- `judgement_sonnet4_6.json`
+- `judgement_deepseek.json`
 - `judge_result.json` (aggregated)
-- `judge_output_gpt5_4.txt` / `judge_output_sonnet4_6.{json,txt}`
+- `judge_output_gpt5_4.txt` / `judge_output_deepseek.{json,txt}`
 
 Each `judgement_*.json` / `judge_result.json` file has the schema:
 
@@ -110,7 +110,7 @@ Each `judgement_*.json` / `judge_result.json` file has the schema:
 }
 ```
 
-For aggregated `judge_result*.json`, `contamination` / `disallowed_model` are the logical OR across both judges, and the justification strings are concatenated and prefixed with `[gpt5_4]` / `[sonnet4_6]`.
+For aggregated `judge_result*.json`, `contamination` / `disallowed_model` are the logical OR across both judges, and the justification strings are concatenated and prefixed with `[gpt5_4]` / `[deepseek]`.
 
 ## Trace File
 

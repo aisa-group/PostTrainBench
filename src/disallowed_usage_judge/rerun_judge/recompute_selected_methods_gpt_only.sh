@@ -8,7 +8,7 @@
 # judgement_*.json / judge_result.json from the initial run are NOT touched;
 # the script only (re)writes the GPT-specific judgement_gpt5_4_rerun.json.
 # The aggregated judge_result_rerun.json is rebuilt from the new GPT-5.4
-# result and the existing judgement_sonnet4_6_rerun.json (if present).
+# result and the existing judgement_deepseek_rerun.json (if present).
 #
 # This script avoids sourcing set_env_vars.sh because the module-loading block
 # fails on nodes without tclsh; instead it exports POST_TRAIN_BENCH_RESULTS_DIR

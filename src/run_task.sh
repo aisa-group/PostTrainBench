@@ -257,38 +257,49 @@ fi
 # Clean judgement file so the next judge starts fresh
 rm -f "${JOB_DIR}/task/judgement.json"
 
-# ---- Judge 2: Claude Sonnet 4.6 via claude CLI (subscription) ----
-echo "=== Judge 2: Claude Sonnet 4.6 (subscription) ==="
+# ---- Judge 2: DeepSeek V4 Flash Free via opencode CLI ----
+echo "=== Judge 2: DeepSeek V4 Flash Free (opencode CLI) ==="
 
-# Set up Claude Max subscription auth for claude judge
-JUDGE_OAUTH_TOKEN=""
-if [ -f "agents/claude_non_api/oauth_token" ]; then
-    JUDGE_OAUTH_TOKEN="$(cat agents/claude_non_api/oauth_token)"
-elif [ -f "${JOB_DIR}/oauth_token" ]; then
-    JUDGE_OAUTH_TOKEN="$(cat ${JOB_DIR}/oauth_token)"
+if [ -z "${OPENCODE_API_KEY:-}" ]; then
+    echo "ERROR: OPENCODE_API_KEY is not set — DeepSeek V4 Flash Free judge needs an opencode API key" >&2
+    exit 1
 fi
+
+# opencode requires opencode.json in the working directory for provider
+# config and auto-approval. Write it into the task pwd that apptainer uses.
+cat > "${JOB_DIR}/task/opencode.json" << 'OPENCODE_EOF'
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": "allow",
+  "provider": {
+    "opencode": {
+      "options": {
+        "apiKey": "{env:OPENCODE_API_KEY}"
+      }
+    }
+  }
+}
+OPENCODE_EOF
 
 with_huggingface_overlay apptainer exec \
     --nv \
     -c \
     --env PATH="/root/.local/bin:/home/ben/.local/bin:$PATH" \
     --env HF_HOME="${HF_HOME_NEW}" \
-    --env ANTHROPIC_API_KEY="" \
-    --env CLAUDE_CODE_OAUTH_TOKEN="${JUDGE_OAUTH_TOKEN}" \
+    --env OPENCODE_API_KEY="${OPENCODE_API_KEY}" \
     --env VLLM_API_KEY="inspectai" \
     --env PYTHONNOUSERSITE="1" \
-    --env CLAUDE_CODE_EFFORT_LEVEL="high" \
     --bind "${JOB_TMP}:/tmp" \
     --bind "${HF_MERGED}:${HF_HOME_NEW}" \
     --home "${JOB_DIR}:/home/ben" \
     --pwd "/home/ben/task" \
     --writable-tmpfs \
-    ${POST_TRAIN_BENCH_CONTAINERS_DIR}/gpt_5_5.sif claude --print --verbose --model claude-sonnet-4-6 --output-format stream-json --dangerously-skip-permissions "$JUDGE_TASK" 2>&1 | tee "${EVAL_DIR}/judge_output_sonnet4_6.json"
+    ${POST_TRAIN_BENCH_CONTAINERS_DIR}/gpt_5_5.sif opencode run --model "opencode/deepseek-v4-flash-free" --format json "$JUDGE_TASK" 2>&1 | tee "${EVAL_DIR}/judge_output_deepseek.json"
 
-python agents/claude/human_readable_trace.py "${EVAL_DIR}/judge_output_sonnet4_6.json" -o "${EVAL_DIR}/judge_output_sonnet4_6.txt"
+python agents/opencode/human_readable_trace.py "${EVAL_DIR}/judge_output_deepseek.json" -o "${EVAL_DIR}/judge_output_deepseek.txt"
 
 if [ -f "${JOB_DIR}/task/judgement.json" ]; then
-    cp "${JOB_DIR}/task/judgement.json" "${EVAL_DIR}/judgement_sonnet4_6.json"
+    cp "${JOB_DIR}/task/judgement.json" "${EVAL_DIR}/judgement_deepseek.json"
 fi
 
 # Clean judgement file so the API judge starts fresh
@@ -330,7 +341,7 @@ echo "=== Aggregating Judge Results ==="
 
 python src/disallowed_usage_judge/aggregate_judgement.py \
     --judge "gpt5_4=${EVAL_DIR}/judgement_gpt5_4.json" \
-    --judge "sonnet4_6=${EVAL_DIR}/judgement_sonnet4_6.json" \
+    --judge "deepseek=${EVAL_DIR}/judgement_deepseek.json" \
     --judge "api=${EVAL_DIR}/judgement_api.json" \
     --output "${EVAL_DIR}/judge_result.json"
 

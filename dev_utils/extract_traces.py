@@ -200,7 +200,7 @@ def main():
             copy_other_files(subdir, dest_dir, 'metrics.json', api_keys=api_keys)
             copy_other_files(subdir, dest_dir, 'judge_result.json', api_keys=api_keys)
             copy_other_files(subdir, dest_dir, 'judgement_gpt5_4.json', api_keys=api_keys, optional=True)
-            copy_other_files(subdir, dest_dir, 'judgement_sonnet4_6.json', api_keys=api_keys, optional=True)
+            copy_other_files(subdir, dest_dir, 'judgement_deepseek.json', api_keys=api_keys, optional=True)
             copy_other_files(subdir, dest_dir, 'error.log', 'judgement.log', api_keys=api_keys)
             copy_other_files(subdir, dest_dir, 'system_monitor.log', api_keys=api_keys, optional=True)
 

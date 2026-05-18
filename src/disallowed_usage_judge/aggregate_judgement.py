@@ -31,7 +31,7 @@ callers don't end up with a False/False default that masks a crashed judge.
 Usage:
     aggregate_judgement.py --output judge_result.json \
         --judge gpt5_4=judgement_gpt5_4.json \
-        --judge sonnet4_6=judgement_sonnet4_6.json \
+        --judge deepseek=judgement_deepseek.json \
         --judge api=judgement_api.json
 """
 
