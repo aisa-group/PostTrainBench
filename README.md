@@ -83,6 +83,8 @@ The `.env` file contains API keys and configuration. See `example.env` for all a
 | `OPENAI_API_KEY` | OpenAI API key | — |
 | `ANTHROPIC_API_KEY` | Anthropic API key | — |
 | `GEMINI_API_KEY` | Google Gemini API key | — |
+| `OPENCODE_API_KEY` | OpenCode API key (used by the `opencode` agent) | — |
+| `ZAI_API_KEY` | Z.AI API key (used by the `opencode` and `glm5` agents) | — |
 | `HF_HOME` | HuggingFace cache directory | `$HOME/.cache/huggingface` |
 | `POST_TRAIN_BENCH_RESULTS_DIR` | Directory for results | `results` |
 | `POST_TRAIN_BENCH_CONTAINERS_DIR` | Directory for containers | `containers` |
