@@ -5,6 +5,10 @@ Picks the right per-agent parser by substring-matching the agent name against
 copied verbatim (preserves the historical fallback for agents like glm5 and
 qwen3max that don't produce a structured trace). If the name matches more than
 one key, the script errors out instead of guessing.
+
+After parsing, also drops sanitized companions for both the raw input and the
+parsed output (`<stem>_sanitized<ext>` next to each), with .env API key values
+redacted.
 """
 
 from __future__ import annotations
@@ -17,6 +21,7 @@ import claude_parser
 import codex_parser
 import gemini_parser
 import opencode_parser
+import sanitize_trace
 
 PARSERS = {
     "claude": claude_parser.parse,
@@ -66,10 +71,18 @@ def main() -> None:
             f"No structured parser for agent '{args.agent}'; copying raw trace to {args.output}"
         )
         shutil.copyfile(args.input, args.output)
-        return
+    else:
+        parse_fn(args.input, args.output)
+        print(f"Wrote parsed trace to {args.output}")
 
-    parse_fn(args.input, args.output)
-    print(f"Wrote parsed trace to {args.output}")
+    secrets = sanitize_trace.load_api_key_secrets()
+    sanitize_trace.sanitize_file(
+        args.input, sanitize_trace.sanitized_path(args.input), secrets
+    )
+    sanitize_trace.sanitize_file(
+        args.output, sanitize_trace.sanitized_path(args.output), secrets
+    )
+    print(f"Wrote sanitized companions next to input and output ({len(secrets)} keys)")
 
 
 if __name__ == "__main__":
