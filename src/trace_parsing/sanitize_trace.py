@@ -43,7 +43,7 @@ def load_api_key_secrets(env_path: Path = DEFAULT_ENV_PATH) -> dict[str, str]:
         if not name.endswith("_API_KEY"):
             continue
         value = os.environ.get(name) or _strip_quotes(file_value.strip())
-        if not value or value == "UNDEFINED" or value.startswith(PLACEHOLDER_PREFIX):
+        if not value or value.startswith(PLACEHOLDER_PREFIX):
             continue
         if len(value) < MIN_VALUE_LEN:
             continue

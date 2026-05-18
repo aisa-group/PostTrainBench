@@ -15,7 +15,7 @@ while IFS= read -r line || [ -n "$line" ]; do
     var_name="${line%%=*}"
     current_value="$(eval echo "\${$var_name:-}")"
 
-    if [ -z "$current_value" ] || [ "$current_value" = "UNDEFINED" ]; then
+    if [ -z "$current_value" ]; then
         eval "export $line"
     fi
 done < "$ENV_FILE"
