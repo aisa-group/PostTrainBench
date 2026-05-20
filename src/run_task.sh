@@ -45,6 +45,11 @@ mkdir -p "${JOB_DIR}"
 mkdir "${JOB_DIR}/task"
 
 cp "src/eval/tasks/${EVALUATION_TASK}/evaluate.py" "${JOB_DIR}/task"
+for _aime_extra in score.py task.py; do
+    if [ -f "src/eval/tasks/${EVALUATION_TASK}/${_aime_extra}" ]; then
+        cp "src/eval/tasks/${EVALUATION_TASK}/${_aime_extra}" "${JOB_DIR}/task"
+    fi
+done
 if [ -d "src/eval/tasks/${EVALUATION_TASK}/evaluation_code" ]; then
     cp -r "src/eval/tasks/${EVALUATION_TASK}/evaluation_code" "${JOB_DIR}/task"
 fi
