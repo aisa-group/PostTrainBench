@@ -5,23 +5,25 @@ set -e
 # Runs contamination judge (codex CLI) and 3-phase evaluation with retry logic.
 # Matches the original run_task.sh evaluation pipeline.
 #
-# Tamper-resistance design:
-#   - Verifier-side files (evaluate.py, templates/, contamination_judge.py,
-#     metadata.json, evaluation_code/, bfcl_evaluation_code.py) live under
-#     /tests, which Harbor uploads only AFTER the agent process exits.
-#     The agent never has write access to /tests, so cannot modify the
-#     evaluation pipeline to inflate its score.
-#   - The agent's workspace at /home/agent/workspace still contains its
-#     own COPIES (placed at build time) — agents use those for fast
-#     iteration during training. The verifier ignores them.
-#   - The agent's final_model is read from /home/agent/workspace/final_model
-#     (it has to be — that's where the agent put it).
-#
-# Residual attack vector NOT closed by this design: the agent could pip-
-# install tampered Python packages (e.g. inspect_evals) that the verifier
-# imports. Closing that requires either a separate verifier sandbox
-# (Harbor doesn't support per-trial today) or a restore-on-verify pass
-# that reinstalls pinned packages before evaluating.
+# Tamper-resistance design (harbor 0.7.0 separate-verifier mode):
+#   - This script runs in a SEPARATE container from the agent (see
+#     [verifier].environment_mode = "separate" in task.toml). The agent
+#     never has shell or filesystem access to this container, so it
+#     can't tamper with evaluate.py, templates/, the Python interpreter,
+#     installed packages (vllm, inspect_evals, transformers), or this
+#     script itself.
+#   - All verifier-side files (evaluate.py, templates/, contamination_judge.py,
+#     metadata.json, evaluation_code/, bfcl_evaluation_code.py) are
+#     BAKED INTO the verifier image at build time (see tests/Dockerfile)
+#     and live at /tests/.
+#   - The agent's workspace at /home/agent/workspace is transferred from
+#     the agent container by harbor as a configured artifact and
+#     contains the agent's training scripts + final_model. The
+#     contamination judge reads these (cd $WORKSPACE && codex exec ...);
+#     evaluate.py reads /home/agent/workspace/final_model.
+#   - The agent's final_model is the only file the verifier executes
+#     code against (via vllm). Bad weights are penalized by the eval
+#     score, not by tampering.
 
 TESTS="/tests"
 WORKSPACE="/home/agent/workspace"

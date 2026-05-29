@@ -225,45 +225,8 @@ fi
         model_info: "ModelInfo",
         benchmark_info: "BenchmarkInfo",
     ) -> None:
-        """Generate the environment directory with Dockerfile and task files."""
+        """Generate the environment/ directory: Dockerfile + agent runtime."""
         env_dir = task_dir / "environment"
-        self._populate_env_dir(env_dir, benchmark_id, model_info, benchmark_info)
-
-    def generate_verifier_environment(
-        self,
-        task_dir: Path,
-        benchmark_id: str,
-        model_info: "ModelInfo",
-        benchmark_info: "BenchmarkInfo",
-    ) -> None:
-        """Generate the verifier_environment directory.
-
-        Used by harbor's [verifier_environment] feature to run the verifier
-        in an isolated sandbox. Same Dockerfile + support files as the
-        agent env so a verifier-side `import vllm` resolves identically;
-        the only practical difference is what gets uploaded at runtime
-        (no agent CLIs are exercised, and `inputs` ferries the trained
-        model in from the agent env).
-        """
-        verifier_env_dir = task_dir / "verifier_environment"
-        self._populate_env_dir(
-            verifier_env_dir, benchmark_id, model_info, benchmark_info
-        )
-
-    def _populate_env_dir(
-        self,
-        env_dir: Path,
-        benchmark_id: str,
-        model_info: "ModelInfo",
-        benchmark_info: "BenchmarkInfo",
-    ) -> None:
-        """Populate an environment dir with Dockerfile + task files.
-
-        Shared between generate_environment (agent) and
-        generate_verifier_environment (verifier) — both need the same
-        build context so the resulting images are interchangeable for any
-        Python eval-time code that the verifier might run.
-        """
         env_dir.mkdir(parents=True, exist_ok=True)
 
         # Copy Dockerfile template and .dockerignore
@@ -275,42 +238,54 @@ fi
         if dockerignore_src.exists():
             shutil.copy(dockerignore_src, env_dir / ".dockerignore")
 
-        # Copy entrypoint.sh — Dockerfile installs it at /usr/local/bin/
-        # and sets it as ENTRYPOINT so its stdout becomes Modal's live log
+        # Build-context support files (entrypoint, system monitor,
+        # requirements-direct). Shared with tests/ — see _copy_build_context_support.
+        self._copy_build_context_support(env_dir)
+
+        # Eval files: evaluate.py, templates/, optional evaluation_code/
+        # and task_context contents, plus contamination_judge.py and
+        # metadata.json. The agent gets these in /home/agent/workspace
+        # (via the Dockerfile's `COPY .`) for fast iteration during
+        # training.
+        self._copy_eval_files(env_dir, benchmark_id, model_info, benchmark_info)
+
+        # timer.sh — agent reads it during the run. Verifier doesn't need it.
+        self.generate_timer_sh(env_dir)
+
+    def _copy_build_context_support(self, target_dir: Path) -> None:
+        """Copy entrypoint.sh + system_monitor.sh + requirements-direct.txt
+        into a Dockerfile build context.
+
+        Both environment/ (agent) and tests/ (verifier under harbor's
+        separate-verifier mode) use the same Dockerfile structure and
+        need these files at build time. The canonical sources live under
+        template/environment/ and containers/.
+        """
+        # entrypoint.sh — Dockerfile installs it at /usr/local/bin/ and
+        # sets it as ENTRYPOINT so its stdout becomes Modal's live log
         # stream (see template/environment/entrypoint.sh).
         entrypoint_src = TEMPLATE_DIR / "environment" / "entrypoint.sh"
-        entrypoint_dst = env_dir / "entrypoint.sh"
+        entrypoint_dst = target_dir / "entrypoint.sh"
         shutil.copy(entrypoint_src, entrypoint_dst)
         entrypoint_dst.chmod(0o755)
 
-        # Copy system_monitor.sh — kicked off by entrypoint.sh as a
-        # background daemon; ports condor's src/utils/system_monitor.sh.
+        # system_monitor.sh — kicked off by entrypoint.sh as a background
+        # daemon; ports condor's src/utils/system_monitor.sh.
         monitor_src = TEMPLATE_DIR / "environment" / "system_monitor.sh"
-        monitor_dst = env_dir / "system_monitor.sh"
+        monitor_dst = target_dir / "system_monitor.sh"
         shutil.copy(monitor_src, monitor_dst)
         monitor_dst.chmod(0o755)
 
-        # Copy containers/requirements-direct.txt into the build context.
-        # The Dockerfile pins ML deps from this file (mirrors the condor
-        # opus_4_6_1m.def pipeline).
+        # containers/requirements-direct.txt — the Dockerfile pins ML
+        # deps from this file (mirrors the condor opus_4_6_1m.def
+        # pipeline).
         reqs_src = self.posttrainbench_root / "containers" / "requirements-direct.txt"
         if not reqs_src.exists():
             raise FileNotFoundError(
                 f"requirements-direct.txt not found at {reqs_src}; "
                 f"the Dockerfile expects it in the build context."
             )
-        shutil.copy(reqs_src, env_dir / "requirements-direct.txt")
-
-        # Eval files: evaluate.py, templates/, optional evaluation_code/
-        # and task_context contents, plus contamination_judge.py and
-        # metadata.json. The agent gets these in /home/agent/workspace
-        # (via the Dockerfile's `COPY .`) for fast iteration during
-        # training. They are *also* copied into the tests/ dir by
-        # generate_tests, and that's the copy the verifier uses.
-        self._copy_eval_files(env_dir, benchmark_id, model_info, benchmark_info)
-
-        # Generate timer.sh (workspace-only — agent reads it during the run)
-        self.generate_timer_sh(env_dir)
+        shutil.copy(reqs_src, target_dir / "requirements-direct.txt")
 
     def _copy_eval_files(
         self,
@@ -385,27 +360,45 @@ fi
         model_info: "ModelInfo",
         benchmark_info: "BenchmarkInfo",
     ) -> None:
-        """Generate the tests directory with verification script + eval files.
+        """Generate the tests/ directory.
 
-        Harbor uploads tests/ to /tests in the sandbox AFTER the agent
-        process exits, so files placed here cannot be modified by the
-        agent. test.sh runs evaluate.py and the contamination judge
-        against these copies (not the agent's workspace copies) for
-        tamper-resistance parity with the condor pipeline's separate
-        verifier container.
+        Under harbor 0.7.0's separate-verifier mode, tests/ doubles as
+        the verifier image's build context: harbor builds it into a
+        container the agent never touches, then transfers configured
+        artifacts in at runtime. The image must self-contain test.sh and
+        everything test.sh reads — harbor does not upload tests/ at
+        runtime for separate verifier envs.
+
+        Files placed here:
+          - Dockerfile      builds the verifier image
+          - test.sh         the verifier orchestrator (baked in via COPY .)
+          - entrypoint.sh   PID-1 streamer (matches agent env)
+          - system_monitor.sh  background system monitor
+          - requirements-direct.txt  pinned ML deps for the Dockerfile
+          - evaluate.py + templates/ + evaluation_code/ + task_context/*
+            + contamination_judge.py + metadata.json — the eval pipeline
         """
         tests_dir = task_dir / "tests"
         tests_dir.mkdir(parents=True, exist_ok=True)
 
-        # Copy test.sh (the verifier orchestrator)
+        # Verifier image Dockerfile (canonical source: template/tests/Dockerfile).
+        shutil.copy(
+            TEMPLATE_DIR / "tests" / "Dockerfile",
+            tests_dir / "Dockerfile",
+        )
+
+        # Verifier orchestrator (test.sh)
         test_sh_src = TEMPLATE_DIR / "tests" / "test.sh"
         test_sh_dst = tests_dir / "test.sh"
         shutil.copy(test_sh_src, test_sh_dst)
         test_sh_dst.chmod(0o755)
 
-        # Copy the same eval files into tests/ so the verifier reads from
-        # an untamperable location (matches condor's "verifier runs in a
-        # separate container with fresh files" behavior at the file level).
+        # Build-context support files (same set the agent env needs).
+        self._copy_build_context_support(tests_dir)
+
+        # Eval pipeline (also baked into the agent workspace via
+        # environment/, but the verifier reads from /tests/ where these
+        # land via the verifier Dockerfile's `COPY .`).
         self._copy_eval_files(tests_dir, benchmark_id, model_info, benchmark_info)
 
     def generate_task(
@@ -452,9 +445,6 @@ fi
         self.generate_task_toml(task_dir, benchmark_id)
         self.generate_instruction(task_dir, model_info, benchmark_info, benchmark_id)
         self.generate_environment(task_dir, benchmark_id, model_info, benchmark_info)
-        self.generate_verifier_environment(
-            task_dir, benchmark_id, model_info, benchmark_info
-        )
         self.generate_tests(task_dir, benchmark_id, model_info, benchmark_info)
 
         print(f"Task generated at: {task_dir}")
