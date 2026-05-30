@@ -2,10 +2,6 @@
 """
 Collect results from raw run directories into per-method CSVs.
 
-# For comparing to previous version: 
-Replaces: aggregate_methods.py, aggregate_contamination.py,
-          aggregate_final.py, aggregate_time.py
-
 For each method directory in the results dir, does a single pass:
   1. Finds the latest run per (benchmark, model)
   2. Reads metrics.json, contamination files, and time_taken.txt
@@ -128,16 +124,24 @@ def collect_method(
             value = metrics_grid[model][bench]
             contamination_value = contamination_grid[model][bench]
 
-            needs_baseline = False
+            reasons = []
             if not is_number(value):
-                needs_baseline = True
+                reasons.append(f"non-numeric value ({value!r})")
             if contamination_value.strip():
-                needs_baseline = True
-
-            if needs_baseline:
-                metrics_grid[model][bench] = baseline_data.get(model, {}).get(
-                    bench, ""
+                reasons.append(
+                    f"contamination flag ({contamination_value.strip()!r})"
                 )
+
+            if not reasons:
+                continue
+
+            if model not in baseline_data or bench not in baseline_data[model]:
+                raise KeyError(
+                    f"baselines.json missing entry for model={model!r} "
+                    f"benchmark={bench!r}; needed as fallback in method "
+                    f"{method_name!r} (triggered by {', '.join(reasons)})"
+                )
+            metrics_grid[model][bench] = baseline_data[model][bench]
 
     # Write final CSV (scores with baseline fallback applied)
     final_path = os.path.join(output_dir, f"final_{method_name}.csv")

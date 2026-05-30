@@ -2,13 +2,6 @@
 """
 Aggregate results across multiple runs per agent.
 
-# For comparing to previous version: 
-Replaces: aggregate_avg_stddev.py, aggregate_avg_stddev_over_benchmarks.py,
-          compute_single_metrics.py, compute_single_metrics_avg_stddev.py,
-          aggregate_time_avg_stddev.py, aggregate_summary.py,
-          aggregate_together.py, compute_baseline_metrics.py,
-          compute_baseline_metrics_by_benchmark.py
-
 Reads final_{method}.csv files produced by collect.py and computes:
   --per-cell     : aggregated_avg_{agent}.csv, aggregated_std_{agent}.csv
   --leaderboard  : single_metrics.csv, single_metrics_aggregated.csv
@@ -41,7 +34,7 @@ from utils import (
 
 
 # ---------------------------------------------------------------------------
-# Per-cell avg/std across runs (replaces aggregate_avg_stddev.py)
+# Per-cell avg/std across runs
 # ---------------------------------------------------------------------------
 
 def aggregate_per_cell(
@@ -98,7 +91,7 @@ def aggregate_per_cell(
 
 
 # ---------------------------------------------------------------------------
-# Weighted single metric (replaces compute_single_metrics*.py)
+# Weighted single metric
 # ---------------------------------------------------------------------------
 
 def compute_weighted_metric(
@@ -113,15 +106,9 @@ def compute_weighted_metric(
     total = 0.0
     num_models = len(data)
     for bench in sorted(valid_benchmarks):
-        values = []
-        for model in data:
-            val_str = data[model].get(bench, "")
-            if val_str == "":
-                continue
-            values.append(float(val_str))
-        if values:
-            avg_value = sum(values) / num_models
-            total += avg_value * factors[bench]
+        values = [float(data[model][bench]) for model in data]
+        avg_value = sum(values) / num_models
+        total += avg_value * factors[bench]
     return total
 
 
@@ -246,7 +233,7 @@ def _load_avg_std_for_agent(
 
 
 # ---------------------------------------------------------------------------
-# Time aggregation (replaces aggregate_time_avg_stddev.py)
+# Time aggregation
 # ---------------------------------------------------------------------------
 
 def parse_time_to_hours(time_str: str) -> float:
@@ -263,10 +250,7 @@ def aggregate_time(data_dir: str, output_dir: str):
     Read time_overview.csv, group by HARDCODED_AGENT_MAP, compute avg/std.
     Write time_aggregated.csv.
     """
-    # Try new name first, fall back to old name
     time_csv_path = os.path.join(data_dir, "time_overview.csv")
-    if not os.path.exists(time_csv_path):
-        time_csv_path = os.path.join(data_dir, "aggregated_time_overview.csv")
 
     time_data = {}
     with open(time_csv_path, "r", newline="") as f:

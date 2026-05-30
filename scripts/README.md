@@ -7,12 +7,9 @@ re-runs the model on a GPU.
 
 ## Aggregating results into CSVs
 
-The recommended pipeline is two scripts: `collect.py` reads raw run dirs into
-per-method CSVs, then `aggregate.py` rolls those into per-agent avg/std and
-the weighted leaderboard metric. Together they replace ~10 older scripts
-(`aggregate_methods.py`, `aggregate_final.py`, `aggregate_contamination.py`,
-`aggregate_time.py`, `compute_single_metrics*.py`, etc., still kept in the
-tree for reference — see "Legacy per-stage scripts" below).
+The pipeline is two scripts: `collect.py` reads raw run dirs into per-method
+CSVs, then `aggregate.py` rolls those into per-agent avg/std and the weighted
+leaderboard metric.
 
 ### Typical flow
 
@@ -101,27 +98,6 @@ python scripts/verify.py \
 | `list_safetensors.py` | List safetensors files under a result tree |
 | `parse_all_to_human_readable.sh` | Run human-readable trace parsers across results |
 | `baselines.json`, `factors.json`, `constants.py`, `utils.py` | Shared config / helpers |
-
-## Legacy per-stage scripts
-
-These predate `collect.py` + `aggregate.py` and are kept for reference; the
-two new scripts cover what they did with less duplication. Prefer the new
-pipeline for fresh analysis.
-
-| Script | Replaced by |
-|---|---|
-| `aggregate_methods.py` | `collect.py` |
-| `aggregate_contamination.py` | `collect.py` |
-| `aggregate_final.py` | `collect.py` |
-| `aggregate_time.py` | `collect.py` (writes `time_overview.csv`) |
-| `aggregate_avg_stddev.py` | `aggregate.py --per-cell` |
-| `aggregate_avg_stddev_over_benchmarks.py` | (dropped — deprecated artifact) |
-| `aggregate_time_avg_stddev.py` | `aggregate.py --time` |
-| `aggregate_time_baselines.py` | (dropped — baselines hardcoded) |
-| `aggregate_summary.py`, `aggregate_together.py` | `aggregate.py --leaderboard` |
-| `compute_single_metrics.py`, `compute_single_metrics_avg_stddev.py` | `aggregate.py --leaderboard` |
-| `compute_baseline_metrics.py`, `compute_baseline_metrics_by_benchmark.py` | `baselines.json` (no longer recomputed) |
-
 
 ## Re-evaluating a finished run N times
 
