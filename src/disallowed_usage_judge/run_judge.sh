@@ -90,8 +90,15 @@ BENCHMARK=$(echo "$DIRNAME" | sed -E 's/^([^_]+)_.*/\1/')
 MODEL_PART=$(echo "$DIRNAME" | sed -E 's/^[^_]+_(.*)_[0-9]+$/\1/')
 MODEL_HF=$(echo "$MODEL_PART" | sed 's/_/\//')
 
+# Parse the parent (method) directory to get the agent + its harness model.
+# Format: {agent}_{agent_config}_{num_hours}h[_{num_gpus}gpu][{experiment_name}]
+METHOD_DIR=$(basename "$(dirname "$RESULT_DIR")")
+AGENT_AND_CONFIG=$(echo "$METHOD_DIR" | sed -E 's/_[0-9]+h.*$//')
+AGENT=$(echo "$AGENT_AND_CONFIG" | sed -E 's/^([^_]+)_.*/\1/')
+AGENT_CONFIG=$(echo "$AGENT_AND_CONFIG" | sed -E 's/^[^_]+_(.*)$/\1/')
+
 echo "Running judge on: $RESULT_DIR"
-echo "  Benchmark: $BENCHMARK | Model: $MODEL_HF | Trace: $TRACE_NAME"
+echo "  Benchmark: $BENCHMARK | Model: $MODEL_HF | Agent: $AGENT ($AGENT_CONFIG) | Trace: $TRACE_NAME"
 case "$MODE" in
     all)                     echo "  Mode: all judges (GPT-5.4 contamination + GPT-5.4 API), outputs suffixed with _rerun" ;;
     gpt-only)                echo "  Mode: GPT-5.4 contamination + GPT-5.4 API, outputs suffixed with _rerun" ;;
@@ -109,6 +116,8 @@ if [ "$RUN_API" = true ]; then
     JUDGE_API_PROMPT=$(python "$SCRIPT_DIR/get_judge_prompt.py" \
         --benchmark-id "$BENCHMARK" \
         --model "$MODEL_HF" \
+        --agent "$AGENT" \
+        --agent-config "$AGENT_CONFIG" \
         --kind api)
 fi
 

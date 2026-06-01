@@ -254,7 +254,7 @@ rm -f "${JOB_DIR}/task/judgement.json"
 # ---- Judge 2: third-party API usage (GPT-5.4 only) ----
 echo "=== Judge 2: third-party API usage (GPT-5.4 only) ==="
 
-JUDGE_API_TASK=$(python src/disallowed_usage_judge/get_judge_prompt.py --benchmark-id "${EVALUATION_TASK}" --model "${MODEL_TO_TRAIN}" --kind api)
+JUDGE_API_TASK=$(python src/disallowed_usage_judge/get_judge_prompt.py --benchmark-id "${EVALUATION_TASK}" --model "${MODEL_TO_TRAIN}" --agent "${AGENT}" --agent-config "${AGENT_CONFIG}" --kind api)
 
 with_huggingface_overlay apptainer exec \
     --nv \
