@@ -18,8 +18,9 @@ This directory contains orchestration scripts for batch reruns.
 | `utils.py` | Shared utilities for directory listing and parsing |
 | `list_results.py` | List and filter result directories |
 | `aggregate_rerun_results.py` | Aggregate and compare results |
-| `rerun_single.sh` | Run judge on a single result directory (wrapper for `run_judge.sh --rerun`) |
-| `commit_rerun_judge.sh` | Submit HTCondor jobs |
+| `rerun_single.sh` | Run judge on a single result directory (wrapper for `run_judge.sh`) |
+| `commit_all_gpt_only.sh` | Submit HTCondor rerun jobs for the latest run of every method |
+| `commit_gpt_contamination_only.sh` | Same, but only reruns the GPT-5.4 contamination judge |
 | `rerun_judge.sub` | HTCondor submission file |
 
 ## Usage
@@ -40,20 +41,30 @@ bash src/disallowed_usage_judge/rerun_judge/rerun_single.sh /path/to/result_dir
 ### Submit HTCondor jobs
 
 ```bash
-# Submit jobs for all result directories
-./src/disallowed_usage_judge/rerun_judge/commit_rerun_judge.sh
+# Rerun both GPT-5.4 judges on the latest run of every method
+./src/disallowed_usage_judge/rerun_judge/commit_all_gpt_only.sh
 
-# Filter by method
-./src/disallowed_usage_judge/rerun_judge/commit_rerun_judge.sh --method "claude"
+# Preview which directories would be submitted, without submitting
+./src/disallowed_usage_judge/rerun_judge/commit_all_gpt_only.sh --dry-run
 
-# Filter by benchmark
-./src/disallowed_usage_judge/rerun_judge/commit_rerun_judge.sh --benchmark "aime"
+# Skip directories whose _rerun outputs already exist (per judge)
+./src/disallowed_usage_judge/rerun_judge/commit_all_gpt_only.sh --skip-existing
 
-# Skip directories that already have rerun judgements
-./src/disallowed_usage_judge/rerun_judge/commit_rerun_judge.sh --skip-existing
+# Only rerun the GPT-5.4 contamination judge (skip the API judge)
+./src/disallowed_usage_judge/rerun_judge/commit_gpt_contamination_only.sh
+```
 
-# Limit to first 10 directories
-./src/disallowed_usage_judge/rerun_judge/commit_rerun_judge.sh --limit 10
+For ad-hoc targeting (a specific method/benchmark, a limit, etc.), use
+`list_results.py` to build the directory list and submit `rerun_judge.sub`
+directly — e.g.:
+
+```bash
+python src/disallowed_usage_judge/rerun_judge/list_results.py \
+    --paths-only --latest-only --method "claude" \
+| while read -r d; do
+    condor_submit_bid 100 -a "result_dir=$d" \
+        src/disallowed_usage_judge/rerun_judge/rerun_judge.sub
+done
 ```
 
 ### List and filter results
