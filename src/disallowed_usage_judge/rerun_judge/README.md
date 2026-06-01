@@ -21,6 +21,8 @@ This directory contains orchestration scripts for batch reruns.
 | `rerun_single.sh` | Run judge on a single result directory (wrapper for `run_judge.sh`) |
 | `commit_all_gpt_only.sh` | Submit HTCondor rerun jobs for the latest run of every method |
 | `commit_gpt_contamination_only.sh` | Same, but only reruns the GPT-5.4 contamination judge |
+| `commit_gpt_api_only.sh` | Same, but only reruns the GPT-5.4 API-usage judge (`judgement_api_rerun.json`) |
+| `find_disallowed_api_usage.py` | Print absolute paths of latest dirs flagged for disallowed API usage |
 | `rerun_judge.sub` | HTCondor submission file |
 
 ## Usage
@@ -52,6 +54,9 @@ bash src/disallowed_usage_judge/rerun_judge/rerun_single.sh /path/to/result_dir
 
 # Only rerun the GPT-5.4 contamination judge (skip the API judge)
 ./src/disallowed_usage_judge/rerun_judge/commit_gpt_contamination_only.sh
+
+# Only rerun the GPT-5.4 API-usage judge (skip the contamination judge)
+./src/disallowed_usage_judge/rerun_judge/commit_gpt_api_only.sh --skip-existing
 ```
 
 For ad-hoc targeting (a specific method/benchmark, a limit, etc.), use
@@ -94,6 +99,22 @@ python src/disallowed_usage_judge/rerun_judge/aggregate_rerun_results.py --diff-
 
 # Export to CSV
 python src/disallowed_usage_judge/rerun_judge/aggregate_rerun_results.py --csv results.csv
+```
+
+### Find dirs flagged for disallowed API usage
+
+Reads the API verdict (`judgement_api_rerun.json`, falling back to `judgement_api.json`) for the
+latest run per (method, benchmark, base-model) and prints the absolute path of every dir where
+`disallowed_api_usage` is true. Paths go to stdout (pipeable); a coverage summary goes to stderr.
+`POST_TRAIN_BENCH_RESULTS_DIR` is read from the environment, or from `.env` if unset.
+
+```bash
+# Absolute paths of flagged dirs
+python src/disallowed_usage_judge/rerun_judge/find_disallowed_api_usage.py
+
+# Restrict to a method/benchmark, or also dump each justification to stderr
+python src/disallowed_usage_judge/rerun_judge/find_disallowed_api_usage.py --method codex
+python src/disallowed_usage_judge/rerun_judge/find_disallowed_api_usage.py --justification
 ```
 
 ## Output Files

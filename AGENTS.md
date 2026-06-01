@@ -179,10 +179,15 @@ pipeline; original files are kept side-by-side. The canonical contamination verd
 
 ## Environment variables
 
-Use the environment variables which are currently set in *this* environment.
-E.g. when wanting to explore the results folder, use `$POST_TRAIN_BENCH_RESULTS_DIR` if it is set.
+**When writing scripts/tooling, `.env` (at the repo root) is the canonical source for the
+`POST_TRAIN_BENCH_*` variables.** Read them directly from `.env` — do **not** assume they are
+already exported in the environment, and do **not** source `set_env_vars.sh` from a script
+(its module-loading block fails on compute nodes without `tclsh`). Examples of the correct
+pattern: the `commit_*.sh` scripts in `src/disallowed_usage_judge/rerun_judge/` (`grep` the var
+out of `.env`) and `find_disallowed_api_usage.py` (`load_results_dir_from_env()`, which falls
+back to `.env` when the var is unset).
 
-Common ones (sourced from `.env` via `src/commit_utils/set_env_vars.sh`):
+Common ones (defined in `.env`; also sourced via `src/commit_utils/set_env_vars.sh`):
 - `POST_TRAIN_BENCH_RESULTS_DIR` — where per-run result directories are written
 - `POST_TRAIN_BENCH_CONTAINERS_DIR` — where built `.sif` containers live
 - `POST_TRAIN_BENCH_CONTAINER_NAME` — default container for the agent sandbox
