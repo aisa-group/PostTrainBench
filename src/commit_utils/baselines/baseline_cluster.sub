@@ -1,9 +1,9 @@
 executable = /bin/bash
 arguments = src/baselines/run_baseline.sh $(eval) $(model) $(Cluster)
 environment = "HOME=$ENV(HOME)"
-error = test_$(Cluster).err
-output = test_$(Cluster).out
-log = test_$(Cluster).log
+error = logs/test_$(Cluster).err
+output = logs/test_$(Cluster).out
+log = logs/test_$(Cluster).log
 request_memory = 32768
 request_cpus = 16
 request_gpus = 1

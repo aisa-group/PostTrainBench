@@ -2,9 +2,9 @@ executable = /bin/bash
 num_gpus = 1
 arguments = src/run_task.sh $(eval) $(agent) $(model_to_train) $(Cluster) $(num_hours) $(agent_config) $(num_gpus)
 environment = "HOME=$ENV(HOME) POST_TRAIN_BENCH_EXPERIMENT_NAME=$(experiment_name)"
-error = test_$(Cluster).err
-output = test_$(Cluster).out
-log = test_$(Cluster).log
+error = logs/test_$(Cluster).err
+output = logs/test_$(Cluster).out
+log = logs/test_$(Cluster).log
 request_memory = 131072
 request_cpus = 16
 request_gpus = $(num_gpus)

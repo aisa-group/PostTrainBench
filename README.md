@@ -154,6 +154,7 @@ The `solve.sh` script reads the token from the file, exports it as `CLAUDE_CODE_
 | `src/baselines/` | Scripts to compute baseline scores |
 | `src/eval/` | Evaluation tasks |
 | `results/` | Evaluation results (baseline runs prefixed with `baseline_`) |
+| `logs/` | HTCondor scheduler logs (`.err`/`.out`/`.log` per job; gitignored) |
 
 Each evaluation folder in `src/eval/tasks/` contains:
 - `benchmark.txt`: Official benchmark name

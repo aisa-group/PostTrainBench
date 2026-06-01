@@ -1,9 +1,9 @@
 executable = /bin/bash
 arguments = dev_utils/test_evaluation/run_only_evaluation.sh $(eval) $(eval_dir) $ENV(HOME) $(Cluster)
 environment = "HOME=$ENV(HOME)"
-error = test_$(Cluster).err
-output = test_$(Cluster).out
-log = test_$(Cluster).log
+error = logs/test_$(Cluster).err
+output = logs/test_$(Cluster).out
+log = logs/test_$(Cluster).log
 request_memory = 131072
 request_cpus = 16
 request_gpus = 1

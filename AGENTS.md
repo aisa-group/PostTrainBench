@@ -108,12 +108,17 @@ condor_submit_bid 100 \
 `single_task.sub` accepts extra `-a` overrides such as `num_gpus`, `request_memory`,
 `request_cpus`, and `experiment_name` (which becomes the `_run*` suffix on the result dir).
 
+**HTCondor scheduler logs go to `logs/`.** Every `.sub` file writes its per-job `error`,
+`output`, and `log` files to `logs/<prefix>_$(Cluster).{err,out,log}` (relative to the submit
+directory, which is always the repo root).
+
 ## Important Conventions
 
 - **Bash for orchestration**: All entry points and job scripts are bash
 - **Python for evaluation**: Use Inspect AI framework for benchmark evaluation
 - **Jinja2 for templates**: Chat templates in `src/eval/templates/`
-- **HTCondor for scheduling**: Job submission via `.sub` files
+- **HTCondor for scheduling**: Job submission via `.sub` files. Scheduler `error`/`output`/`log`
+  files are written under `logs/` (gitignored), never to the repo root.
 - **Apptainer for containers**: Container definitions in `.def` files; built `.sif` files live in
   `$POST_TRAIN_BENCH_CONTAINERS_DIR`
 - **Sandbox layout**: Inside the container, the home is `/home/ben` and the working dir is

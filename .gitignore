@@ -5,6 +5,9 @@ test*.log
 # NFS silly-rename leftovers (deleted-but-still-open files)
 .nfs*
 
+logs/
+!/logs/
+
 # Agent auth tokens
 agents/*/auth.json
 agents/*/auth*.json
