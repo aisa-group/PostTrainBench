@@ -3,7 +3,6 @@
 # Rerun only the GPT-5.4 contamination judge on a single result directory.
 # Thin wrapper around run_judge.sh --gpt-contamination-only:
 #   - Skips the GPT-5.4 API judge.
-#   - Skips the aggregation step, so judge_result_rerun.json is NOT (re)written.
 #   - Only writes judgement_gpt5_4_rerun.json (plus its raw/parsed trace).
 #
 # Usage: rerun_single_gpt_contamination_only.sh <result_dir>

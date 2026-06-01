@@ -2,16 +2,13 @@
 #
 # Run the disallowed-usage judges on a result directory.
 #
-# Two judges:
+# Two judges, each written to its own per-judge file (no aggregation):
 #   1. GPT-5.4 contamination/base-model judge (via codex CLI)
+#      -> judgement_gpt5_4_rerun.json (contamination/disallowed_model verdict;
+#         this is the canonical contamination verdict consumed downstream)
 #   2. GPT-5.4 third-party API usage judge (via codex CLI)
-#
-# Judge 1 is aggregated into judge_result_rerun.json. Judge 2 has a different
-# schema (`disallowed_api_usage` instead of `contamination`/`disallowed_model`)
-# and is written to its own files `judgement_api_rerun.json` and
-# `judge_output_api_rerun.{json,txt}` — it is NOT folded into the
-# contamination verdict, but its disallowed_api_usage flag is copied into
-# judge_result_rerun.json.
+#      -> judgement_api_rerun.json (separate `disallowed_api_usage` schema;
+#         archival only, not consumed by the scoring pipeline)
 #
 # All outputs are always saved with the _rerun suffix so original judge
 # outputs produced by src/run_task.sh are preserved.
@@ -19,21 +16,18 @@
 # Usage: run_judge.sh [--gpt-only|--api-only|--gpt-contamination-only] <result_dir>
 #
 # Options:
-#   --gpt-only      Only rerun the GPT-5.4 contamination judge + the API judge.
+#   --gpt-only      Rerun the GPT-5.4 contamination judge + the API judge.
 #   --api-only      Only rerun the GPT-5.4 third-party API usage judge
-#                   (skip the contamination judge and skip aggregation).
+#                   (skip the contamination judge).
 #   --gpt-contamination-only
 #                   Only rerun the GPT-5.4 contamination judge
-#                   (skip the API judge). Aggregation is also skipped, so
-#                   judge_result_rerun.json is not (re)written; only
-#                   judgement_gpt5_4_rerun.json is produced.
+#                   (skip the API judge).
 
 set -e
 
 # Parse arguments
 RUN_GPT=true
 RUN_API=true
-RUN_AGGREGATE=true
 MODE="all"
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -49,7 +43,6 @@ while [[ $# -gt 0 ]]; do
         --gpt-contamination-only)
             MODE="gpt-contamination-only"
             RUN_API=false
-            RUN_AGGREGATE=false
             shift
             ;;
         *)
@@ -255,25 +248,6 @@ if [ "$RUN_API" = true ]; then
         echo "ERROR: judgement.json not created by API judge (see $RESULT_DIR/judge_output_api_rerun.txt)" >&2
         exit 1
     fi
-fi
-
-# ============================================================
-# Aggregate: GPT-5.4 contamination verdict, API verdict folded in.
-# Always re-aggregate so judge_result_rerun.json reflects the latest run.
-# Both per-judge rerun files must exist; aggregate_judgement.py fails
-# loud if either is missing.
-# Skipped in gpt-contamination-only mode (only one judge ran).
-# ============================================================
-if [ "$RUN_AGGREGATE" = true ]; then
-    echo ""
-    echo "========================================="
-    echo "=== Aggregating Judge Results ==="
-    echo "========================================="
-
-    python "$SCRIPT_DIR/aggregate_judgement.py" \
-        --judge "gpt5_4=$RESULT_DIR/judgement_gpt5_4_rerun.json" \
-        --judge "api=$RESULT_DIR/judgement_api_rerun.json" \
-        --output "$RESULT_DIR/judge_result_rerun.json"
 fi
 
 echo ""

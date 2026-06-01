@@ -2,7 +2,7 @@
 #
 # Rerun the GPT-based judges on a single result directory.
 # Thin wrapper around run_judge.sh that writes _rerun outputs and leaves
-# the existing judgement_*.json / judge_result.json untouched.
+# the existing judgement_*.json untouched.
 #
 # The judge mode defaults to --gpt-only (GPT-5.4 contamination + API).
 # commit_all_gpt_only.sh --skip-existing passes a narrower mode

@@ -33,7 +33,7 @@ It is good to double check if the judge worked correctly.
 For this you can use the `dev_utils/contamination_list.py` script to list flagged runs.
 Then look at the `error.log` to see the judges reasoning and potentially at `task/` to see the output code of the agent.
 
-If the judge was wrong, flip the judgement by editing `judge_result.json` and setting the relevant boolean field (`contamination` or `disallowed_model`) to the opposite value.
+If the judge was wrong, flip the judgement by editing the GPT-5.4 contamination judgement file (`judgement_gpt5_4_rerun.json` if it exists, otherwise `judgement_gpt5_4.json`) and setting the relevant boolean field (`contamination` or `disallowed_model`) to the opposite value.
 
 For all runs which you went over, add them to the `POST_TRAIN_BENCH_CONTAMINATION_CORRECT` environment variable which is build up like this:
 ```

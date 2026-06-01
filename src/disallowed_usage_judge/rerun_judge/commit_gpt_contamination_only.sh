@@ -5,10 +5,9 @@
 # POST_TRAIN_BENCH_RESULTS_DIR.
 #
 # Uses run_judge.sh --gpt-contamination-only under the hood. Only the GPT-5.4
-# contamination judge runs: the GPT-5.4 API usage judge is skipped, and
-# aggregation is skipped too. The only file (re)written per result dir is
-# judgement_gpt5_4_rerun.json (plus its raw trace + parsed text).
-# judge_result_rerun.json is intentionally NOT touched.
+# contamination judge runs: the GPT-5.4 API usage judge is skipped. The only
+# file (re)written per result dir is judgement_gpt5_4_rerun.json (plus its raw
+# trace + parsed text).
 #
 # This script avoids sourcing set_env_vars.sh because the module-loading block
 # fails on nodes without tclsh; it pulls POST_TRAIN_BENCH_RESULTS_DIR from

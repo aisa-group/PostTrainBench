@@ -55,7 +55,7 @@ def main():
     for result_dir in result_dirs:
         stats['total'] += 1
         trace_path, trace_name = get_trace_file(result_dir)
-        has_rerun = (result_dir / 'judge_result_rerun.json').exists()
+        has_rerun = (result_dir / 'judgement_gpt5_4_rerun.json').exists()
 
         if trace_name == 'solve_parsed.txt':
             stats['has_parsed'] += 1

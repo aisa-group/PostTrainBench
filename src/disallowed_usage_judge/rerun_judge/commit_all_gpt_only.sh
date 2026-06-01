@@ -5,9 +5,9 @@
 # POST_TRAIN_BENCH_RESULTS_DIR.
 #
 # Uses run_judge.sh --gpt-only under the hood, so the existing
-# judgement_*.json / judge_result.json from the initial run are NOT touched;
-# only judgement_gpt5_4_rerun.json (plus the API judge it also reruns and
-# the aggregated judge_result_rerun.json) is (re)written.
+# judgement_*.json from the initial run are NOT touched; only
+# judgement_gpt5_4_rerun.json (plus judgement_api_rerun.json from the API
+# judge it also reruns) is (re)written.
 #
 # This script avoids sourcing set_env_vars.sh because the module-loading block
 # fails on nodes without tclsh; it pulls POST_TRAIN_BENCH_RESULTS_DIR from

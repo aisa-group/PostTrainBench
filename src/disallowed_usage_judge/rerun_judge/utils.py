@@ -63,7 +63,7 @@ def get_result_dirs(
             if benchmark_pattern and benchmark_pattern.lower() not in result_dir.name.lower():
                 continue
 
-            if skip_existing and (result_dir / 'judge_result_rerun.json').exists():
+            if skip_existing and (result_dir / 'judgement_gpt5_4_rerun.json').exists():
                 continue
 
             result_dirs.append(result_dir)
@@ -163,8 +163,8 @@ def get_trace_file(result_dir: Path) -> tuple[Path, str] | tuple[None, None]:
     return None, None
 
 
-def read_judge_result(filepath: Path) -> dict | None:
-    """Read a judge_result.json (or per-judge judgement_*.json) file.
+def read_judgement(filepath: Path) -> dict | None:
+    """Read a per-judge judgement_*.json file.
 
     Returns the parsed dict, or None if the file is missing or unreadable.
     """

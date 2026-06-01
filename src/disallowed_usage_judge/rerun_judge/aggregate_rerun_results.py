@@ -13,11 +13,11 @@ import csv
 from collections import defaultdict
 from pathlib import Path
 
-from utils import get_result_dirs, get_trace_file, parse_result_dir, read_judge_result
+from utils import get_result_dirs, get_trace_file, parse_result_dir, read_judgement
 
 
 def _field(judgement: dict | None, key: str):
-    """Return the boolean field from a judge_result.json, or None if unavailable."""
+    """Return the boolean field from a judgement file, or None if unavailable."""
     if judgement is None:
         return None
     value = judgement.get(key)
@@ -50,8 +50,8 @@ def main():
         except ValueError:
             continue
 
-        orig = read_judge_result(result_dir / 'judge_result.json')
-        rerun = read_judge_result(result_dir / 'judge_result_rerun.json')
+        orig = read_judgement(result_dir / 'judgement_gpt5_4.json')
+        rerun = read_judgement(result_dir / 'judgement_gpt5_4_rerun.json')
 
         contamination_orig = _field(orig, 'contamination')
         contamination_rerun = _field(rerun, 'contamination')

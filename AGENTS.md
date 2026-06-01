@@ -42,9 +42,8 @@ PostTrainBench/
 | `src/eval/general/get_prompt.py` | Generates agent prompts |
 | `src/eval/general/prompt.txt` | Agent prompt template |
 | `src/trace_parsing/parse_trace.py` | Dispatches to per-agent parser to produce human-readable trace |
-| `src/disallowed_usage_judge/run_judge.sh` | Runs both judges (GPT-5.4 contamination, GPT-5.4 API) and aggregates |
+| `src/disallowed_usage_judge/run_judge.sh` | Runs both judges (GPT-5.4 contamination, GPT-5.4 API); each writes its own per-judge JSON |
 | `src/disallowed_usage_judge/get_judge_prompt.py` | Generates judge prompts (`--kind api` for API judge) |
-| `src/disallowed_usage_judge/aggregate_judgement.py` | Aggregates per-judge JSONs into `judge_result.json` |
 | `containers/standard.def` | Main container definition (other `.def` files exist per-agent) |
 | `scripts/constants.py` | Agent/benchmark mappings |
 | `example.env` | Template for the `.env` file (API keys + `POST_TRAIN_BENCH_*` paths) |
@@ -129,8 +128,12 @@ The project includes contamination detection via two agent-as-judge runs invoked
 1. **GPT-5.4 contamination judge** (codex CLI, subscription auth) — checks for test-data usage,
    eval tampering, model substitution, and forbidden fine-tuning practices.
 2. **GPT-5.4 third-party API usage judge** (codex CLI) — separate schema (`disallowed_api_usage`),
-   checks whether the agent called external LLM APIs in a disallowed way. Its result is folded
-   into `judge_result.json` but the per-judge file uses its own keys.
+   checks whether the agent called external LLM APIs in a disallowed way. It writes its own
+   `judgement_api.json` for the record but is **not** consumed by the scoring/aggregation flow.
+
+Each judge writes its own per-judge file; there is no aggregation step. The canonical
+contamination verdict consumed downstream is `judgement_gpt5_4.json` (or
+`judgement_gpt5_4_rerun.json` when the rerun pipeline has produced it).
 
 Reruns: `src/disallowed_usage_judge/rerun_judge/` holds the batch-rerun pipeline. Rerun outputs
 always carry a `_rerun` suffix so original judge files produced during `run_task.sh` are
@@ -159,14 +162,14 @@ results/{agent}_{agent_config}_{num_hours}h[_{num_gpus}gpu]{experiment_name}/
     ├── judge_output_gpt5_4.{json,txt}   # Judge 1 raw + parsed trace
     ├── judgement_gpt5_4.json            # Judge 1 structured verdict
     ├── judge_output_api.{json,txt}      # Judge 2 raw + parsed trace
-    ├── judgement_api.json               # Judge 2 structured verdict
-    ├── judge_result.json                # Aggregated verdict across both judges
+    ├── judgement_api.json               # Judge 2 structured verdict (archival; not consumed)
     ├── final_eval_*.txt                 # vLLM/inspect-ai evaluation logs (one per retry)
     └── metrics.json                     # Final benchmark scores
 ```
 
-Result directories with the `_rerun` suffix on `judgement_*.json` / `judge_result.json` come
-from the rerun-judge pipeline; original files are kept side-by-side.
+Result directories with the `_rerun` suffix on `judgement_*.json` come from the rerun-judge
+pipeline; original files are kept side-by-side. The canonical contamination verdict is
+`judgement_gpt5_4.json` (or `judgement_gpt5_4_rerun.json` when present).
 
 ## Code Style
 

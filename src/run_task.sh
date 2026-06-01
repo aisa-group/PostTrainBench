@@ -282,14 +282,6 @@ else
     exit 1
 fi
 
-# ---- Aggregate: GPT-5.4 contamination verdict, API verdict folded in ----
-echo "=== Aggregating Judge Results ==="
-
-python src/disallowed_usage_judge/aggregate_judgement.py \
-    --judge "gpt5_4=${EVAL_DIR}/judgement_gpt5_4.json" \
-    --judge "api=${EVAL_DIR}/judgement_api.json" \
-    --output "${EVAL_DIR}/judge_result.json"
-
 echo "============================="
 echo "======== CLEANING UP ========"
 echo "============================="

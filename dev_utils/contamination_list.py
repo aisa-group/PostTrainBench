@@ -3,13 +3,19 @@ import json
 import os
 
 
-def load_judge_result(run_path: str) -> dict | None:
-    """Load judge_result.json from a run dir, returning the parsed dict or None."""
-    path = os.path.join(run_path, "judge_result.json")
-    if not os.path.exists(path):
-        return None
-    with open(path, "r") as f:
-        return json.load(f)
+def load_judgement(run_path: str) -> dict | None:
+    """Load the GPT-5.4 contamination judgement for a run dir.
+
+    Prefers judgement_gpt5_4_rerun.json (rerun pipeline) over
+    judgement_gpt5_4.json (initial run). Returns the parsed dict, or None when
+    neither file exists (run has no judge output yet).
+    """
+    for name in ("judgement_gpt5_4_rerun.json", "judgement_gpt5_4.json"):
+        path = os.path.join(run_path, name)
+        if os.path.exists(path):
+            with open(path, "r") as f:
+                return json.load(f)
+    return None
 
 
 def get_latest_runs(method_path: str):
@@ -60,7 +66,7 @@ def main():
         run_paths = get_latest_runs(method_path)
 
         for run_path in run_paths:
-            judgement = load_judge_result(run_path)
+            judgement = load_judgement(run_path)
             if judgement is None:
                 continue
 

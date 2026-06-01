@@ -4,13 +4,15 @@ Collect results from raw run directories into per-method CSVs.
 
 For each method directory in the results dir, does a single pass:
   1. Finds the latest run per (benchmark, model)
-  2. Reads metrics.json, judge_result.json, and time_taken.txt
+  2. Reads metrics.json, the GPT-5.4 contamination judgement
+     (judgement_gpt5_4_rerun.json if present, else judgement_gpt5_4.json),
+     and time_taken.txt
   3. Applies baseline fallback for cells flagged by the judge or with no run
   4. Writes final_{method}.csv, contamination_{method}.csv
 
 Also writes a time_overview.csv summarising average time per method.
 
-Any missing or malformed metrics.json / judge_result.json / time_taken.txt
+Any missing or malformed metrics.json / contamination judgement / time_taken.txt
 inside an existing run directory is a hard error — there are no silent
 fallbacks for broken runs. Cells with no run at all are filled from
 baselines.json.
@@ -30,8 +32,8 @@ from utils import (
     get_baseline_fallback_data,
     walk_latest_runs,
     load_metrics,
-    load_judge_result,
-    judge_result_to_cell,
+    load_judgement,
+    judgement_to_cell,
     load_time_taken,
     format_time_hms,
     BUDGET_SECONDS,
@@ -89,9 +91,9 @@ def collect_method(
                 metrics_grid[model][bench] = load_metrics(
                     os.path.join(run_dir, "metrics.json")
                 )
-                judge_result = load_judge_result(run_dir)
-                contamination_grid[model][bench] = judge_result_to_cell(
-                    judge_result
+                judgement = load_judgement(run_dir)
+                contamination_grid[model][bench] = judgement_to_cell(
+                    judgement
                 )
                 _, seconds = load_time_taken(run_dir)
                 time_total_seconds += seconds

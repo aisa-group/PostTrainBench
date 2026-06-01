@@ -338,55 +338,64 @@ def load_metrics(metrics_path: str) -> str:
 # Judge result loading
 # ---------------------------------------------------------------------------
 
-JUDGE_RESULT_FIELDS = ("contamination", "disallowed_model")
+JUDGEMENT_FIELDS = ("contamination", "disallowed_model")
 
 
-def load_judge_result(run_dir: str) -> dict:
-    """Load the GPT-5.4 contamination judge verdict for a single run directory.
+def judgement_path(run_dir: str) -> str:
+    """Return the GPT-5.4 contamination judgement path for a run directory.
 
-    Reads only the GPT-5.4 contamination judge output — the third-party API
-    usage judge (``judgement_api.json``) and the aggregated
-    ``judge_result.json`` are intentionally ignored. Prefers
-    ``judgement_gpt5_4_rerun.json`` (written by the rerun pipeline) and falls
-    back to ``judgement_gpt5_4.json`` from the initial ``run_task.sh`` run.
-
-    Raises FileNotFoundError when neither file exists, json.JSONDecodeError
-    on a malformed file, and ValueError/TypeError when the schema does not
-    match what the contamination judge writes.
+    Prefers ``judgement_gpt5_4_rerun.json`` (written by the rerun pipeline) and
+    falls back to ``judgement_gpt5_4.json`` from the initial ``run_task.sh``
+    run. This is the single place that encodes the rerun-over-original
+    preference; everything that needs the judgement should go through here (or
+    through ``load_judgement``). Raises FileNotFoundError when neither exists.
     """
     rerun_path = os.path.join(run_dir, "judgement_gpt5_4_rerun.json")
     original_path = os.path.join(run_dir, "judgement_gpt5_4.json")
 
     if os.path.exists(rerun_path):
-        path = rerun_path
-    elif os.path.exists(original_path):
-        path = original_path
-    else:
-        raise FileNotFoundError(
-            f"No GPT-5.4 contamination judgement in {run_dir} "
-            f"(expected judgement_gpt5_4_rerun.json or judgement_gpt5_4.json)"
-        )
+        return rerun_path
+    if os.path.exists(original_path):
+        return original_path
+    raise FileNotFoundError(
+        f"No GPT-5.4 contamination judgement in {run_dir} "
+        f"(expected judgement_gpt5_4_rerun.json or judgement_gpt5_4.json)"
+    )
+
+
+def load_judgement(run_dir: str) -> dict:
+    """Load the GPT-5.4 contamination judge verdict for a single run directory.
+
+    Reads only the GPT-5.4 contamination judge output (preferring the rerun
+    file; see ``judgement_path``). The third-party API usage judge
+    (``judgement_api.json``) is intentionally ignored.
+
+    Raises FileNotFoundError when neither judgement file exists,
+    json.JSONDecodeError on a malformed file, and ValueError/TypeError when the
+    schema does not match what the contamination judge writes.
+    """
+    path = judgement_path(run_dir)
 
     with open(path, "r") as f:
         data = json.load(f)
     if not isinstance(data, dict):
         raise ValueError(f"{path}: top-level JSON is not an object")
 
-    missing = [f for f in JUDGE_RESULT_FIELDS if f not in data]
+    missing = [f for f in JUDGEMENT_FIELDS if f not in data]
     if missing:
         raise ValueError(f"{path}: missing fields: {', '.join(missing)}")
 
-    for field in JUDGE_RESULT_FIELDS:
+    for field in JUDGEMENT_FIELDS:
         if not isinstance(data[field], bool):
             raise TypeError(
                 f"{path}: field {field!r} must be bool, got "
                 f"{type(data[field]).__name__}: {data[field]!r}"
             )
 
-    return {field: data[field] for field in JUDGE_RESULT_FIELDS}
+    return {field: data[field] for field in JUDGEMENT_FIELDS}
 
 
-def judge_result_to_cell(judge_result: dict) -> str:
+def judgement_to_cell(judgement: dict) -> str:
     """Encode the GPT-5.4 contamination judge booleans into a single cell.
 
     The cell concatenates the letter for each flag that is True:
@@ -396,9 +405,9 @@ def judge_result_to_cell(judge_result: dict) -> str:
     comparable across runs.
     """
     parts = []
-    if judge_result["disallowed_model"]:
+    if judgement["disallowed_model"]:
         parts.append("M")
-    if judge_result["contamination"]:
+    if judgement["contamination"]:
         parts.append("C")
     return "".join(parts)
 

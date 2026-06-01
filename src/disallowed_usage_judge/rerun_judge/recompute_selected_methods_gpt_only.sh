@@ -5,10 +5,9 @@
 #
 # Only the newest run (highest cluster_id) per (benchmark, model) is submitted.
 # Uses run_judge.sh --gpt-only under the hood, so the existing
-# judgement_*.json / judge_result.json from the initial run are NOT touched;
-# the script only (re)writes the GPT-specific judgement_gpt5_4_rerun.json
-# (and judgement_api_rerun.json) and rebuilds the aggregated
-# judge_result_rerun.json from them.
+# judgement_*.json from the initial run are NOT touched; the script only
+# (re)writes the GPT-specific judgement_gpt5_4_rerun.json (and
+# judgement_api_rerun.json).
 #
 # This script avoids sourcing set_env_vars.sh because the module-loading block
 # fails on nodes without tclsh; instead it exports POST_TRAIN_BENCH_RESULTS_DIR
