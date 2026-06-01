@@ -3,9 +3,10 @@
 #
 # Runs as PID 1 so its stdout is what Modal/Harbor stream live to the
 # sandbox dashboard. We:
-#   1. background `tail -F` of the agent and verifier log files so their
+#   1. initialize Prime VM NVIDIA devices
+#   2. background `tail -F` of the agent and verifier log files so their
 #      output flows through PID 1 stdout in real time
-#   2. start a system monitor daemon that writes GPU/CPU/memory stats to
+#   3. start a system monitor daemon that writes GPU/CPU/memory stats to
 #      /logs/agent/system_monitor.log every 60s (parity with condor's
 #      src/utils/system_monitor.sh)
 #
@@ -15,6 +16,8 @@
 # alignment with actual agent start time.
 
 set -e
+
+/usr/local/bin/initialize-nvidia-gpu-stack
 
 mkdir -p /logs/agent /logs/verifier
 

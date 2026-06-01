@@ -1,8 +1,11 @@
-FROM nvidia/cuda:12.9.1-cudnn-devel-ubuntu22.04
+FROM primeintellect/nvidia-driver-images:590.48.01-cuda12.9-devel-ubuntu22.04-k6.16.9
 
 # This Dockerfile mirrors containers/opus_4_6_1m.def (the apptainer
 # image used by the HTCondor pipeline) for cross-environment parity.
 # Differences vs. apptainer build:
+#   - Prime VM sandboxes need a driver-aware guest image. Prime's CUDA
+#     base mirrors upstream CUDA while adding NVIDIA driver hotplug,
+#     Fabric Manager, and /dev/nvidia* initialization for VM GPUs.
 #   - --torch-backend=cu128 is explicit. Modal's build VM has no
 #     nvidia-smi/CUDA driver, so --torch-backend=auto would resolve to CPU
 #     torch and fail to satisfy vllm's CUDA-only xformers dependency.
@@ -90,5 +93,17 @@ RUN rm -f /home/agent/workspace/entrypoint.sh \
 
 RUN chmod -R a+rw /home/agent/workspace/ && \
     chmod +x /home/agent/workspace/timer.sh
+
+ENV PRIME_EXPECTED_GPU_COUNT=1
+ENV PRIME_EXPECTED_NVSWITCH_COUNT=0
+RUN sed -i \
+        -e 's/PRIME_EXPECTED_GPU_COUNT:-8/PRIME_EXPECTED_GPU_COUNT:-1/g' \
+        -e 's/PRIME_EXPECTED_NVSWITCH_COUNT:-4/PRIME_EXPECTED_NVSWITCH_COUNT:-0/g' \
+        /usr/local/bin/wait-for-nvidia-hotplug-topology \
+        /usr/local/bin/initialize-nvidia-gpu-stack && \
+    sed -i '/\/usr\/local\/bin\/start-nvidia-fabricmanager/i if [[ "${expected_switch_count}" == "0" ]]; then exit 0; fi' \
+        /usr/local/bin/initialize-nvidia-gpu-stack && \
+    sed -i '/# Wait for Fabric Manager to finish registering every GPU for NVSwitch fabrics\./i if [[ "${expected_switch_count}" == "0" ]]; then exit 0; fi' \
+        /usr/local/bin/initialize-nvidia-gpu-stack
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
