@@ -21,6 +21,7 @@ src/disallowed_usage_judge/rerun_judge/commit_all_gpt_only_runs
 src/disallowed_usage_judge/rerun_judge/commit_kimi_contamination_only_runs
 src/disallowed_usage_judge/rerun_judge/commit_gpt_contamination_only_runs
 src/disallowed_usage_judge/rerun_judge/commit_kimi_only_runs
+src/disallowed_usage_judge/rerun_judge/commit_gpt_api_only_runs
 
 containers/empty_dot_git
 

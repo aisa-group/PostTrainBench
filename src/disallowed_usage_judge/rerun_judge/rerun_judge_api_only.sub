@@ -4,7 +4,7 @@ environment = "HOME=$ENV(HOME)"
 error = test_$(Cluster).err
 output = test_$(Cluster).out
 log = test_$(Cluster).log
-concurrency_limits=user.judge:500
+concurrency_limits=user.judge:1250
 request_memory = 81920
 request_cpus = 8
 request_disk=100G
