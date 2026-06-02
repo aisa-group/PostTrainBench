@@ -13,7 +13,7 @@ fi
 
 MIN_REMAINING_MINUTES=30
 
-codex --search exec --json -c model_reasoning_summary=detailed --skip-git-repo-check --yolo --model "$AGENT_CONFIG" "$PROMPT"
+printf '%s' "$PROMPT" | codex --search exec --json -c model_reasoning_summary=detailed --skip-git-repo-check --yolo --model "$AGENT_CONFIG"
 
 # Re-prompt loop: if the agent finishes early, resume the session
 while true; do
@@ -32,5 +32,5 @@ while true; do
 
     CONTINUATION_PROMPT="You still have ${REMAINING_HOURS}h ${REMAINING_MINS}m remaining. Please continue improving your result and maximize performance."
 
-    codex --search exec resume --last --json -c model_reasoning_summary=detailed --skip-git-repo-check --yolo --model "$AGENT_CONFIG" "$CONTINUATION_PROMPT"
+    printf '%s' "$CONTINUATION_PROMPT" | codex --search exec resume --last --json -c model_reasoning_summary=detailed --skip-git-repo-check --yolo --model "$AGENT_CONFIG" -
 done

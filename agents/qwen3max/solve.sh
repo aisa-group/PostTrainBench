@@ -19,5 +19,5 @@ echo "DEBUG: ANTHROPIC_API_KEY is set: ${ANTHROPIC_API_KEY:+yes} (length: ${#ANT
 echo "DEBUG: ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL}"
 echo "DEBUG: ANTHROPIC_MODEL=${ANTHROPIC_MODEL}"
 
-claude --print --verbose --model "$AGENT_CONFIG" --output-format stream-json \
-    --dangerously-skip-permissions "$PROMPT"
+printf '%s' "$PROMPT" | claude --print --verbose --model "$AGENT_CONFIG" \
+    --output-format stream-json --dangerously-skip-permissions

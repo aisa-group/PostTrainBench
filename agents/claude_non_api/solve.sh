@@ -17,6 +17,6 @@ export BASH_MAX_TIMEOUT_MS="36000000"
 
 # Set default effort level to high for consistency  
 
-claude --print --verbose --model "$AGENT_CONFIG" --output-format stream-json \
-    --effort high \
-    --dangerously-skip-permissions "$PROMPT"
+printf '%s' "$PROMPT" | claude --print --verbose --model "$AGENT_CONFIG" \
+    --output-format stream-json --effort high \
+    --dangerously-skip-permissions
