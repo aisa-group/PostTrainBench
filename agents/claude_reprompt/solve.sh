@@ -7,7 +7,8 @@ export BASH_MAX_TIMEOUT_MS="36000000"
 MIN_REMAINING_MINUTES=30
 
 printf '%s' "$PROMPT" | claude --print --verbose --model "$AGENT_CONFIG" \
-    --output-format stream-json --dangerously-skip-permissions
+    --output-format stream-json --thinking-display summarized \
+    --dangerously-skip-permissions
 
 # Re-prompt loop: if the agent finishes early, resume the session
 while true; do
@@ -27,5 +28,6 @@ while true; do
     CONTINUATION_PROMPT="You still have ${REMAINING_HOURS}h ${REMAINING_MINS}m remaining. Please continue improving your result and maximize performance."
 
     printf '%s' "$CONTINUATION_PROMPT" | claude --print --verbose --continue --model "$AGENT_CONFIG" \
-        --output-format stream-json --dangerously-skip-permissions
+        --output-format stream-json --thinking-display summarized \
+        --dangerously-skip-permissions
 done
