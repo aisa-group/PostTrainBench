@@ -5,7 +5,7 @@
 We introduce PostTrainBench, a benchmark that measures the ability of CLI agents to post-train pre-trained large language models (LLMs). In PostTrainBench, the agent's task is to improve the performance of a base LLM on a given benchmark. The agent is given access to an evaluation script and 10 hours on an H100 GPU. Performance is measured by the benchmark score of the post-trained LLM. This setup naturally evaluates an agent's ability to conduct AI R&D.
 
 > [!IMPORTANT]
-> **Harbor support coming soon!** This repository currently targets our internal HPC cluster (HTCondor). We are adding [Harbor](https://github.com/harbor-framework/harbor) support to make it straightforward to run on rented hardware (e.g., cloud GPUs). See our [PR](https://github.com/aisa-group/PostTrainBench/pull/8).
+> **Harbor support is available in `src/harbor_adapter`.** The adapter generates [Harbor](https://github.com/harbor-framework/harbor) tasks for running PostTrainBench on rented hardware (e.g., cloud GPUs), while the existing scripts continue to target our internal HPC cluster (HTCondor).
 
 ## Leaderboard
 
@@ -94,7 +94,7 @@ The `.env` file contains API keys and configuration. See `example.env` for all a
 
 Environment variables already set in your shell take precedence over `.env` values.
 
-Currently, we only support the HTCondor job scheduler. [Harbor](https://github.com/harbor-framework/harbor) support is planned.
+HTCondor remains the primary supported scheduler for the main job scripts. Harbor task generation is available in `src/harbor_adapter` for cloud GPU runs.
 
 #### API-based agents
 

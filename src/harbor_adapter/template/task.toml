@@ -1,0 +1,140 @@
+version = "1.0"
+
+[metadata]
+author_name = "PostTrainBench Team"
+category = "ml-training"
+tags = ["post-training", "llm", "fine-tuning", "gpu"]
+
+[environment]
+gpus = 1
+gpu_types = ["H100"]
+cpus = 8
+memory_mb = 65536
+storage_mb = 102400
+build_timeout_sec = 3600.0
+allow_internet = true
+
+# Healthcheck runs after entrypoint.sh comes up and before the agent starts.
+# Two jobs:
+#   1. Verify the log-streaming daemon (tail -F /logs/agent/*) is running so
+#      the agent's output reaches Modal's dashboard live.
+#   2. Idempotently record the timer start time at /timer_start. Aligning the
+#      write with healthcheck means the timer starts essentially at agent
+#      launch, not at container boot.
+[environment.healthcheck]
+command = "pgrep -f 'tail -F' > /dev/null && (test -f /timer_start || date +%s > /timer_start)"
+interval_sec = 2
+timeout_sec = 5
+start_period_sec = 5
+start_interval_sec = 1
+retries = 3
+
+# Verifier runs in a SEPARATE container from the agent — harbor 0.7.0's
+# separate-verifier mode (PR #1655, docs:
+# https://www.harborframework.com/docs/tasks#verifier-environment-shared-vs-separate).
+# Adversarial agent can't tamper with evaluate.py, the judge-v2 prompt/tooling,
+# the Python interpreter, or any installed package the verifier imports. Mirrors
+# the condor pipeline's vllm_debug.sif (separate container for evaluation).
+#
+# The verifier image is built from `tests/` as the build context (see
+# tests/Dockerfile). test.sh, evaluate.py, templates/, metadata.json, and the
+# judge-v2/trace parsing files are baked INTO the image at build time; harbor
+# does not upload tests/ at runtime for separate envs.
+[verifier]
+timeout_sec = 10800.0
+environment_mode = "separate"
+
+[verifier.env]
+OPENAI_API_KEY = "${OPENAI_API_KEY}"
+CODEX_API_KEY = "${OPENAI_API_KEY}"
+OPENAI_BASE_URL = "${OPENAI_BASE_URL:-https://api.pinference.ai/api/v1}"
+CODEX_MODEL = "${CODEX_MODEL:-openai/gpt-5.1-codex}"
+
+# Verifier container resources. Same as agent env so vllm + flash-attn
+# behave the same (model loading, batch sizes, etc.).
+[verifier.environment]
+gpus = 1
+gpu_types = ["H100"]
+cpus = 8
+memory_mb = 65536
+storage_mb = 102400
+build_timeout_sec = 3600.0
+allow_internet = true
+
+[verifier.environment.healthcheck]
+command = "pgrep -f 'tail -F' > /dev/null && (test -f /timer_start || date +%s > /timer_start)"
+interval_sec = 2
+timeout_sec = 5
+start_period_sec = 5
+start_interval_sec = 1
+retries = 3
+
+[agent]
+timeout_sec = 36000.0
+
+# Artifacts. In separate-verifier mode each entry's `source` is
+# transferred from the agent env to the verifier env at the same path
+# AND archived under <trial_dir>/artifacts/<destination>/ on the host.
+#
+# Two entries (instead of one for /home/agent/workspace):
+#   1. workspace — training scripts + everything else the agent wrote.
+#      Verifier env gets /home/agent/workspace, which the contamination
+#      judge reads via `cd $WORKSPACE && codex exec ...`.
+#   2. final_model — the agent's trained weights as a standalone target.
+#      Verifier env gets /home/agent/workspace/final_model directly.
+#
+# **Order matters.** Harbor's `upload_artifacts` calls
+# `empty_dirs(target_source)` before each upload (clears destination
+# first). If final_model were listed first, the subsequent
+# `empty_dirs("/home/agent/workspace")` for the workspace artifact
+# would wipe out the just-uploaded final_model. By listing workspace
+# first and the nested final_model second, the leaf is written last
+# and isn't clobbered.
+#
+# Harbor's `exclude` IS honored on the host side (smaller postmortem
+# tarball under artifacts/workspace/), but it is NOT honored during
+# verifier upload — so the workspace upload to the verifier still
+# carries whatever files were collected to host (which excludes
+# final_model thanks to the exclude list below). final_model arrives
+# via the second artifact only.
+[[artifacts]]
+source = "/home/agent/workspace"
+destination = "workspace"
+# Aggressive excludes. The 2026-05-27 trial died inside the agent
+# sandbox's `tar czf ... --exclude=... /home/agent/workspace` step
+# with "code -1: no output" (likely tar OOM/timeout on multi-GB of
+# HF/wandb cache + checkpoint dirs the agent created during a
+# 6.5-hour training run). Drop anything we don't need for the
+# contamination judge — judge only needs the agent's source code
+# (.py, .md, .json configs, .sh, etc.), not caches/checkpoints/logs.
+exclude = [
+    # Already in the original prototype:
+    "final_model",          # shipped via second artifact, don't dup
+    "__pycache__",
+    "*.pyc",
+    ".git",
+    ".venv",
+    "venv",
+    # HF / transformers / datasets caches (often many GB):
+    ".cache",
+    ".huggingface",
+    # Experiment tracking:
+    "wandb",
+    ".wandb",
+    # Training output dirs commonly produced by HF Trainer / Hydra:
+    "checkpoint-*",
+    "runs",
+    "outputs",
+    "output",
+    "logs",
+    # Tokenized dataset shards (large, not useful for judge):
+    "*.arrow",
+    "*.parquet",
+    # Misc:
+    "tmp",
+    ".tmp",
+]
+
+[[artifacts]]
+source = "/home/agent/workspace/final_model"
+destination = "final_model"
