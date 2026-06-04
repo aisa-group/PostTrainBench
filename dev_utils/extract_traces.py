@@ -8,9 +8,8 @@ Layout produced per run:
         solve_out.txt               # raw stream-JSON trace (NOT solve_parsed.txt)
         metrics.json                # if present
         metrics_averaged.json       # if present
-        contamination_judgement.txt # if present
-        disallowed_model_judgement.txt
-        judge_output.json           # if present  (Codex-style judge agent trace)
+        judgement_gpt5_4.json       # canonical contamination verdict (rerun preferred; if present)
+        judge_output_gpt5_4.{json,txt} # GPT-5.4 contamination-judge trace (rerun preferred; if present)
         error.log                   # if present
         time_taken.txt              # if present
         system_monitor.log          # if present
@@ -189,6 +188,20 @@ def sanitize_content(content: str, api_keys: list[str], src_path: str = "") -> s
     return content
 
 
+def prefer_sanitized(src: Path) -> Path:
+    """Resolve a source path to its `<stem>_sanitized<ext>` sibling if one
+    exists, else the path itself.
+
+    parse_trace.py emits a sanitized companion (env-secret values already
+    redacted) next to each raw/parsed trace and judge-output file. We prefer
+    it as the source but still run it through our own sanitizer on copy.
+    The _sanitized suffix is removed in the dest filename."""
+    suffix = src.suffix
+    stem = src.name[: -len(suffix)] if suffix else src.name
+    sanitized = src.with_name(f"{stem}_sanitized{suffix}")
+    return sanitized if sanitized.exists() else src
+
+
 def copy_file_sanitized(src: Path, dest: Path, api_keys: list[str]) -> None:
     """Copy a file, sanitizing API keys from its content."""
     content = src.read_text(encoding="utf-8")
@@ -320,7 +333,7 @@ def main():
             # The trace must be solve_out.txt — the JSONL form the viewer
             # parses. solve_parsed.txt is human-readable plaintext and is
             # NOT a valid input for build.py.
-            src_file = subdir / "solve_out.txt"
+            src_file = prefer_sanitized(subdir / "solve_out.txt")
             if not src_file.exists():
                 print(f"  MISS: {subdir.name} (no solve_out.txt)")
                 missing_count += 1
@@ -340,16 +353,23 @@ def main():
             # parsing and verdict detection).
             # NB: solve_parsed.txt is also shipped for direct human reading;
             # the viewer ignores it, but it's a useful escape hatch.
-            # The canonical contamination verdict in this branch's judge
-            # scheme is judgement_gpt5_4.json (or _rerun); the old
-            # contamination_judgement.txt / judge_output.json files no
-            # longer exist here.
+            # The canonical contamination verdict in this branch's two-judge
+            # scheme is judgement_gpt5_4.json (or _rerun). We also ship the
+            # GPT-5.4 contamination-judge trace so the viewer can show *why* a
+            # run was flagged. The third-party-API-usage judge
+            # (judgement_api*.json) is deliberately NOT extracted: it is
+            # archival, not consumed by scoring, and known to flip on rerun
+            # (non-deterministic false positives). The old single-judge files
+            # (contamination_judgement.txt / judge_output.json) no longer exist.
             copy_other_files(subdir, dest_dir, 'solve_parsed.txt', api_keys=api_keys, optional=True)
             copy_other_files(subdir, dest_dir, 'metrics.json', api_keys=api_keys)
             copy_other_files(subdir, dest_dir, 'metrics_averaged.json', api_keys=api_keys, optional=True)
-            copy_other_files(subdir, dest_dir, 'judgement_gpt5_4.json', api_keys=api_keys, optional=True)
-            copy_other_files(subdir, dest_dir, 'judgement_gpt5_4_rerun.json', api_keys=api_keys, optional=True)
-            copy_other_files(subdir, dest_dir, 'error.log', 'judgement.log', api_keys=api_keys)
+            # Rerun output supersedes the original (it is the corrected
+            # verdict/trace) and is written under the canonical non-rerun name.
+            copy_preferring_rerun(subdir, dest_dir, 'judgement_gpt5_4.json', api_keys=api_keys)
+            copy_preferring_rerun(subdir, dest_dir, 'judge_output_gpt5_4.json', api_keys=api_keys)
+            copy_preferring_rerun(subdir, dest_dir, 'judge_output_gpt5_4.txt', api_keys=api_keys)
+            copy_other_files(subdir, dest_dir, 'error.log', api_keys=api_keys, optional=True)
             copy_other_files(subdir, dest_dir, 'time_taken.txt', api_keys=api_keys)
             copy_other_files(subdir, dest_dir, 'system_monitor.log', api_keys=api_keys, optional=True)
 
@@ -383,13 +403,33 @@ def copy_other_files(subdir, dest_dir, filename, dest_filename=None, api_keys=No
         dest_filename = filename
     if api_keys is None:
         api_keys = []
-    src = subdir / filename
+    src = prefer_sanitized(subdir / filename)
     dest = dest_dir / dest_filename
     if src.exists():
         copy_file_sanitized(src, dest, api_keys)
     elif not optional:
         # Hard-required missing — surface it, but don't fabricate content.
         print(f"  WARN: required file {filename} missing for {subdir.name}")
+
+
+def copy_preferring_rerun(subdir, dest_dir, base_filename, api_keys):
+    """Copy a judge artifact, preferring the `_rerun` variant when present.
+
+    The rerun pipeline writes `<stem>_rerun<ext>` alongside the original.
+    The rerun is the corrected output, so it wins; either way the file is
+    written to the destination under the canonical non-rerun name so
+    downstream consumers don't need to know a rerun happened. Within each
+    candidate the `_sanitized` companion is preferred (see prefer_sanitized).
+    Everything is optional — nothing is copied if no candidate exists."""
+    base = Path(base_filename)
+    rerun_filename = f"{base.stem}_rerun{base.suffix}"
+    # rerun supersedes base; prefer_sanitized picks the redacted companion
+    # within whichever candidate we land on.
+    for candidate in (subdir / rerun_filename, subdir / base_filename):
+        src = prefer_sanitized(candidate)
+        if src.exists():
+            copy_file_sanitized(src, dest_dir / base_filename, api_keys)
+            return
 
 
 def _looks_like_text(path: Path) -> bool:
