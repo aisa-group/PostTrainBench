@@ -23,11 +23,35 @@ import shutil
 from pathlib import Path
 from collections import defaultdict
 
-# Constants - modify these as needed
-RESULTS_BASE = Path(os.environ.get("POST_TRAIN_BENCH_RESULTS_DIR", "results"))
-OUTPUT_DIR = os.path.join(RESULTS_BASE, "../collected_results")
+# Repo root holds the canonical .env. extract_traces.py lives in dev_utils/,
+# exactly one level below the root.
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
-# API key environment variables to check and redact
+
+def load_dotenv() -> dict[str, str]:
+    """Parse the repo-root .env into a dict.
+
+    Project convention: tooling reads POST_TRAIN_BENCH_* (and, here, the
+    API-key secrets) straight from .env rather than from the exported
+    environment or by sourcing set_env_vars.sh (whose module-load block fails
+    on compute nodes without tclsh)."""
+    env_file = REPO_ROOT / ".env"
+    if not env_file.exists():
+        raise RuntimeError(f".env file not found at {env_file}")
+    values: dict[str, str] = {}
+    for raw in env_file.read_text().splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip().strip('"').strip("'")
+    return values
+
+
+# Named API-key variables read from .env; their literal values are redacted
+# from copied traces. Supplemented at runtime by the secrets file pointed to by
+# POST_TRAIN_BENCH_SANITIZATION_SECRETS (see get_api_keys). Names absent from
+# .env are skipped — this machine simply doesn't use that provider.
 API_KEY_ENV_VARS = [
     "OPENAI_API_KEY",
     "ANTHROPIC_API_KEY",
@@ -94,16 +118,79 @@ WORKSPACE_SKIP_EXTS = {
 WORKSPACE_MAX_BYTES = 2 * 1024 * 1024
 
 
-def get_api_keys() -> list[str]:
-    """Get API key values from environment variables (non-empty only)."""
-    keys = []
-    for var in API_KEY_ENV_VARS:
-        if var not in os.environ:
-            raise ValueError(f"Expected environment variable not set: {var}")
-        value = os.environ[var]
-        keys.append(value)
+def load_sanitization_secrets(dotenv: dict[str, str]) -> list[str]:
+    """Read extra secrets to redact from the file named by
+    POST_TRAIN_BENCH_SANITIZATION_SECRETS in .env.
 
-    return keys
+    Each non-empty line that does not start with '#' is one secret (an API key)
+    to redact. Returns [] when the variable is unset/empty. When it *is* set,
+    the file must exist — a configured-but-missing path is a misconfiguration
+    and crashes rather than silently redacting nothing.
+
+    Duplicate lines are dropped (order preserved) since the same key is often
+    appended more than once over time; get_api_keys dedupes again across all
+    sources, but deduping here keeps the reported file-secret count honest."""
+    path_str = dotenv.get("POST_TRAIN_BENCH_SANITIZATION_SECRETS", "")
+    if not path_str:
+        return []
+    secrets_path = Path(path_str)
+    if not secrets_path.is_absolute():
+        secrets_path = REPO_ROOT / secrets_path
+    if not secrets_path.exists():
+        raise RuntimeError(
+            f"POST_TRAIN_BENCH_SANITIZATION_SECRETS points to a missing file: "
+            f"{secrets_path}"
+        )
+    secrets = []
+    seen = set()
+    for raw in secrets_path.read_text().splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or line in seen:
+            continue
+        seen.add(line)
+        secrets.append(line)
+    return secrets
+
+
+def get_api_keys(dotenv: dict[str, str]) -> list[str]:
+    """Collect the literal secret strings to redact from copied traces.
+
+    Two sources, both resolved from .env (never the ambient environment):
+      1. The named variables in API_KEY_ENV_VARS, for those present and
+         non-empty in .env. Absent names are skipped (reported, not silently
+         dropped) since not every machine uses every provider.
+      2. The newline-delimited file named by POST_TRAIN_BENCH_SANITIZATION_SECRETS.
+    Duplicates are removed while preserving order."""
+    keys: list[str] = []
+    present, absent = [], []
+    for var in API_KEY_ENV_VARS:
+        value = dotenv.get(var, "")
+        if value:
+            keys.append(value)
+            present.append(var)
+        else:
+            absent.append(var)
+
+    file_secrets = load_sanitization_secrets(dotenv)
+    keys.extend(file_secrets)
+
+    seen = set()
+    deduped = []
+    for k in keys:
+        if k not in seen:
+            seen.add(k)
+            deduped.append(k)
+
+    summary = f"Redaction secrets: {len(present)} named .env var(s)"
+    if absent:
+        summary += f" ({len(absent)} absent: {', '.join(absent)})"
+    summary += (
+        f", {len(file_secrets)} from "
+        f"{dotenv.get('POST_TRAIN_BENCH_SANITIZATION_SECRETS') or '<no secrets file>'}"
+        f" → {len(deduped)} unique"
+    )
+    print(summary)
+    return deduped
 
 _warnings = []
 
@@ -253,14 +340,15 @@ def main():
     parser.add_argument(
         "input_dirs",
         nargs="*",
-        help="Input directory names (relative to RESULTS_BASE) to process. "
-             "Ignored when --all-experiments is given."
+        help="Input directory names (relative to POST_TRAIN_BENCH_RESULTS_DIR) "
+             "to process. Ignored when --all-experiments is given."
     )
     parser.add_argument(
         "--all-experiments",
         action="store_true",
-        help="Process every subdirectory of RESULTS_BASE (subject to --exclude). "
-             "Useful for a full corpus extract without listing experiments by hand."
+        help="Process every subdirectory of POST_TRAIN_BENCH_RESULTS_DIR (subject "
+             "to --exclude). Useful for a full corpus extract without listing "
+             "experiments by hand."
     )
     parser.add_argument(
         "--exclude",
@@ -277,22 +365,26 @@ def main():
     )
     args = parser.parse_args()
 
+    dotenv = load_dotenv()
+    results_base = Path(dotenv.get("POST_TRAIN_BENCH_RESULTS_DIR", "results"))
+    output_base = results_base / ".." / "collected_results"
+
     # Resolve which experiments to process. Either explicit names or
     # --all-experiments + exclusions, but not both.
     excluded = set(args.exclude or [])
     if args.all_experiments:
         if args.input_dirs:
             parser.error("Pass either input_dirs OR --all-experiments, not both.")
-        if not RESULTS_BASE.is_dir():
-            parser.error(f"RESULTS_BASE does not exist: {RESULTS_BASE}")
+        if not results_base.is_dir():
+            parser.error(f"results_base does not exist: {results_base}")
         input_dir_names = sorted(
-            d.name for d in RESULTS_BASE.iterdir()
+            d.name for d in results_base.iterdir()
             if d.is_dir() and d.name not in excluded
         )
         if not input_dir_names:
-            parser.error(f"No experiment directories found under {RESULTS_BASE} "
+            parser.error(f"No experiment directories found under {results_base} "
                          f"after exclusions ({sorted(excluded) or 'none'}).")
-        print(f"Processing {len(input_dir_names)} experiments from {RESULTS_BASE}")
+        print(f"Processing {len(input_dir_names)} experiments from {results_base}")
         if excluded:
             print(f"  (skipping {len(excluded)}: {', '.join(sorted(excluded))})")
     elif args.input_dirs:
@@ -303,8 +395,7 @@ def main():
     else:
         parser.error("Pass one or more input_dirs, or use --all-experiments.")
 
-    output_base = Path(OUTPUT_DIR)
-    api_keys = get_api_keys()
+    api_keys = get_api_keys(dotenv)
     _build_key_regexes(api_keys)   # compile truncation patterns once, not per file
 
     copied_count = 0
@@ -312,7 +403,7 @@ def main():
     missing_count = 0
 
     for input_dir_name in input_dir_names:
-        input_dir = RESULTS_BASE / input_dir_name
+        input_dir = results_base / input_dir_name
 
         if not input_dir.is_dir():
             print(f"  SKIP: {input_dir} does not exist")
