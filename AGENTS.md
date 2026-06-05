@@ -68,6 +68,13 @@ Example structure:
 myagent-cli --model "$AGENT_CONFIG" "$PROMPT"
 ```
 
+**Required: `agents/<agent_name>/api_keys.json`** declares the third-party API keys the agent is
+allowed to receive, e.g. `{"allowed_api_keys": ["CODEX_API_KEY"]}` (use `[]` for subscription-auth
+agents like `codex_non_api`). `run_task.sh` passes ONLY these keys — plus any the benchmark
+requires — into the `--containall` sandbox; every other provider key is never injected (so it is
+unset inside the sandbox). A missing `api_keys.json` is a hard error. See "API Key Provisioning"
+below. With the allowlist in place there is **no** need to `unset`/blank keys inside `solve.sh`.
+
 Currently supported agents include: `claude`, `claude_non_api`, `claude_non_api_max`, `codex`,
 `codex_non_api` (and `_high`, `_xhigh`, `_reprompt`, ...), `codexhigh`, `codexlow`, `gemini`,
 `glm5`, `opencode`, `qwen3max`.
@@ -78,7 +85,10 @@ Currently supported agents include: `claude`, `claude_non_api`, `claude_non_api_
 2. Required files:
    - `evaluate.py` - Evaluation script using Inspect AI framework
    - `benchmark.txt` - Official benchmark name (single line)
-   - `info.json` - Benchmark metadata used by judges/prompt generation
+   - `info.json` - Benchmark metadata used by judges/prompt generation. Add
+     `"required_api_keys": ["OPENAI_API_KEY"]` here if the benchmark's `evaluate.py` needs a
+     provider key for grading (only `arenahardwriting`/`healthbench` do today); the key is then
+     provisioned into the agent sandbox for that benchmark. Defaults to none if omitted.
    - `test_data.json` - Test items used both to compute scores and by the contamination judge
 3. Optional files:
    - `evaluation_code/` - Supporting evaluation code copied into the agent sandbox
@@ -123,6 +133,35 @@ directory, which is always the repo root).
   `$POST_TRAIN_BENCH_CONTAINERS_DIR`
 - **Sandbox layout**: Inside the container, the home is `/home/ben` and the working dir is
   `/home/ben/task`. The agent must place its trained checkpoint at `task/final_model/`.
+
+## API Key Provisioning
+
+The agent sandbox is launched by `run_task.sh` with `apptainer --containall`, so it inherits
+**nothing** from the host environment — a variable exists inside the sandbox only if an explicit
+`--env` flag passes it. `run_task.sh` builds that `--env` list from an allowlist, so the policy is
+declarative and lives in two places:
+
+- **`agents/<agent>/api_keys.json`** → `{"allowed_api_keys": [...]}` — the provider keys this agent
+  is permitted to use (e.g. `["ANTHROPIC_API_KEY"]`, `["CODEX_API_KEY"]`, or `[]` for
+  subscription-auth agents).
+- **`src/eval/tasks/<task>/info.json`** → `"required_api_keys": [...]` — keys the benchmark's own
+  grading needs (only `arenahardwriting`/`healthbench`, which need `OPENAI_API_KEY`).
+
+The sandbox receives exactly the **union** of the two. Consequences:
+
+- `OPENAI_API_KEY` reaches an agent **only** when it runs `arenahardwriting`/`healthbench`, so the
+  agent can run `evaluate.py`'s OpenAI judge; for every other benchmark it is absent.
+- Subscription-auth agents (`*_non_api`) list `[]` and authenticate via their bind-mounted
+  `auth.json`/`oauth_token`; on the two writing benchmarks they additionally receive
+  `OPENAI_API_KEY` purely for grading.
+- `solve.sh` scripts must NOT `unset`/blank keys — the allowlist already withholds them. Genuine
+  per-agent logic stays (e.g. `glm5`/`qwen3max` remap their provider key into `ANTHROPIC_API_KEY`;
+  `codex_non_api` sets `forced_login_method`).
+- The host-side `CODEX_API_KEY`/`OPENAI_API_KEY` setup (renaming the OpenAI key for codex agents and
+  restoring `OPENAI_API_KEY` for the two writing benchmarks) lives near the top of `run_task.sh`.
+
+Note: `VLLM_API_KEY` (the local inspect/vLLM eval server) is operational, not a third-party key, and
+is always passed as the constant `inspectai`; it is not part of the allowlist.
 
 ## Safety Mechanisms
 

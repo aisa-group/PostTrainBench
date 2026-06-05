@@ -1,6 +1,4 @@
 #!/bin/bash
-unset ANTHROPIC_API_KEY
-unset GEMINI_API_KEY
 
 # Set reasoning effort to xhigh (prepend to ensure precedence)
 file=/home/ben/.codex/config.toml

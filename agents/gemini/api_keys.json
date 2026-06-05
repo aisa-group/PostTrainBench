@@ -1,0 +1,5 @@
+{
+  "allowed_api_keys": [
+    "GEMINI_API_KEY"
+  ]
+}

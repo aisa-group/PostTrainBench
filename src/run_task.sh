@@ -68,6 +68,38 @@ if [ "$EVALUATION_TASK" == "arenahardwriting" ] || [ "$EVALUATION_TASK" == "heal
     export OPENAI_API_KEY="${CODEX_API_KEY}"
 fi
 
+# --- API key allowlist ----------------------------------------------------
+# Each agent declares the third-party API keys it may receive in
+# agents/<agent>/api_keys.json; each benchmark declares the keys its grading
+# needs in src/eval/tasks/<task>/info.json ("required_api_keys", default none).
+# The agent sandbox is launched with --containall, so it inherits NOTHING from
+# the host: it receives ONLY the union of those two sets via --env (built into
+# API_KEY_ENV_ARGS below). Every other provider key is never passed in, hence
+# unset inside the sandbox. OPENAI_API_KEY thus reaches the agent only for the
+# arenahardwriting/healthbench benchmarks (which list it in required_api_keys).
+if ! ALLOWED_API_KEYS_RAW="$(python3 -c '
+import json, sys
+agent_keys = json.load(open(sys.argv[1]))["allowed_api_keys"]
+bench = json.load(open(sys.argv[2]))
+seen, out = set(), []
+for k in list(agent_keys) + bench.get("required_api_keys", []):
+    if k not in seen:
+        seen.add(k); out.append(k)
+print("\n".join(out))
+' "agents/${AGENT}/api_keys.json" "src/eval/tasks/${EVALUATION_TASK}/info.json")"; then
+    echo "ERROR: failed to compute API key allowlist for agent=${AGENT} task=${EVALUATION_TASK}" >&2
+    exit 1
+fi
+
+ALLOWED_API_KEYS=()
+[ -n "$ALLOWED_API_KEYS_RAW" ] && mapfile -t ALLOWED_API_KEYS <<< "$ALLOWED_API_KEYS_RAW"
+
+API_KEY_ENV_ARGS=()
+for _k in "${ALLOWED_API_KEYS[@]}"; do
+    API_KEY_ENV_ARGS+=(--env "${_k}=${!_k}")
+done
+echo "API keys provisioned for agent=${AGENT} task=${EVALUATION_TASK}: ${ALLOWED_API_KEYS[*]:-<none>}"
+
 # Copy scripts needed inside the container
 cp src/utils/check_cuda.py "${JOB_DIR}/check_cuda.py"
 cp src/utils/check_cuda_writing.py "${JOB_DIR}/check_cuda_writing.py"
@@ -133,12 +165,7 @@ solve_task() {
         --containall \
         --env PATH="/root/.local/bin:/home/ben/.local/bin:$PATH" \
         --env HF_HOME="${HF_HOME_NEW}" \
-        --env ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}" \
-        --env CODEX_API_KEY="${CODEX_API_KEY}" \
-        --env GEMINI_API_KEY="${GEMINI_API_KEY}" \
-        --env OPENCODE_API_KEY="${OPENCODE_API_KEY}" \
-        --env DASHSCOPE_API_KEY="${DASHSCOPE_API_KEY}" \
-        --env ZAI_API_KEY="${ZAI_API_KEY}" \
+        "${API_KEY_ENV_ARGS[@]}" \
         --env VLLM_API_KEY="inspectai" \
         --env PYTHONNOUSERSITE="1" \
         --env NUM_GPUS="${NUM_GPUS}" \

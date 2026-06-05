@@ -1,9 +1,4 @@
 #!/bin/bash
-unset GEMINI_API_KEY
-unset CODEX_API_KEY
-
-# Clear API key so the CLI uses the OAuth token from subscription
-export ANTHROPIC_API_KEY=""
 
 # Load OAuth token from file (copied by run_task.sh)
 if [ -f /home/ben/oauth_token ]; then
