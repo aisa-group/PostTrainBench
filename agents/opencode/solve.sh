@@ -42,4 +42,4 @@ cat > opencode.json << 'EOF'
 }
 EOF
 
-opencode run --model "$AGENT_CONFIG" --format json "$PROMPT"
+printf '%s' "$PROMPT" | opencode run --model "$AGENT_CONFIG" --format json

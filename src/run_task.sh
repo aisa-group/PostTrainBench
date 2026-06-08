@@ -123,6 +123,8 @@ solve_task() {
     apptainer exec \
         --nv \
         -c \
+        --pid \
+        --no-init \
         --env PATH="/root/.local/bin:/home/ben/.local/bin:$PATH" \
         --env HF_HOME="${HF_HOME_NEW}" \
         --env ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}" \
