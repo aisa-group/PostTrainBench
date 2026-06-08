@@ -7,8 +7,9 @@ MIN_REMAINING_MINUTES=30
 # Auto-update the CLI harness to the latest release and record its version.
 bash /home/ben/update_agent_cli.sh claude
 
-claude --print --verbose --model "$AGENT_CONFIG" --output-format stream-json \
-    --dangerously-skip-permissions "$PROMPT"
+printf '%s' "$PROMPT" | claude --print --verbose --model "$AGENT_CONFIG" \
+    --output-format stream-json --thinking-display summarized \
+    --dangerously-skip-permissions
 
 # Re-prompt loop: if the agent finishes early, resume the session
 while true; do
@@ -27,6 +28,7 @@ while true; do
 
     CONTINUATION_PROMPT="You still have ${REMAINING_HOURS}h ${REMAINING_MINS}m remaining. Please continue improving your result and maximize performance."
 
-    claude --print --verbose --continue --model "$AGENT_CONFIG" --output-format stream-json \
-        --dangerously-skip-permissions "$CONTINUATION_PROMPT"
+    printf '%s' "$CONTINUATION_PROMPT" | claude --print --verbose --continue --model "$AGENT_CONFIG" \
+        --output-format stream-json --thinking-display summarized \
+        --dangerously-skip-permissions
 done

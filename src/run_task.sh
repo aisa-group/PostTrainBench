@@ -72,7 +72,7 @@ fi
 # Each agent declares the third-party API keys it may receive in
 # agents/<agent>/api_keys.json; each benchmark declares the keys its grading
 # needs in src/eval/tasks/<task>/info.json ("required_api_keys", default none).
-# The agent sandbox is launched with --containall, so it inherits NOTHING from
+# The agent sandbox is launched with -c --cleanenv, so it inherits NOTHING from
 # the host: it receives ONLY the union of those two sets via --env (built into
 # API_KEY_ENV_ARGS below). Every other provider key is never passed in, hence
 # unset inside the sandbox. OPENAI_API_KEY thus reaches the agent only for the
@@ -163,7 +163,10 @@ solve_task() {
     timeout --signal=TERM --kill-after=30s "$((NUM_HOURS * 60 + 5))m" \
     apptainer exec \
         --nv \
-        --containall \
+        -c \
+        --cleanenv \
+        --pid \
+        --no-init \
         --env PATH="/root/.local/bin:/home/ben/.local/bin:$PATH" \
         --env HF_HOME="${HF_HOME_NEW}" \
         "${API_KEY_ENV_ARGS[@]}" \

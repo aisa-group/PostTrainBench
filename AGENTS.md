@@ -79,7 +79,7 @@ myagent-cli --model "$AGENT_CONFIG" "$PROMPT"
 **Required: `agents/<agent_name>/api_keys.json`** declares the third-party API keys the agent is
 allowed to receive, e.g. `{"allowed_api_keys": ["CODEX_API_KEY"]}` (use `[]` for subscription-auth
 agents like `codex_non_api`). `run_task.sh` passes ONLY these keys — plus any the benchmark
-requires — into the `--containall` sandbox; every other provider key is never injected (so it is
+requires — into the `-c --cleanenv` sandbox; every other provider key is never injected (so it is
 unset inside the sandbox). A missing `api_keys.json` is a hard error. See "API Key Provisioning"
 below. With the allowlist in place there is **no** need to `unset`/blank keys inside `solve.sh`.
 
@@ -144,8 +144,9 @@ directory, which is always the repo root).
 
 ## API Key Provisioning
 
-The agent sandbox is launched by `run_task.sh` with `apptainer --containall`, so it inherits
-**nothing** from the host environment — a variable exists inside the sandbox only if an explicit
+The agent sandbox is launched by `run_task.sh` with `apptainer -c --cleanenv` (plus `--pid
+--no-init`), so it inherits **nothing** from the host environment — a variable exists inside the
+sandbox only if an explicit
 `--env` flag passes it. `run_task.sh` builds that `--env` list from an allowlist, so the policy is
 declarative and lives in two places:
 

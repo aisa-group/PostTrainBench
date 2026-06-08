@@ -22,5 +22,5 @@ echo "DEBUG: ANTHROPIC_MODEL=${ANTHROPIC_MODEL}"
 # Auto-update the CLI harness to the latest release and record its version.
 bash /home/ben/update_agent_cli.sh claude
 
-claude --print --verbose --model "$AGENT_CONFIG" --output-format stream-json \
-    --dangerously-skip-permissions "$PROMPT"
+printf '%s' "$PROMPT" | claude --print --verbose --model "$AGENT_CONFIG" \
+    --output-format stream-json --dangerously-skip-permissions
