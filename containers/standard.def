@@ -1,9 +1,11 @@
 Bootstrap: docker
 From: nvidia/cuda:12.9.1-cudnn-devel-ubuntu22.04
 
+%files
+    containers/requirements-direct.txt /opt/requirements-direct.txt
+
 %post
     chmod 1777 /tmp
-    # Set environment variables
     export DEBIAN_FRONTEND=noninteractive
 
     # Update and install system dependencies
@@ -19,56 +21,35 @@ From: nvidia/cuda:12.9.1-cudnn-devel-ubuntu22.04
     # Create python3 symlink
     ln -sf /usr/bin/python3.10 /usr/bin/python3
     ln -sf /usr/bin/python3.10 /usr/bin/python
-    
+
     # Install Node.js (LTS version 22.x) for npm
     curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
     apt-get install -y nodejs
-    
+
     # Install uv
     curl -LsSf https://astral.sh/uv/install.sh | sh
     export PATH="/root/.local/bin:$PATH"
-    
+
+    # 1) vllm first (controls torch/CUDA versions)
     uv pip install --system --no-cache vllm==0.11.0 --torch-backend=auto
-    
-    # Install AI CLI tools via npm
-    npm install -g \
-        @anthropic-ai/claude-code@2.0.55 \
-        @openai/codex@0.79.0 \
-        @google/gemini-cli@0.18.4 \
-        opencode-ai@1.1.59
 
-    uv pip install --system --no-cache ninja packaging
-    
-    # Install the required packages
-    uv pip install --system --no-cache \
-        accelerate \
-        boto3 \
-        bitsandbytes \
-        datasets \
-        evaluate \
-        lm-eval \
-        openai \
-        pandas \
-        scikit-learn \
-        shortuuid \
-        tokenizers \
-        transformers \
-        trl \
-        peft \
-        tiktoken \
-        inspect-ai \
-        matplotlib \
-        certifi
+    # 2) Pinned direct dependencies
+    uv pip install --system --no-cache -r /opt/requirements-direct.txt
 
-    uv pip install --system --no-cache flash_attn --no-build-isolation
-    
-    # install inspect evals
+    # 3) flash-attn (needs no-build-isolation)
+    uv pip install --system --no-cache flash-attn==2.8.3 --no-build-isolation
+
+    # 4) AI CLI tools via npm (only for the judge, the other ones are installed in solve.sh)
+    npm install -g @openai/codex@0.137.0
+
+    # 5) inspect_evals from source (pinned commit)
     mkdir -p /opt
     cd /opt
-    git clone --depth=1 https://github.com/UKGovernmentBEIS/inspect_evals.git
+    git clone https://github.com/UKGovernmentBEIS/inspect_evals.git
     cd /opt/inspect_evals
+    git checkout 06001a83e6d7c709c2ede0570dce7f1031a0bad8
     uv pip install --system --no-cache .
-    
+
 %environment
     export PATH="/root/.local/bin:$PATH"
     export NO_PROXY="localhost,127.0.0.1"
@@ -78,8 +59,8 @@ From: nvidia/cuda:12.9.1-cudnn-devel-ubuntu22.04
     exec python3 "$@"
 
 %labels
-    Version v1.0
-    Description Python ML container with CUDA support for transformers and LLM training (using uv) + AI CLI tools
+    Version v1.1
+    Description Python ML container with CUDA support for transformers and LLM training (using uv) + AI CLI tools - pinned dependencies
 
 %help
     Note: Use the --nv flag to enable NVIDIA GPU support when running the container.

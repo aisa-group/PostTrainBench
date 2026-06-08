@@ -42,6 +42,7 @@ PostTrainBench/
 | `src/eval/general/get_prompt.py` | Generates agent prompts |
 | `src/eval/general/prompt.txt` | Agent prompt template |
 | `src/trace_parsing/parse_trace.py` | Dispatches to per-agent parser to produce human-readable trace |
+| `src/utils/update_agent_cli.sh` | Auto-updates an agent's CLI harness to latest and records its version |
 | `src/disallowed_usage_judge/run_judge.sh` | Runs both judges (GPT-5.4 contamination, GPT-5.4 API); each writes its own per-judge JSON |
 | `src/disallowed_usage_judge/get_judge_prompt.py` | Generates judge prompts (`--kind api` for API judge) |
 | `containers/standard.def` | Main container definition (other `.def` files exist per-agent) |
@@ -60,6 +61,13 @@ PostTrainBench/
    `parse_trace.py` so `solve_parsed.txt` is human-readable.
 6. If the agent needs persistent OAuth state (e.g. `codex_non_api`), drop an `auth.json` or
    `oauth_token` next to `solve.sh`; `run_task.sh` bind-mounts them into the sandbox.
+7. Auto-update the CLI harness: call `bash /home/ben/update_agent_cli.sh <cli-binary>` in
+   `solve.sh` just before launching the CLI (e.g. `... update_agent_cli.sh claude`). This upgrades
+   the harness to the latest npm release and writes its version to `cli_version.txt` (surfaced in
+   the result dir). The helper (`src/utils/update_agent_cli.sh`, copied into the sandbox by
+   `run_task.sh`) holds the binary→npm-package mapping; add a `case` entry there if the agent uses
+   a CLI not already covered (`claude`, `codex`, `gemini`, `opencode`). The update is best-effort —
+   a failure falls back to the container's pinned version and still records what actually ran.
 
 Example structure:
 ```bash
@@ -200,6 +208,7 @@ results/{agent}_{agent_config}_{num_hours}h[_{num_gpus}gpu]{experiment_name}/
     ├── time_taken.txt           # Agent execution duration (HH:MM:SS)
     ├── solve_out.txt            # Raw agent trace (stdout+stderr from the agent CLI)
     ├── solve_parsed.txt         # Human-readable trace from src/trace_parsing/parse_trace.py
+    ├── cli_version.txt          # Auto-updated agent CLI harness version (src/utils/update_agent_cli.sh)
     ├── task/                    # Snapshot of the agent's working directory (post-cleanup)
     ├── final_model/             # Trained model checkpoint
     ├── system_monitor.log       # GPU/CPU/RAM samples from src/utils/system_monitor.sh

@@ -105,6 +105,7 @@ cp src/utils/check_cuda.py "${JOB_DIR}/check_cuda.py"
 cp src/utils/check_cuda_writing.py "${JOB_DIR}/check_cuda_writing.py"
 cp src/utils/system_monitor.sh "${JOB_DIR}/system_monitor.sh"
 cp src/utils/timestamp_lines.py "${JOB_DIR}/timestamp_lines.py"
+cp src/utils/update_agent_cli.sh "${JOB_DIR}/update_agent_cli.sh"
 cp "agents/${AGENT}/solve.sh" "${JOB_DIR}/agent_solve.sh"
 
 # Agent-specific auth: auth.json is bind-mounted at apptainer exec time so the
@@ -206,6 +207,16 @@ echo "disk_job_dir: $(du -sh "${JOB_DIR}" 2>/dev/null | cut -f1)"
 echo "disk_tmp: $(du -sh "${JOB_TMP}" 2>/dev/null | cut -f1)"
 echo "memory: $(free -m 2>/dev/null | grep Mem | awk '{print "total=" $2 "MB used=" $3 "MB free=" $4 "MB"}')"
 echo "--- END SOLVE DIAGNOSTICS ---"
+
+# Record the (auto-updated) agent CLI version captured by update_agent_cli.sh.
+if [ -f "${JOB_DIR}/cli_version.txt" ]; then
+    cp "${JOB_DIR}/cli_version.txt" "${EVAL_DIR}/cli_version.txt"
+    echo "--- AGENT CLI VERSION ---"
+    cat "${EVAL_DIR}/cli_version.txt"
+    echo "--- END AGENT CLI VERSION ---"
+else
+    echo "WARNING: ${JOB_DIR}/cli_version.txt not found (agent CLI version not recorded)" >&2
+fi
 
 echo "============================================"
 echo "=== TASK COMPLETE, PARSING AGENT TRACE ==="

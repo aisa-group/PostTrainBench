@@ -42,4 +42,7 @@ cat > opencode.json << 'EOF'
 }
 EOF
 
+# Auto-update the CLI harness to the latest release and record its version.
+bash /home/ben/update_agent_cli.sh opencode
+
 opencode run --model "$AGENT_CONFIG" --format json "$PROMPT"
