@@ -101,13 +101,17 @@ API_RETRY_SLEEP = 2
 
 
 def get_client() -> OpenAI:
-    """Get OpenAI client."""
-    api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        raise EnvironmentError(
-            "OPENAI_API_KEY is not set. Please export your OpenAI API key."
-        )
-    return OpenAI(api_key=api_key)
+    """Get the judge client."""
+    openai_key = os.environ.get("OPENAI_API_KEY")
+    if openai_key:
+        return OpenAI(api_key=openai_key)
+    openrouter_key = os.environ.get("OPENROUTER_API_KEY")
+    if openrouter_key:
+        return OpenAI(api_key=openrouter_key, base_url="https://openrouter.ai/api/v1")
+    raise EnvironmentError(
+        "Neither OPENAI_API_KEY nor OPENROUTER_API_KEY is set. "
+        "Please export one of them before running."
+    )
 
 
 def set_rate_limit(max_concurrent: int = 50):

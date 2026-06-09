@@ -10,6 +10,21 @@ NUM_GPUS="${7:-1}"
 
 source src/commit_utils/set_env_vars.sh
 
+# Select the judge backend for grader-based benchmarks (arenahardwriting / healthbench):
+# default to the OpenAI-backed evaluate.py, but fall back to the OpenRouter variant when
+# .env provides OPENROUTER_API_KEY but no OPENAI_API_KEY.
+JUDGE_BACKEND="openai"
+if { [ "$EVALUATION_TASK" = "arenahardwriting" ] || [ "$EVALUATION_TASK" = "healthbench" ]; } \
+   && [ -z "${OPENAI_API_KEY}" ] && [ -n "${OPENROUTER_API_KEY}" ]; then
+    JUDGE_BACKEND="openrouter"
+fi
+
+if [ "$JUDGE_BACKEND" = "openrouter" ]; then
+    export EVAL_SCRIPT="evaluate_openrouter.py"
+else
+    export EVAL_SCRIPT="evaluate.py"
+fi
+
 RESULT_PREFIX_SAFE=$(echo "$MODEL_TO_TRAIN" | tr '/:[]' '____')
 
 AGENT_CONFIG_SAFE=$(echo "$AGENT_CONFIG" | tr '/:[]' '____')
@@ -29,6 +44,7 @@ exec 1>${EVAL_DIR}/output.log
 exec 2>${EVAL_DIR}/error.log
 
 echo "$@"
+echo "Judge backend: ${JUDGE_BACKEND} (eval script: ${EVAL_SCRIPT})"
 
 export TMP_SUBDIR="/tmp/posttrain_container_${EVALUATION_TASK}_${RESULT_PREFIX_SAFE}_${RANDOM_UUID}"
 
@@ -44,7 +60,7 @@ mkdir -p "${JOB_DIR}"
 
 mkdir "${JOB_DIR}/task"
 
-cp "src/eval/tasks/${EVALUATION_TASK}/evaluate.py" "${JOB_DIR}/task"
+cp "src/eval/tasks/${EVALUATION_TASK}/${EVAL_SCRIPT}" "${JOB_DIR}/task/evaluate.py"
 if [ -d "src/eval/tasks/${EVALUATION_TASK}/evaluation_code" ]; then
     cp -r "src/eval/tasks/${EVALUATION_TASK}/evaluation_code" "${JOB_DIR}/task"
 fi
@@ -93,6 +109,10 @@ fi
 
 ALLOWED_API_KEYS=()
 [ -n "$ALLOWED_API_KEYS_RAW" ] && mapfile -t ALLOWED_API_KEYS <<< "$ALLOWED_API_KEYS_RAW"
+
+if [ "$JUDGE_BACKEND" = "openrouter" ]; then
+    ALLOWED_API_KEYS+=("OPENROUTER_API_KEY")
+fi
 
 API_KEY_ENV_ARGS=()
 for _k in "${ALLOWED_API_KEYS[@]}"; do
@@ -364,13 +384,14 @@ run_evaluation() {
         --nv \
         --env "HF_HOME=${TMP_HF_CACHE}" \
         --env OPENAI_API_KEY="${OPENAI_API_KEY}" \
+        --env OPENROUTER_API_KEY="${OPENROUTER_API_KEY}" \
         --env VLLM_API_KEY="inspectai" \
         --env PYTHONNOUSERSITE="1" \
         --writable-tmpfs \
         --bind "${REPO_ROOT}:${REPO_ROOT}" \
         --bind "${HF_MERGED}:${TMP_HF_CACHE}" \
         --pwd "$(pwd)/src/eval/tasks/${EVALUATION_TASK}" \
-        ${POST_TRAIN_BENCH_CONTAINERS_DIR}/vllm_debug.sif python "evaluate.py" \
+        ${POST_TRAIN_BENCH_CONTAINERS_DIR}/vllm_debug.sif python "${EVAL_SCRIPT}" \
             --model-path "$EVAL_DIR/final_model" \
             --templates-dir ../../../../src/eval/templates \
             --limit -1 \
