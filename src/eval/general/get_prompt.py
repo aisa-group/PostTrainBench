@@ -58,7 +58,7 @@ def main():
 
     result = result.replace('{datetime}', datetime)
 
-    if args.agent == 'claude':
+    if 'claude' in args.agent:
         result += """
 You are running in a non-interactive mode. So make sure every process you are running finishes before you write your last message.
 """
