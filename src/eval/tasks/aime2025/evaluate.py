@@ -10,7 +10,7 @@ from inspect_ai.log._log import EvalLog, EvalMetric, EvalSample
 from inspect_ai import eval as inspect_eval  # type: ignore  # noqa: E402
 from inspect_ai.util._display import init_display_type  # noqa: E402
 
-import inspect_evals.aime2025  # noqa: F401, E402  (registers task definitions)
+from task import aime2025
 
 
 def parse_args() -> argparse.Namespace:
@@ -67,14 +67,13 @@ def main() -> None:
     if (args.limit is not None) and (args.limit != -1):
         other_kwargs["limit"] = args.limit
 
-    task = "inspect_evals/aime2025"  
     model_args = {
         'gpu_memory_utilization': args.gpu_memory_utilization,
     }
     model_args.update(template_kwargs(args))
 
     eval_out = inspect_eval(
-        task,
+        aime2025(),
         model=f"vllm/{args.model_path}",
         model_args=model_args,
         score_display=False,
