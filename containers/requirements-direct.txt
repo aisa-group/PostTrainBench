@@ -19,3 +19,13 @@ trl==0.27.2
 ninja==1.13.0
 packaging==26.0
 huggingface-hub==0.36.0
+# Pin fastapi below 0.137.0. vLLM 0.11.0 declares `fastapi[standard]>=0.115.0` with no
+# upper bound, so it floats to 0.137.x. FastAPI 0.137.0's router refactor puts
+# `_IncludedRouter` (a BaseRoute subclass with no `.path`) into app.routes, which makes
+# vLLM's prometheus-fastapi-instrumentator middleware crash (`route.path` ->
+# AttributeError: '_IncludedRouter' object has no attribute 'path') and return HTTP 500
+# on EVERY request — hanging inspect_ai's GET /v1/models health-check poll (model loads
+# into VRAM, eval never starts). 0.136.0 is the last release before the refactor; it
+# needs starlette>=0.46.0 (satisfied) and >=0.115.0 (satisfies vLLM). Installed after
+# vllm so it downgrades 0.137.x -> 0.136.0.
+fastapi==0.136.0
