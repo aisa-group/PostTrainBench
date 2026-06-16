@@ -44,6 +44,36 @@ BENCHMARKS = {
         setup_note="- A final note: the evaluate.py script sometimes outputs ERROR warnings. "
                    "Do not be alarmed by this, this is normal behavior for inspect-ai.\n"
     ),
+    "ds1000": BenchmarkInfo(
+        task_id="ds1000",
+        benchmark_name="DS-1000",
+        setup_note="- A final note: the evaluate.py script sometimes outputs ERROR warnings. "
+                   "Do not be alarmed by this, this is normal behavior for inspect-ai.\n"
+    ),
+    "frontierscience": BenchmarkInfo(
+        task_id="frontierscience",
+        benchmark_name="FrontierScience",
+        setup_note="- A final note: the evaluate.py script sometimes outputs ERROR warnings. "
+                   "Do not be alarmed by this, this is normal behavior for inspect-ai.\n"
+    ),
+    "dabstep": BenchmarkInfo(
+        task_id="dabstep",
+        benchmark_name="DABstep",
+        setup_note="- A final note: the evaluate.py script sometimes outputs ERROR warnings. "
+                   "Do not be alarmed by this, this is normal behavior for inspect-ai.\n"
+    ),
+    "kernelbench": BenchmarkInfo(
+        task_id="kernelbench",
+        benchmark_name="KernelBench",
+        setup_note="- A final note: the evaluate.py script sometimes outputs ERROR warnings. "
+                   "Do not be alarmed by this, this is normal behavior for inspect-ai.\n"
+    ),
+    "preflight": BenchmarkInfo(
+        task_id="preflight",
+        benchmark_name="Pre-Flight",
+        setup_note="- A final note: the evaluate.py script sometimes outputs ERROR warnings. "
+                   "Do not be alarmed by this, this is normal behavior for inspect-ai.\n"
+    ),
     "aime2025": BenchmarkInfo(
         task_id="aime2025",
         benchmark_name="AIME 2025",
