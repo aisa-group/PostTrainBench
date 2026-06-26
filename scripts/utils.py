@@ -339,31 +339,44 @@ def load_disallowed_model(disallowed_path: str):
         return "IMPORTANT ERR"
 
 
-def combine_contamination_results(contamination, disallowed_model) -> str:
+def load_api_synthetic_data(api_synthetic_data_path: str):
+    """Return True, False, "IMPORTANT ERR", or "ERR"."""
+    if not os.path.exists(api_synthetic_data_path):
+        return "ERR"
+    try:
+        with open(api_synthetic_data_path, "r") as f:
+            content = f.read().strip()
+    except Exception:
+        return "ERR"
+    if content == "disallowed use detected":
+        return True
+    elif content == "only allowed use detected":
+        return False
+    else:
+        return "IMPORTANT ERR"
+
+
+def combine_contamination_results(
+    contamination, disallowed_model, api_synthetic_data
+) -> str:
     """
     Combine contamination and disallowed model results into a cell value.
 
-    Returns "" (clean), "C", "M", "MC", or an error string.
+    Returns "" (clean), any combination of "C", "M", "A", or an error string.
     """
-    if contamination in ("ERR", "IMPORTANT ERR") or disallowed_model in (
-        "ERR",
-        "IMPORTANT ERR",
-    ):
+    results = {
+        "C": contamination,
+        "M": disallowed_model,
+        "A": api_synthetic_data,
+    }
+    if any(value in ("ERR", "IMPORTANT ERR") for value in results.values()):
         errors = []
-        if contamination in ("ERR", "IMPORTANT ERR"):
-            errors.append(f"C:{contamination}")
-        if disallowed_model in ("ERR", "IMPORTANT ERR"):
-            errors.append(f"M:{disallowed_model}")
+        for label, value in results.items():
+            if value in ("ERR", "IMPORTANT ERR"):
+                errors.append(f"{label}:{value}")
         return " ".join(errors)
 
-    if disallowed_model and contamination:
-        return "MC"
-    elif disallowed_model and not contamination:
-        return "M"
-    elif not disallowed_model and contamination:
-        return "C"
-    else:
-        return ""
+    return "".join(label for label, value in results.items() if value)
 
 
 # ---------------------------------------------------------------------------

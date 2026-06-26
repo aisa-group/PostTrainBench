@@ -75,6 +75,8 @@ Currently, we only support the HTCondor job scheduler. [Harbor](https://github.c
 
 Most agents authenticate via API keys set as environment variables (e.g., `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`). These are passed into the container automatically by `run_task.sh`. Set them in your environment before running `commit.sh`.
 
+These credentials are for running the agent scaffold and for official evaluation scripts that explicitly require an API key. Across all tasks, agents must not use hosted model APIs or subscription-based model services to generate synthetic training data, labels, solutions, reasoning traces, preference data, or other teacher outputs for training. It is allowed to download publicly available model weights from sources such as Hugging Face, run those models locally, and use local inference to generate synthetic data, as long as the task's benchmark-data and model-use rules are still followed.
+
 #### Subscription-based agents (non-API)
 
 Some models are only available through CLI subscriptions rather than API keys (e.g., GPT-5.3-Codex via ChatGPT Pro). These agents require separate authentication setup.

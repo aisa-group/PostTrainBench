@@ -26,6 +26,7 @@ from utils import (
     load_metrics,
     load_contamination,
     load_disallowed_model,
+    load_api_synthetic_data,
     combine_contamination_results,
     load_time_taken,
     is_number,
@@ -92,8 +93,11 @@ def collect_method(
             disallowed = load_disallowed_model(
                 os.path.join(run_dir, "disallowed_model_judgement.txt")
             )
+            api_synthetic_data = load_api_synthetic_data(
+                os.path.join(run_dir, "api_synthetic_data_judgement.txt")
+            )
             contamination_grid[model][bench] = combine_contamination_results(
-                contamination, disallowed
+                contamination, disallowed, api_synthetic_data
             )
 
             # Time

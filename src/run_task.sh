@@ -217,6 +217,7 @@ python agents/codex/human_readable_trace.py "${EVAL_DIR}/judge_output.json" -o "
 
 cp "${JOB_DIR}/task/contamination_judgement.txt" "${EVAL_DIR}/contamination_judgement.txt"
 cp "${JOB_DIR}/task/disallowed_model_judgement.txt" "${EVAL_DIR}/disallowed_model_judgement.txt"
+cp "${JOB_DIR}/task/api_synthetic_data_judgement.txt" "${EVAL_DIR}/api_synthetic_data_judgement.txt"
 
 echo "============================="
 echo "======== CLEANING UP ========"
