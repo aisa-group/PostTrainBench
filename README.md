@@ -69,6 +69,10 @@ export GEMINI_API_KEY="your-key"
 bash src/commit_utils/commit.sh
 ```
 
+For cloud GPU environments that run workloads directly in Docker and do not
+expose Apptainer/Singularity, see the Docker-native image build in
+[`containers/docker`](containers/docker/README.md).
+
 Currently, we only support the HTCondor job scheduler. [Harbor](https://github.com/harbor-framework/harbor) support is planned.
 
 #### API-based agents
