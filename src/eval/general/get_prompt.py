@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -19,6 +20,18 @@ def read_benchmark_name(benchmark_id: str) -> str:
     if not bench_file.is_file():
         raise FileNotFoundError(f"Benchmark file not found for id '{benchmark_id}': {bench_file}")
     return bench_file.read_text(encoding="utf-8").strip()
+
+def read_required_api_keys(benchmark_id: str) -> list[str]:
+    """Read the benchmark's required third-party API keys from info.json.
+
+    These keys are provisioned into the agent sandbox solely so the benchmark's
+    own grading (evaluate.py) can run. Defaults to none if the field is absent.
+    """
+    info_file = Path("src/eval/tasks") / benchmark_id / "info.json"
+    if not info_file.is_file():
+        raise FileNotFoundError(f"Info file not found for id '{benchmark_id}': {info_file}")
+    info = json.loads(info_file.read_text(encoding="utf-8"))
+    return info.get("required_api_keys", [])
 
 def main():
     parser = argparse.ArgumentParser()
@@ -55,6 +68,18 @@ def main():
         result = result.replace('{setup_other}', "- A final note: the evaluate.py script sometimes outputs ERROR warnings. Do not be alarmed by this, this is normal behavior for inspect-ai. Also if you run into issues with the evaluate.py script, this is likely due to memory constraints on the GPU. In this case please decrease --max-connections or --max-tokens.\n")
     else:
         result = result.replace('{setup_other}', "")
+
+    required_api_keys = read_required_api_keys(args.benchmark_id)
+    if required_api_keys:
+        keys_str = ", ".join(f"\\`{k}\\`" for k in required_api_keys)
+        result = result.replace('{api_usage_note}', (
+            f"8. For grading this benchmark you are provided with third-party LLM API access "
+            f"(via the {keys_str} environment variable). This API access is provided ONLY for "
+            f"running the evaluation, i.e. grading model outputs through evaluate.py. You must NOT "
+            f"use it to generate training data or for any other purpose.\n"
+        ))
+    else:
+        result = result.replace('{api_usage_note}', "")
 
     result = result.replace('{datetime}', datetime)
 
