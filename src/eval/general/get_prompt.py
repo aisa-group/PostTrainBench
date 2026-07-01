@@ -33,19 +33,6 @@ def read_required_api_keys(benchmark_id: str) -> list[str]:
     info = json.loads(info_file.read_text(encoding="utf-8"))
     return info.get("required_api_keys", [])
 
-def read_agent_api_keys(agent: str) -> list[str]:
-    """Read the agent's own allowed third-party API keys from api_keys.json.
-
-    These keys are injected into the sandbox to authenticate the agent's own CLI
-    harness (e.g. `ZAI_API_KEY` for the z.ai agents). They are the model powering
-    the agent, so the agent must not use them to call the API directly.
-    """
-    keys_file = Path("agents") / agent / "api_keys.json"
-    if not keys_file.is_file():
-        raise FileNotFoundError(f"api_keys.json not found for agent '{agent}': {keys_file}")
-    data = json.loads(keys_file.read_text(encoding="utf-8"))
-    return data["allowed_api_keys"]
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--agent', type=str, required=True)
@@ -82,36 +69,24 @@ def main():
     else:
         result = result.replace('{setup_other}', "")
 
-    # Build any API-usage rules that continue the numbering of the base rules
-    # (the template hard-codes rules 1-7, so extras start at 8).
-    extra_rules = []
-
+    # The template's rule 8 is a general prohibition on using any environment API
+    # key to call an external LLM API directly. Benchmarks whose own grading needs a
+    # provider key (e.g. OPENAI_API_KEY for healthbench/arenahardwriting) get a rule 9
+    # carving out that key as an exception, permitted for evaluation only.
     required_api_keys = read_required_api_keys(args.benchmark_id)
     if required_api_keys:
         keys_str = ", ".join(f"\\`{k}\\`" for k in required_api_keys)
-        extra_rules.append(
-            f"For grading this benchmark you are provided with third-party LLM API access "
-            f"(via the {keys_str} environment variable). This API access is provided ONLY for "
-            f"running the evaluation, i.e. grading model outputs through evaluate.py. You must NOT "
-            f"use it to generate training data or for any other purpose."
-        )
-
-    agent_api_keys = read_agent_api_keys(args.agent)
-    if agent_api_keys:
-        keys_str = ", ".join(f"\\`{k}\\`" for k in agent_api_keys)
-        var_word = "variable" if len(agent_api_keys) == 1 else "variables"
-        extra_rules.append(
-            f"You are provided with API access (via the {keys_str} environment {var_word}) that "
-            f"powers you, the agent. You must NOT use these keys to call the API directly (for "
-            f"example, to query a large model in order to generate training data). Generating "
-            f"training data yourself by other means is of course allowed."
-        )
-
-    if extra_rules:
-        numbered = "\n".join(f"{i}. {rule}" for i, rule in enumerate(extra_rules, start=8))
-        result = result.replace('{api_usage_note}', numbered + "\n")
+        if len(required_api_keys) == 1:
+            exc, prov, use = "is an exception", "it is provided", "it"
+        else:
+            exc, prov, use = "are exceptions", "they are provided", "them"
+        result = result.replace('{eval_api_note}', (
+            f"9. The {keys_str} in your environment {exc} to the previous rule: {prov} so that "
+            f"you can run this benchmark's grading via evaluate.py. Use {use} for that evaluation "
+            f"only, and never to generate training data or for any other purpose.\n"
+        ))
     else:
-        result = result.replace('{api_usage_note}', "")
+        result = result.replace('{eval_api_note}', "")
 
     result = result.replace('{datetime}', datetime)
 
