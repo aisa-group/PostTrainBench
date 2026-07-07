@@ -71,6 +71,14 @@ bash src/commit_utils/commit.sh
 
 Currently, we only support the HTCondor job scheduler. [Harbor](https://github.com/harbor-framework/harbor) support is planned.
 
+#### Running on Modal (cloud GPUs, no cluster required)
+
+The full pipeline (agent → contamination judge → evaluation) can also run on
+[Modal](https://modal.com) rented H100s — see
+[`src/modal_adapter/README.md`](src/modal_adapter/README.md) for setup,
+costs (~$55–60 per standard 10h run), and the differences from the cluster
+setup.
+
 #### API-based agents
 
 Most agents authenticate via API keys set as environment variables (e.g., `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`). These are passed into the container automatically by `run_task.sh`. Set them in your environment before running `commit.sh`.

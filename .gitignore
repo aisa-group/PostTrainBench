@@ -231,3 +231,7 @@ __marimo__/
 
 # testing parsed agent traces 
 output.txt
+
+# Modal adapter run ledger
+modal_runs.jsonl
+results_modal/
