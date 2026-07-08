@@ -133,6 +133,7 @@ solve_task() {
         --env OPENCODE_API_KEY="${OPENCODE_API_KEY}" \
         --env DASHSCOPE_API_KEY="${DASHSCOPE_API_KEY}" \
         --env ZAI_API_KEY="${ZAI_API_KEY}" \
+        --env GLMX_API_KEY="${GLMX_API_KEY}" \
         --env VLLM_API_KEY="inspectai" \
         --env PYTHONNOUSERSITE="1" \
         --env NUM_GPUS="${NUM_GPUS}" \

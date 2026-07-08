@@ -8,6 +8,7 @@ import os
 # These are checked case-insensitively against solve_out.txt.
 LIMIT_PATTERNS = [
     "You've hit your limit",         # Claude Code Pro subscription limit
+    "You've hit your session limit", # Claude Code Max subscription per-session limit
     "spending_limit",                 # Anthropic/OpenAI spending limit
     "billing_hard_limit",            # OpenAI billing hard limit
     "insufficient_quota",            # OpenAI quota exceeded (structured error code)

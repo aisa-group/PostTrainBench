@@ -69,7 +69,6 @@ HARDCODED_AGENT_MAP = {
     "claude_non_api_claude-opus-4-7_10h_run2",
     "claude_non_api_claude-opus-4-7_10h_run3"
     ] 
-
 }
 
 HARDCODED_BENCHMARKS = [
