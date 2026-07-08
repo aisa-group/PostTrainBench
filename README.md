@@ -187,6 +187,13 @@ We observed some failure modes in earlier iterations:
 
 We addressed these by updating the system prompt and employing an agent-as-judge to review generated code. When reward hacking is detected, we discard the run and use the base model's performance instead.
 
+Since v1.1, every run is reviewed by two independent agent-as-judge passes:
+
+1. A **contamination judge** that checks for test-data usage, evaluation tampering, model substitution, and forbidden fine-tuning practices. It is equipped with programmatic tools: a contamination check that matches the agent's training data against the benchmark's test set, and a model-identity check against reference configs.
+2. A **third-party API usage judge** that checks whether the agent called external LLM APIs in a disallowed way (e.g., to generate synthetic training data).
+
+See the [website](http://posttrainbench.com/#observations) for a qualitative analysis of the reward hacking we observed.
+
 ## Agent Prompt
 
 <details>
@@ -230,14 +237,6 @@ For Claude Code, we add the following line (Claude Code can run tasks in the bac
 
 
 </details>
-
-## Roadmap
-
-- [x] More evaluation tasks (v1: 7 benchmarks, up from 5)
-- [x] More agent scaffolds and agents (v1: 4 scaffolds, 20+ agent configurations)
-- [ ] Enhanced data decontamination
-- [ ] Enhanced method to detect reward hacking
-- [x] Ablation studies (e.g., varying compute budgets)
 
 ## Contact
 
