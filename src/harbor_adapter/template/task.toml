@@ -71,44 +71,42 @@ retries = 3
 [agent]
 timeout_sec = 36000.0
 
-# Artifacts. In separate-verifier mode each entry's `source` is
-# transferred from the agent env to the verifier env at the same path
-# AND archived under <trial_dir>/artifacts/<destination>/ on the host.
+# Single workspace artifact. In separate-verifier mode this `source`
+# is transferred from the agent env to the verifier env at the same
+# path AND archived under <trial_dir>/artifacts/workspace/ on the host.
 #
-# Two entries (instead of one for /home/agent/workspace):
-#   1. workspace — training scripts + everything else the agent wrote.
-#      Verifier env gets /home/agent/workspace, which the contamination
-#      judge reads via `cd $WORKSPACE && codex exec ...`.
-#   2. final_model — the agent's trained weights as a standalone target.
-#      Verifier env gets /home/agent/workspace/final_model directly.
+# One entry (was previously two — workspace + a separate final_model).
+# Rationale for collapsing:
+#   1. Two overlapping artifacts (final_model nested inside workspace)
+#      triggered harbor 0.15's UserWarning at task load and made
+#      upload order load-bearing (`upload_artifacts` calls
+#      `empty_dirs(target)` before each upload, so a later workspace
+#      upload would wipe an earlier final_model).
+#   2. Two tar ops on the agent env is two chances to hit harbor's
+#      flaky transfer path (empty stderr, code -1). One op is
+#      strictly better.
 #
-# **Order matters.** Harbor's `upload_artifacts` calls
-# `empty_dirs(target_source)` before each upload (clears destination
-# first). If final_model were listed first, the subsequent
-# `empty_dirs("/home/agent/workspace")` for the workspace artifact
-# would wipe out the just-uploaded final_model. By listing workspace
-# first and the nested final_model second, the leaf is written last
-# and isn't clobbered.
+# `final_model` is NOT in the exclude list — we want the trained
+# weights carried in via this single artifact so the verifier has them
+# at /home/agent/workspace/final_model/. On the host they land at
+# artifacts/workspace/final_model/ (postmortem access, just one path
+# deeper than before).
 #
-# Harbor's `exclude` IS honored on the host side (smaller postmortem
-# tarball under artifacts/workspace/), but it is NOT honored during
-# verifier upload — so the workspace upload to the verifier still
-# carries whatever files were collected to host (which excludes
-# final_model thanks to the exclude list below). final_model arrives
-# via the second artifact only.
+# The contamination judge in test.sh reads the agent's code via
+# `cd $WORKSPACE && codex exec ...` — the workspace transfer supplies
+# everything under /home/agent/workspace/ minus the excludes below.
 [[artifacts]]
 source = "/home/agent/workspace"
 destination = "workspace"
-# Aggressive excludes. The 2026-05-27 trial died inside the agent
-# sandbox's `tar czf ... --exclude=... /home/agent/workspace` step
-# with "code -1: no output" (likely tar OOM/timeout on multi-GB of
-# HF/wandb cache + checkpoint dirs the agent created during a
-# 6.5-hour training run). Drop anything we don't need for the
-# contamination judge — judge only needs the agent's source code
-# (.py, .md, .json configs, .sh, etc.), not caches/checkpoints/logs.
+# Aggressive excludes to keep the agent-side tar tractable. The
+# 2026-05-27 and 2026-06-27 trials died with harbor's tar exit code
+# -1 / empty stderr on multi-GB workspaces containing HF cache +
+# wandb + checkpoint dirs. Drop anything the contamination judge
+# doesn't need — judge only reads the agent's source code (.py, .md,
+# .json configs, .sh), not caches/checkpoints/logs. `final_model` is
+# deliberately kept so the verifier gets the weights.
 exclude = [
-    # Already in the original prototype:
-    "final_model",          # shipped via second artifact, don't dup
+    # Standard hygiene:
     "__pycache__",
     "*.pyc",
     ".git",
@@ -120,7 +118,8 @@ exclude = [
     # Experiment tracking:
     "wandb",
     ".wandb",
-    # Training output dirs commonly produced by HF Trainer / Hydra:
+    # Training output dirs commonly produced by HF Trainer / Hydra
+    # (final_model is NOT excluded — we want it transferred):
     "checkpoint-*",
     "runs",
     "outputs",
@@ -133,7 +132,3 @@ exclude = [
     "tmp",
     ".tmp",
 ]
-
-[[artifacts]]
-source = "/home/agent/workspace/final_model"
-destination = "final_model"
