@@ -142,6 +142,17 @@ if [ -f "agents/${AGENT}/oauth_token" ]; then
     cp "agents/${AGENT}/oauth_token" "${JOB_DIR}/oauth_token"
 fi
 
+# Cursor CLI persists its OAuth tokens at ~/.config/cursor/auth.json. Bind-mount
+# the agent's copy so the CLI inside the sandbox reads and rotates against the
+# shared credential file. Distinct filename in the agent dir avoids collision
+# with the codex auth.json check above.
+CURSOR_AUTH_SRC=""
+if [ -f "agents/${AGENT}/cursor_auth.json" ]; then
+    CURSOR_AUTH_SRC="$(cd "$(dirname "agents/${AGENT}/cursor_auth.json")" && pwd)/cursor_auth.json"
+    mkdir -p "${JOB_DIR}/.config/cursor"
+    : > "${JOB_DIR}/.config/cursor/auth.json"
+fi
+
 # Utils
 with_huggingface_overlay() {
     mkdir -p "$TMP_SUBDIR/merged_huggingface"
@@ -180,6 +191,12 @@ SOLVE_OUT="${EVAL_DIR}/solve_out.txt"
 solve_task() {
     AGENT_AUTH_BIND=()
     [ -n "$AGENT_AUTH_SRC" ] && AGENT_AUTH_BIND=(--bind "${AGENT_AUTH_SRC}:/home/ben/.codex/auth.json")
+    CURSOR_AUTH_BIND=()
+    [ -n "$CURSOR_AUTH_SRC" ] && CURSOR_AUTH_BIND=(--bind "${CURSOR_AUTH_SRC}:/home/ben/.config/cursor/auth.json")
+    # Forward the CLI-auto-update opt-out into the sandbox so update_agent_cli.sh
+    # can honor it. Only set when the user opts in via .env.
+    CLI_UPDATE_ENV=()
+    [ -n "${POST_TRAIN_BENCH_SKIP_CLI_UPDATE:-}" ] && CLI_UPDATE_ENV+=(--env "POST_TRAIN_BENCH_SKIP_CLI_UPDATE=${POST_TRAIN_BENCH_SKIP_CLI_UPDATE}")
     timeout --signal=TERM --kill-after=30s "$((NUM_HOURS * 60 + 5))m" \
     apptainer exec \
         --nv \
@@ -195,9 +212,11 @@ solve_task() {
         --env NUM_GPUS="${NUM_GPUS}" \
         --env PROMPT="${PROMPT}" \
         --env AGENT_CONFIG="${AGENT_CONFIG}" \
+        "${CLI_UPDATE_ENV[@]}" \
         --bind "${JOB_TMP}:/tmp" \
         --bind "${HF_MERGED}:${HF_HOME_NEW}" \
         "${AGENT_AUTH_BIND[@]}" \
+        "${CURSOR_AUTH_BIND[@]}" \
         --home "${JOB_DIR}:/home/ben" \
         --pwd "/home/ben/task" \
         --writable-tmpfs \

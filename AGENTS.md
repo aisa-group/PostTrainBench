@@ -68,6 +68,9 @@ PostTrainBench/
    `run_task.sh`) holds the binary→npm-package mapping; add a `case` entry there if the agent uses
    a CLI not already covered (`claude`, `codex`, `gemini`, `opencode`). The update is best-effort —
    a failure falls back to the container's pinned version and still records what actually ran.
+   Set `POST_TRAIN_BENCH_SKIP_CLI_UPDATE=1` in `.env` to disable the update globally and pin CLI
+   versions to whatever the container ships; `cli_version.txt` still records what ran
+   (`update: skipped`).
 
 Example structure:
 ```bash
@@ -84,8 +87,45 @@ unset inside the sandbox). A missing `api_keys.json` is a hard error. See "API K
 below. With the allowlist in place there is **no** need to `unset`/blank keys inside `solve.sh`.
 
 Currently supported agents include: `claude`, `claude_non_api`, `claude_non_api_max`, `codex`,
-`codex_non_api` (and `_high`, `_xhigh`, `_reprompt`, ...), `codexhigh`, `codexlow`, `gemini`,
-`glm5`, `opencode`, `qwen3max`.
+`codex_non_api` (and `_high`, `_xhigh`, `_reprompt`, ...), `codexhigh`, `codexlow`, `cursor_cli`,
+`gemini`, `glm5`, `grok_cli`, `opencode`, `qwen3max`.
+
+`cursor_cli` uses the Cursor CLI (`agent`) with subscription auth: `solve.sh` installs the CLI
+via the official curl installer (`cursor.com/install`, drops `agent` + `cursor-agent` symlinks in
+`$HOME/.local/bin` pointing at `$HOME/.local/share/cursor-agent/versions/<v>/cursor-agent`) and
+runs it with `--print --force --trust --output-format stream-json --workspace /home/ben/task`.
+Auth tokens live at `~/.config/cursor/auth.json`; `run_task.sh` bind-mounts
+`agents/cursor_cli/cursor_auth.json` → `/home/ben/.config/cursor/auth.json` so the CLI reads *and*
+rotates tokens against the shared host file. Set it up:
+
+```
+curl -fsS https://cursor.com/install | bash    # installs to ~/.local/bin/{agent,cursor-agent}
+export PATH="$HOME/.local/bin:$PATH"
+cursor-agent login                             # completes OAuth in a browser
+cp ~/.config/cursor/auth.json agents/cursor_cli/cursor_auth.json
+chmod 600 agents/cursor_cli/cursor_auth.json
+```
+
+Pass the Cursor model ID as `agent_config` (e.g. `grok-4.5`, `gpt-5`, `sonnet-4-thinking`). Run
+`agent --list-models` from a *compute-node* shell (head-node routes to Cursor's API are typically
+blocked by corp proxy) to see the full list.
+
+`grok_cli` uses the xAI Grok Build CLI (`grok`) with subscription auth: `solve.sh` installs the CLI
+via the official curl installer (`x.ai/cli/install.sh`, drops binary at `$HOME/.grok/bin/grok`) and
+runs it with `--oauth --always-approve --no-auto-update --output-format streaming-json`. Auth
+tokens live at `~/.grok/auth.json` (not `config.toml`, which is preferences only); `run_task.sh`
+bind-mounts `agents/grok_cli/grok_auth.json` → `/home/ben/.grok/auth.json` so the CLI reads *and*
+rotates tokens against the shared host file. Set it up:
+
+```
+grok login                # or `grok login --device-auth` on a headless machine
+cp ~/.grok/auth.json agents/grok_cli/grok_auth.json
+chmod 600 agents/grok_cli/grok_auth.json
+```
+
+The explicit model ID for Grok 4.5 is `grok-4.5` (per `docs.x.ai/docs/models`) — pass it as
+`agent_config` so `-m grok-4.5` pins the exact version regardless of the floating `grok-build`
+alias in the CLI's `[models] default`.
 
 ## Adding a New Evaluation Task
 
