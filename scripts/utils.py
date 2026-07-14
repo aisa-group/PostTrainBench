@@ -90,7 +90,20 @@ HARDCODED_AGENT_MAP = {
     "codex_non_api_xhigh_gpt-5.5_10h_run1",
     "codex_non_api_xhigh_gpt-5.5_10h_run2",
 
-    ]
+    ],
+    "Opus-4.8": [
+        "claude_non_api_claude-opus-4-8_10h_run1",
+        "claude_non_api_claude-opus-4-8_10h_run2",
+    ],
+    "Opus-4.8 (Max)": [
+        "claude_non_api_max_claude-opus-4-8_10h_run1",
+        "claude_non_api_max_claude-opus-4-8_10h_run2",
+    ],
+    "GLM 5.2": [
+        "glmx_glm-5.2-preview_1m__10h_run1",
+        "glmx_glm-5.2-preview_1m__10h_run2",
+        "glmx_glm-5.2-preview_1m__10h_run3",
+    ],
 }
 
 HARDCODED_BENCHMARKS = [
