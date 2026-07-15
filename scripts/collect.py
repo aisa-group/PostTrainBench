@@ -6,10 +6,12 @@ For each method directory in the results dir, does a single pass:
   1. Finds the latest run per (benchmark, model)
   2. Reads metrics.json, the GPT-5.4 contamination judgement
      (judgement_gpt5_4_rerun.json if present, else judgement_gpt5_4.json),
-     the PTB-lookup judgement (judgement_ptb_lookup_rerun.json if present,
-     else judgement_ptb_lookup.json; absent for runs predating that judge),
-     and time_taken.txt
-  3. Applies baseline fallback for cells flagged by any judge or with no run
+     the API usage judgement (judgement_api_rerun.json if present, else
+     judgement_api.json; absent for runs predating that judge), the
+     PTB-lookup judgement (same rerun-over-original preference; archival —
+     a True verdict raises instead of affecting scores), and time_taken.txt
+  3. Applies baseline fallback for cells flagged by the contamination or
+     API judge, or with no run
   4. Writes final_{method}.csv, contamination_{method}.csv
 
 Also writes a time_overview.csv summarising average time per method.
@@ -37,6 +39,7 @@ from utils import (
     walk_latest_runs,
     load_metrics,
     load_judgement,
+    load_api_judgement,
     load_ptb_lookup_judgement,
     judgement_to_cell,
     load_time_taken,
@@ -97,9 +100,18 @@ def collect_method(
                     os.path.join(run_dir, "metrics.json")
                 )
                 judgement = load_judgement(run_dir)
-                ptb_lookup = load_ptb_lookup_judgement(run_dir)
+                api_usage = load_api_judgement(run_dir)
+                # The PTB-lookup verdict is archival and never expected to
+                # flag; a True verdict is a RuntimeError (not caught by the
+                # broken-run handler below) so it cannot pass unnoticed.
+                if load_ptb_lookup_judgement(run_dir):
+                    raise RuntimeError(
+                        f"PTB-lookup judge fired for {run_dir} "
+                        f"(disallowed_ptb_lookup=true). Investigate this run "
+                        f"before aggregating."
+                    )
                 contamination_grid[model][bench] = judgement_to_cell(
-                    judgement, ptb_lookup
+                    judgement, api_usage
                 )
                 _, seconds = load_time_taken(run_dir)
                 time_total_seconds += seconds

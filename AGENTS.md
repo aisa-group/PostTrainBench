@@ -222,19 +222,21 @@ and a prompt template (see `src/judges/README.md`, including how to add a new ju
 1. **`data_contamination_judge`** (GPT-5.4 via codex CLI, subscription auth) — checks for
    test-data usage, eval tampering, model substitution, and forbidden fine-tuning practices.
 2. **`api_usage_judge`** (GPT-5.4 via codex CLI) — separate schema (`disallowed_api_usage`),
-   checks whether the agent called external LLM APIs in a disallowed way. It writes its own
-   `judgement_api.json` for the record but is **not** consumed by the scoring/aggregation flow.
+   checks whether the agent called external LLM APIs in a disallowed way. Its verdict
+   (`judgement_api.json`) **is** consumed by scoring: a flagged run falls back to the baseline
+   score in `scripts/collect.py`.
 3. **`ptb_lookup_judge`** (GPT-5.4 via codex CLI) — separate schema
    (`disallowed_ptb_lookup`), checks whether the agent looked up PostTrainBench itself (the
-   website, the GitHub repo, or published traces of past runs, e.g. to copy strategies). It
-   writes `judgement_ptb_lookup.json`, which **is** consumed by scoring: a flagged run falls
-   back to the baseline score in `scripts/collect.py`.
+   website, the GitHub repo, or published traces of past runs, e.g. to copy strategies). Its
+   verdict (`judgement_ptb_lookup.json`) is archival — it does not feed score fallback — but
+   `scripts/collect.py` raises an error if it ever flags, so a firing lookup judge cannot pass
+   unnoticed.
 
 Each judge writes its own per-judge file; there is no aggregation step. The canonical verdicts
 consumed downstream are `judgement_gpt5_4.json` (contamination/disallowed_model) and
-`judgement_ptb_lookup.json` (PTB lookup) — or their `_rerun` variants when the rerun pipeline
-has produced them. Runs predating the PTB-lookup judge have no `judgement_ptb_lookup*.json`;
-scoring treats that as "not flagged".
+`judgement_api.json` (API usage) — or their `_rerun` variants when the rerun pipeline has
+produced them. Runs predating the API or PTB-lookup judge lack the corresponding
+`judgement_*.json`; scoring treats a missing file as "not flagged".
 
 Reruns: `src/judges/rerun/` holds the batch-rerun pipeline. Rerun outputs
 always carry a `_rerun` suffix so original judge files produced during `run_task.sh` are
@@ -266,9 +268,9 @@ results/{agent}_{agent_config}_{num_hours}h[_{num_gpus}gpu]{experiment_name}/
     ├── judge_output_gpt5_4.{json,txt}   # data_contamination_judge raw + parsed trace
     ├── judgement_gpt5_4.json            # data_contamination_judge structured verdict
     ├── judge_output_api.{json,txt}      # api_usage_judge raw + parsed trace
-    ├── judgement_api.json               # api_usage_judge structured verdict (archival; not consumed)
+    ├── judgement_api.json               # api_usage_judge structured verdict (flag ⇒ baseline score)
     ├── judge_output_ptb_lookup.{json,txt} # ptb_lookup_judge raw + parsed trace
-    ├── judgement_ptb_lookup.json        # ptb_lookup_judge structured verdict (flag ⇒ baseline score)
+    ├── judgement_ptb_lookup.json        # ptb_lookup_judge structured verdict (archival; collect.py errors if flagged)
     ├── final_eval_*.txt                 # vLLM/inspect-ai evaluation logs (one per retry)
     └── metrics.json                     # Final benchmark scores
 ```
@@ -276,7 +278,7 @@ results/{agent}_{agent_config}_{num_hours}h[_{num_gpus}gpu]{experiment_name}/
 Result directories with the `_rerun` suffix on `judgement_*.json` come from the rerun-judge
 pipeline; original files are kept side-by-side. The canonical contamination verdict is
 `judgement_gpt5_4.json` (or `judgement_gpt5_4_rerun.json` when present); the canonical
-PTB-lookup verdict is `judgement_ptb_lookup.json` (or `judgement_ptb_lookup_rerun.json`).
+API-usage verdict is `judgement_api.json` (or `judgement_api_rerun.json`).
 
 ## Code Style
 

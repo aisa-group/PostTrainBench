@@ -18,11 +18,13 @@ results tree:
 
 ```bash
 # 1. Collect raw per-run data into per-method CSVs.
-#    Reads metrics.json + contamination/disallowed_model + PTB-lookup judgements
+#    Reads metrics.json + contamination/disallowed_model + API-usage judgements
 #    + time_taken.txt, applies baseline-zeroshot fallback for flagged/errored cells.
+#    The PTB-lookup judgement is also read, but only as a tripwire: it is
+#    archival, and collect.py raises an error if it ever flags.
 #    Writes:
 #      final_{method}.csv          — score grid (model x benchmark) with fallback
-#      contamination_{method}.csv  — flags ("" or any of "M", "C", "P", or error string)
+#      contamination_{method}.csv  — flags ("" or any of "M", "C", "A", or error string)
 #      time_overview.csv           — average wall time per method
 python scripts/collect.py
 

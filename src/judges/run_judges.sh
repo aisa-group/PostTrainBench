@@ -8,11 +8,11 @@
 #      (contamination/disallowed_model verdict; this is the canonical
 #      contamination verdict consumed downstream)
 #   2. api_usage_judge          -> judgement_api_rerun.json
-#      (separate `disallowed_api_usage` schema; archival only, not consumed
-#      by the scoring pipeline)
-#   3. ptb_lookup_judge         -> judgement_ptb_lookup_rerun.json
-#      (separate `disallowed_ptb_lookup` schema; consumed by scoring — a
+#      (separate `disallowed_api_usage` schema; consumed by scoring — a
 #      flagged run falls back to the baseline score)
+#   3. ptb_lookup_judge         -> judgement_ptb_lookup_rerun.json
+#      (separate `disallowed_ptb_lookup` schema; archival, but
+#      scripts/collect.py errors out if it ever flags)
 #
 # All outputs are always saved with the _rerun suffix so original judge
 # outputs produced by src/run_task.sh are preserved.

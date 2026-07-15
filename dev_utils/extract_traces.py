@@ -444,13 +444,15 @@ def main():
             # parsing and verdict detection).
             # NB: solve_parsed.txt is also shipped for direct human reading;
             # the viewer ignores it, but it's a useful escape hatch.
-            # The canonical contamination verdict in this branch's two-judge
-            # scheme is judgement_gpt5_4.json (or _rerun). We also ship the
-            # GPT-5.4 contamination-judge trace so the viewer can show *why* a
-            # run was flagged. The third-party-API-usage judge
-            # (judgement_api*.json) is deliberately NOT extracted: it is
-            # archival, not consumed by scoring, and known to flip on rerun
-            # (non-deterministic false positives). The old single-judge files
+            # The canonical contamination verdict is judgement_gpt5_4.json
+            # (or _rerun). We also ship the GPT-5.4 contamination-judge trace
+            # so the viewer can show *why* a run was flagged. The
+            # third-party-API-usage judge (judgement_api*.json) is NOT
+            # extracted even though scoring now consumes it (flag => baseline
+            # fallback): it is known to flip on rerun (non-deterministic
+            # false positives), so the viewer doesn't surface it. The
+            # PTB-lookup judge (judgement_ptb_lookup*.json) is archival and
+            # likewise not extracted. The old single-judge files
             # (contamination_judgement.txt / judge_output.json) no longer exist.
             copy_other_files(subdir, dest_dir, 'solve_parsed.txt', api_keys=api_keys, optional=True)
             copy_other_files(subdir, dest_dir, 'metrics.json', api_keys=api_keys)

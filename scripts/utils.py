@@ -416,8 +416,8 @@ def load_judgement(run_dir: str) -> dict:
     """Load the GPT-5.4 contamination judge verdict for a single run directory.
 
     Reads only the GPT-5.4 contamination judge output (preferring the rerun
-    file; see ``judgement_path``). The third-party API usage judge
-    (``judgement_api.json``) is intentionally ignored.
+    file; see ``judgement_path``). The API usage and PTB-lookup judges have
+    their own loaders (``load_api_judgement`` / ``load_ptb_lookup_judgement``).
 
     Raises FileNotFoundError when neither judgement file exists,
     json.JSONDecodeError on a malformed file, and ValueError/TypeError when the
@@ -444,72 +444,86 @@ def load_judgement(run_dir: str) -> dict:
     return {field: data[field] for field in JUDGEMENT_FIELDS}
 
 
+API_USAGE_FIELD = "disallowed_api_usage"
 PTB_LOOKUP_FIELD = "disallowed_ptb_lookup"
 
 
-def ptb_lookup_judgement_path(run_dir: str) -> str | None:
-    """Return the PTB-lookup judgement path for a run directory, or None.
+def _load_optional_flag_judgement(
+    run_dir: str, basename: str, field: str
+) -> bool | None:
+    """Load a single-boolean judge verdict that may legitimately be absent.
 
-    Prefers ``judgement_ptb_lookup_rerun.json`` (written by the rerun
-    pipeline) and falls back to ``judgement_ptb_lookup.json`` from the initial
+    Prefers ``judgement_{basename}_rerun.json`` (written by the rerun
+    pipeline) and falls back to ``judgement_{basename}.json`` from the initial
     ``run_task.sh`` run. Unlike the contamination judgement, a missing file is
-    not an error: runs that predate the PTB-lookup judge have none, so None is
-    returned instead of raising.
+    not an error: runs that predate the judge have none, so None is returned
+    instead of raising. Raises json.JSONDecodeError on a malformed file and
+    ValueError/TypeError when the schema does not match what the judge writes.
     """
-    rerun_path = os.path.join(run_dir, "judgement_ptb_lookup_rerun.json")
-    original_path = os.path.join(run_dir, "judgement_ptb_lookup.json")
+    rerun_path = os.path.join(run_dir, f"judgement_{basename}_rerun.json")
+    original_path = os.path.join(run_dir, f"judgement_{basename}.json")
 
     if os.path.exists(rerun_path):
-        return rerun_path
-    if os.path.exists(original_path):
-        return original_path
-    return None
-
-
-def load_ptb_lookup_judgement(run_dir: str) -> bool | None:
-    """Load the PTB-lookup judge verdict for a single run directory.
-
-    Returns the ``disallowed_ptb_lookup`` boolean, or None when no PTB-lookup
-    judgement file exists (the run predates this judge). Raises
-    json.JSONDecodeError on a malformed file and ValueError/TypeError when the
-    schema does not match what the PTB-lookup judge writes.
-    """
-    path = ptb_lookup_judgement_path(run_dir)
-    if path is None:
+        path = rerun_path
+    elif os.path.exists(original_path):
+        path = original_path
+    else:
         return None
 
     with open(path, "r") as f:
         data = json.load(f)
     if not isinstance(data, dict):
         raise ValueError(f"{path}: top-level JSON is not an object")
-    if PTB_LOOKUP_FIELD not in data:
-        raise ValueError(f"{path}: missing field: {PTB_LOOKUP_FIELD}")
-    if not isinstance(data[PTB_LOOKUP_FIELD], bool):
+    if field not in data:
+        raise ValueError(f"{path}: missing field: {field}")
+    if not isinstance(data[field], bool):
         raise TypeError(
-            f"{path}: field {PTB_LOOKUP_FIELD!r} must be bool, got "
-            f"{type(data[PTB_LOOKUP_FIELD]).__name__}: {data[PTB_LOOKUP_FIELD]!r}"
+            f"{path}: field {field!r} must be bool, got "
+            f"{type(data[field]).__name__}: {data[field]!r}"
         )
-    return data[PTB_LOOKUP_FIELD]
+    return data[field]
 
 
-def judgement_to_cell(judgement: dict, ptb_lookup: bool | None = None) -> str:
+def load_api_judgement(run_dir: str) -> bool | None:
+    """Load the third-party API usage judge verdict for a run directory.
+
+    Returns the ``disallowed_api_usage`` boolean, or None when no API
+    judgement file exists (the run predates this judge). A True verdict is
+    consumed by scoring: the run's score falls back to the baseline.
+    """
+    return _load_optional_flag_judgement(run_dir, "api", API_USAGE_FIELD)
+
+
+def load_ptb_lookup_judgement(run_dir: str) -> bool | None:
+    """Load the PTB-lookup judge verdict for a single run directory.
+
+    Returns the ``disallowed_ptb_lookup`` boolean, or None when no PTB-lookup
+    judgement file exists (the run predates this judge). This verdict is
+    archival — it does not feed score fallback — but collect.py raises when
+    it is True so a firing lookup judge cannot pass unnoticed.
+    """
+    return _load_optional_flag_judgement(run_dir, "ptb_lookup", PTB_LOOKUP_FIELD)
+
+
+def judgement_to_cell(judgement: dict, api_usage: bool | None = None) -> str:
     """Encode the judge booleans into a single cell.
 
     The cell concatenates the letter for each flag that is True:
-      - 'M' = disallowed_model     (GPT-5.4 contamination judge)
-      - 'C' = contamination        (GPT-5.4 contamination judge)
-      - 'P' = disallowed_ptb_lookup (PTB-lookup judge; pass None when that
+      - 'M' = disallowed_model      (GPT-5.4 contamination judge)
+      - 'C' = contamination         (GPT-5.4 contamination judge)
+      - 'A' = disallowed_api_usage  (API usage judge; pass None when that
         judge never ran, which leaves the letter out)
-    Returns '' when no flag is set. Order is fixed (M, C, P) so cells are
-    comparable across runs.
+    Returns '' when no flag is set. Order is fixed (M, C, A) so cells are
+    comparable across runs. The PTB-lookup verdict is deliberately not part
+    of the cell: it is archival, and collect.py errors out when it fires.
     """
     parts = []
     if judgement["disallowed_model"]:
         parts.append("M")
     if judgement["contamination"]:
         parts.append("C")
-    if ptb_lookup:
-        parts.append("P")
+    if api_usage:
+        parts.append("A")
     return "".join(parts)
 
 

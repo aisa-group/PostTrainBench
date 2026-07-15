@@ -16,8 +16,8 @@ The judges run in two contexts:
 | Folder | Output id | Verdict schema | Consumed downstream? |
 |--------|-----------|----------------|----------------------|
 | `data_contamination_judge/` | `gpt5_4` | `contamination`, `disallowed_model` + justifications | **Yes** — canonical contamination verdict (`judgement_gpt5_4.json`, or `judgement_gpt5_4_rerun.json` when present) |
-| `api_usage_judge/` | `api` | `disallowed_api_usage` + justification | No — archival record only |
-| `ptb_lookup_judge/` | `ptb_lookup` | `disallowed_ptb_lookup` + justification | **Yes** — a flagged run falls back to the baseline score in `scripts/collect.py` (missing file = "not flagged": runs predating this judge have none) |
+| `api_usage_judge/` | `api` | `disallowed_api_usage` + justification | **Yes** — a flagged run falls back to the baseline score in `scripts/collect.py` (missing file = "not flagged": runs predating this judge have none) |
+| `ptb_lookup_judge/` | `ptb_lookup` | `disallowed_ptb_lookup` + justification | Archival — no score fallback, but `scripts/collect.py` raises an error if it ever flags, so a firing lookup judge cannot pass unnoticed |
 
 All run as GPT-5.4 via the codex CLI with ChatGPT-subscription auth
 (`agents/codex_non_api/auth.json`, bind-mounted so rotated refresh tokens persist).
