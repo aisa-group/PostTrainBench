@@ -6,8 +6,10 @@ For each method directory in the results dir, does a single pass:
   1. Finds the latest run per (benchmark, model)
   2. Reads metrics.json, the GPT-5.4 contamination judgement
      (judgement_gpt5_4_rerun.json if present, else judgement_gpt5_4.json),
+     the PTB-lookup judgement (judgement_ptb_lookup_rerun.json if present,
+     else judgement_ptb_lookup.json; absent for runs predating that judge),
      and time_taken.txt
-  3. Applies baseline fallback for cells flagged by the judge or with no run
+  3. Applies baseline fallback for cells flagged by any judge or with no run
   4. Writes final_{method}.csv, contamination_{method}.csv
 
 Also writes a time_overview.csv summarising average time per method.
@@ -35,6 +37,7 @@ from utils import (
     walk_latest_runs,
     load_metrics,
     load_judgement,
+    load_ptb_lookup_judgement,
     judgement_to_cell,
     load_time_taken,
     format_time_hms,
@@ -94,8 +97,9 @@ def collect_method(
                     os.path.join(run_dir, "metrics.json")
                 )
                 judgement = load_judgement(run_dir)
+                ptb_lookup = load_ptb_lookup_judgement(run_dir)
                 contamination_grid[model][bench] = judgement_to_cell(
-                    judgement
+                    judgement, ptb_lookup
                 )
                 _, seconds = load_time_taken(run_dir)
                 time_total_seconds += seconds

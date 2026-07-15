@@ -10,6 +10,9 @@
 #   2. api_usage_judge          -> judgement_api_rerun.json
 #      (separate `disallowed_api_usage` schema; archival only, not consumed
 #      by the scoring pipeline)
+#   3. ptb_lookup_judge         -> judgement_ptb_lookup_rerun.json
+#      (separate `disallowed_ptb_lookup` schema; consumed by scoring — a
+#      flagged run falls back to the baseline score)
 #
 # All outputs are always saved with the _rerun suffix so original judge
 # outputs produced by src/run_task.sh are preserved.

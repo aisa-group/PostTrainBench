@@ -28,7 +28,7 @@ JUDGES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JUDGES_REPO_ROOT="$(cd "$JUDGES_DIR/../.." && pwd)"
 
 # All judges, in execution order.
-ALL_JUDGES=(data_contamination_judge api_usage_judge)
+ALL_JUDGES=(data_contamination_judge api_usage_judge ptb_lookup_judge)
 
 # codex CLI defaults shared by the judges; a judge.conf may override
 # JUDGE_MODEL / JUDGE_REASONING_EFFORT per judge.

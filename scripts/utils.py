@@ -444,13 +444,63 @@ def load_judgement(run_dir: str) -> dict:
     return {field: data[field] for field in JUDGEMENT_FIELDS}
 
 
-def judgement_to_cell(judgement: dict) -> str:
-    """Encode the GPT-5.4 contamination judge booleans into a single cell.
+PTB_LOOKUP_FIELD = "disallowed_ptb_lookup"
+
+
+def ptb_lookup_judgement_path(run_dir: str) -> str | None:
+    """Return the PTB-lookup judgement path for a run directory, or None.
+
+    Prefers ``judgement_ptb_lookup_rerun.json`` (written by the rerun
+    pipeline) and falls back to ``judgement_ptb_lookup.json`` from the initial
+    ``run_task.sh`` run. Unlike the contamination judgement, a missing file is
+    not an error: runs that predate the PTB-lookup judge have none, so None is
+    returned instead of raising.
+    """
+    rerun_path = os.path.join(run_dir, "judgement_ptb_lookup_rerun.json")
+    original_path = os.path.join(run_dir, "judgement_ptb_lookup.json")
+
+    if os.path.exists(rerun_path):
+        return rerun_path
+    if os.path.exists(original_path):
+        return original_path
+    return None
+
+
+def load_ptb_lookup_judgement(run_dir: str) -> bool | None:
+    """Load the PTB-lookup judge verdict for a single run directory.
+
+    Returns the ``disallowed_ptb_lookup`` boolean, or None when no PTB-lookup
+    judgement file exists (the run predates this judge). Raises
+    json.JSONDecodeError on a malformed file and ValueError/TypeError when the
+    schema does not match what the PTB-lookup judge writes.
+    """
+    path = ptb_lookup_judgement_path(run_dir)
+    if path is None:
+        return None
+
+    with open(path, "r") as f:
+        data = json.load(f)
+    if not isinstance(data, dict):
+        raise ValueError(f"{path}: top-level JSON is not an object")
+    if PTB_LOOKUP_FIELD not in data:
+        raise ValueError(f"{path}: missing field: {PTB_LOOKUP_FIELD}")
+    if not isinstance(data[PTB_LOOKUP_FIELD], bool):
+        raise TypeError(
+            f"{path}: field {PTB_LOOKUP_FIELD!r} must be bool, got "
+            f"{type(data[PTB_LOOKUP_FIELD]).__name__}: {data[PTB_LOOKUP_FIELD]!r}"
+        )
+    return data[PTB_LOOKUP_FIELD]
+
+
+def judgement_to_cell(judgement: dict, ptb_lookup: bool | None = None) -> str:
+    """Encode the judge booleans into a single cell.
 
     The cell concatenates the letter for each flag that is True:
-      - 'M' = disallowed_model
-      - 'C' = contamination
-    Returns '' when both flags are False. Order is fixed (M, C) so cells are
+      - 'M' = disallowed_model     (GPT-5.4 contamination judge)
+      - 'C' = contamination        (GPT-5.4 contamination judge)
+      - 'P' = disallowed_ptb_lookup (PTB-lookup judge; pass None when that
+        judge never ran, which leaves the letter out)
+    Returns '' when no flag is set. Order is fixed (M, C, P) so cells are
     comparable across runs.
     """
     parts = []
@@ -458,6 +508,8 @@ def judgement_to_cell(judgement: dict) -> str:
         parts.append("M")
     if judgement["contamination"]:
         parts.append("C")
+    if ptb_lookup:
+        parts.append("P")
     return "".join(parts)
 
 
