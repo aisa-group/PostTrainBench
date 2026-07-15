@@ -216,6 +216,24 @@ def get_results_dir() -> str:
     return env["POST_TRAIN_BENCH_RESULTS_DIR"]
 
 
+def get_extra_results_dirs() -> list[str]:
+    """Return additional read-only results roots to union with the primary.
+
+    Reads ``POST_TRAIN_BENCH_EXTRA_RESULTS_DIRS`` from the project's .env file:
+    a colon-separated (PATH-style) list of directories that also contain
+    method subdirs. ``collect.py`` iterates methods across the primary root
+    (``POST_TRAIN_BENCH_RESULTS_DIR``) plus each extra root. Output CSVs are
+    still written to the primary (writable) root.
+
+    Returns an empty list if the variable is unset or empty.
+    """
+    env = load_dotenv()
+    raw = env.get("POST_TRAIN_BENCH_EXTRA_RESULTS_DIRS", "").strip()
+    if not raw:
+        return []
+    return [p for p in raw.split(":") if p]
+
+
 AGGREGATION_SUBDIR = "_aggregated"
 
 
