@@ -104,6 +104,10 @@ HARDCODED_AGENT_MAP = {
         "glmx_glm-5.2-preview_1m__10h_run2",
         "glmx_glm-5.2-preview_1m__10h_run3",
     ],
+    "Fable 5 (Max)": [
+        "claude_non_api_max_claude-fable-5_1m__10h_run1",
+        "claude_non_api_max_claude-fable-5_1m__10h_run2",
+    ],
 }
 
 HARDCODED_BENCHMARKS = [
