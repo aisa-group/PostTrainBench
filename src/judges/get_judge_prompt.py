@@ -1,16 +1,40 @@
 #!/usr/bin/env python3
-"""Generate the judge prompt with trace file reference."""
+"""Generate a judge's prompt.
+
+Each judge lives in src/judges/<judge_name>/ with a judge.conf naming its
+prompt template (JUDGE_PROMPT_FILE). Every template gets the common
+{model}/{benchmark} placeholders filled; judges with extra placeholders have
+a fill function registered in EXTRA_FILLERS below. A new judge whose template
+only uses the common placeholders needs no change to this file.
+"""
 
 import os
 import json
 import argparse
 from pathlib import Path
 
+JUDGES_DIR = Path(__file__).parent
+REPO_ROOT = JUDGES_DIR.parent.parent
+
+
+def read_judge_conf(judge_name: str) -> dict[str, str]:
+    """Parse the KEY="value" lines of a judge.conf (also sourced by bash)."""
+    conf_path = JUDGES_DIR / judge_name / 'judge.conf'
+    if not conf_path.is_file():
+        raise ValueError(f"Unknown judge: {judge_name!r} (no {conf_path})")
+    conf = {}
+    for line in conf_path.read_text(encoding='utf-8').splitlines():
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        key, _, value = line.partition('=')
+        conf[key.strip()] = value.strip().strip('"')
+    return conf
+
 
 def load_data_examples(benchmark_id: str) -> tuple[list, list]:
     """Load allowed/disallowed data examples from info.json for the given benchmark."""
-    repo_root = Path(__file__).parent.parent.parent
-    info_file = repo_root / 'src' / 'eval' / 'tasks' / benchmark_id / 'info.json'
+    info_file = REPO_ROOT / 'src' / 'eval' / 'tasks' / benchmark_id / 'info.json'
     if info_file.exists():
         with open(info_file, 'r', encoding='utf-8') as f:
             info = json.load(f)
@@ -20,16 +44,10 @@ def load_data_examples(benchmark_id: str) -> tuple[list, list]:
 
 def get_benchmark_name(benchmark_id: str) -> str:
     """Get human-readable benchmark name from info.json."""
-    repo_root = Path(__file__).parent.parent.parent
-    info_file = repo_root / 'src' / 'eval' / 'tasks' / benchmark_id / 'info.json'
+    info_file = REPO_ROOT / 'src' / 'eval' / 'tasks' / benchmark_id / 'info.json'
     with open(info_file, 'r', encoding='utf-8') as f:
         return json.load(f)['benchmark']
 
-
-PROMPT_FILES = {
-    "data_and_model": "prompt.txt",
-    "api": "prompt_api_judge.md",
-}
 
 # Benchmarks that are LLM-as-judge evaluations, where third-party API calls from
 # the evaluator (evaluate.py / evaluation_code/) are allowed.
@@ -100,50 +118,69 @@ def build_agent_harness_clause(agent: str | None, agent_config: str | None) -> s
     return f"- **This run's agent harness.** This run's research agent is {body} {_HARNESS_CLAUSE_TAIL}\n"
 
 
-def generate_prompt(benchmark: str, model: str, benchmark_id: str = None, kind: str = "data_and_model",
+def fill_data_contamination(prompt: str, benchmark_id: str | None,
+                            agent: str | None, agent_config: str | None) -> str:
+    """Fill the allowed/disallowed data-example placeholders."""
+    allowed_data_examples = ""
+    disallowed_data_examples = ""
+    if benchmark_id:
+        allowed, disallowed = load_data_examples(benchmark_id)
+        if allowed:
+            allowed_data_examples = "- In particular, the following datasets are allowed (not exhaustive):\n"
+            for data in allowed:
+                allowed_data_examples += f"  - {data}\n"
+        if disallowed:
+            disallowed_data_examples = "- In particular, the following datasets are not allowed (not exhaustive):\n"
+            for data in disallowed:
+                disallowed_data_examples += f"  - {data}\n"
+    prompt = prompt.replace("{allowed_data_examples}", allowed_data_examples)
+    prompt = prompt.replace("{disallowed_data_examples}", disallowed_data_examples)
+    return prompt
+
+
+def fill_api_usage(prompt: str, benchmark_id: str | None,
+                   agent: str | None, agent_config: str | None) -> str:
+    """Fill the LLM-as-judge exception and agent-harness placeholders."""
+    exception = ""
+    if benchmark_id in API_JUDGE_EXCEPTION_BENCHMARKS:
+        exception = API_JUDGE_EXCEPTION_TEXT
+    prompt = prompt.replace("{api_judge_exception}", exception)
+    prompt = prompt.replace("{agent_harness}", build_agent_harness_clause(agent, agent_config))
+    return prompt
+
+
+# Judges whose templates use placeholders beyond the common {model}/{benchmark}.
+EXTRA_FILLERS = {
+    "data_contamination_judge": fill_data_contamination,
+    "api_usage_judge": fill_api_usage,
+}
+
+
+def generate_prompt(judge: str, benchmark: str, model: str, benchmark_id: str = None,
                     agent: str = None, agent_config: str = None) -> str:
     """Generate the judge prompt with the given benchmark and model."""
     base_prompt = os.environ.get('POST_TRAIN_BENCH_PROMPT', 'prompt')
     if "mock" in base_prompt:
         return "Just do nothing and return."
 
-    if kind not in PROMPT_FILES:
-        raise ValueError(f"Unknown prompt kind: {kind!r} (expected one of {list(PROMPT_FILES)})")
-
-    prompt_path = Path(__file__).parent / PROMPT_FILES[kind]
+    conf = read_judge_conf(judge)
+    prompt_path = JUDGES_DIR / judge / conf['JUDGE_PROMPT_FILE']
     prompt = prompt_path.read_text()
 
     prompt = prompt.replace("{model}", model)
     prompt = prompt.replace("{benchmark}", benchmark)
 
-    if kind == "api":
-        exception = ""
-        if benchmark_id in API_JUDGE_EXCEPTION_BENCHMARKS:
-            exception = API_JUDGE_EXCEPTION_TEXT
-        prompt = prompt.replace("{api_judge_exception}", exception)
-        prompt = prompt.replace("{agent_harness}", build_agent_harness_clause(agent, agent_config))
-
-    if kind == "data_and_model":
-        allowed_data_examples = ""
-        disallowed_data_examples = ""
-        if benchmark_id:
-            allowed, disallowed = load_data_examples(benchmark_id)
-            if allowed:
-                allowed_data_examples = "- In particular, the following datasets are allowed (not exhaustive):\n"
-                for data in allowed:
-                    allowed_data_examples += f"  - {data}\n"
-            if disallowed:
-                disallowed_data_examples = "- In particular, the following datasets are not allowed (not exhaustive):\n"
-                for data in disallowed:
-                    disallowed_data_examples += f"  - {data}\n"
-        prompt = prompt.replace("{allowed_data_examples}", allowed_data_examples)
-        prompt = prompt.replace("{disallowed_data_examples}", disallowed_data_examples)
+    if judge in EXTRA_FILLERS:
+        prompt = EXTRA_FILLERS[judge](prompt, benchmark_id, agent, agent_config)
 
     return prompt
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate judge prompt with trace reference")
+    parser = argparse.ArgumentParser(description="Generate a judge's prompt")
+    parser.add_argument("--judge", type=str, required=True,
+                        help="Judge name (folder name under src/judges/, e.g. "
+                             "data_contamination_judge or api_usage_judge)")
     parser.add_argument("--benchmark-id", type=str, required=True, help="Benchmark ID (folder name)")
     parser.add_argument("--model", type=str, required=True, help="Model name")
     parser.add_argument("--agent", type=str, default=None,
@@ -151,17 +188,10 @@ def main():
                              "describe the harness identity to ignore.")
     parser.add_argument("--agent-config", type=str, default=None,
                         help="Agent harness model (e.g. gpt-5.1-codex-max); used by the API judge.")
-    parser.add_argument(
-        "--kind",
-        type=str,
-        choices=sorted(PROMPT_FILES),
-        default="data_and_model",
-        help="Which judge prompt to emit: 'data_and_model' (contamination + base-model check) or 'api' (third-party API usage check).",
-    )
     args = parser.parse_args()
 
     benchmark_name = get_benchmark_name(args.benchmark_id)
-    print(generate_prompt(benchmark_name, args.model, args.benchmark_id, args.kind,
+    print(generate_prompt(args.judge, benchmark_name, args.model, args.benchmark_id,
                           agent=args.agent, agent_config=args.agent_config))
 
 

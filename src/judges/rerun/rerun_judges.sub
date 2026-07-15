@@ -1,0 +1,22 @@
+# HTCondor template for rerunning judges on one result directory.
+#
+# Variables (override with -a "name=value"):
+#   result_dir   – result directory to judge (required)
+#   judges       – comma-separated judge set (default: all judges)
+#   judge_weight – user.judge concurrency units this job consumes; see
+#                  JUDGE_CONDOR_WEIGHT in the judge.conf files
+#                  (commit_rerun_judges.sh passes the max over the set).
+executable = /bin/bash
+judges = data_contamination_judge,api_usage_judge
+judge_weight = 1500
+arguments = src/judges/run_judges.sh --judges $(judges) $(result_dir)
+environment = "HOME=$ENV(HOME)"
+error = logs/rerun_judge_$(Cluster).err
+output = logs/rerun_judge_$(Cluster).out
+log = logs/rerun_judge_$(Cluster).log
+concurrency_limits = user.judge:$(judge_weight)
+request_memory = 81920
+request_cpus = 8
+request_disk = 100G
++BypassLXCfs = "true"
+queue

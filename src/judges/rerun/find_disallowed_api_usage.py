@@ -8,8 +8,8 @@ combination is considered, mirroring the selection used by the api-only rerun
 submitter (commit_gpt_api_only.sh / list_results.py --latest-only).
 
 The API verdict is read from judgement_api_rerun.json (written by
-run_judge.sh --api-only); judgement_api.json is used as a fallback for any
-directory that only carries the non-rerun file.
+run_judges.sh --judges api_usage_judge); judgement_api.json is used as a
+fallback for any directory that only carries the non-rerun file.
 
 By default only the absolute paths of flagged directories are printed to
 stdout (one per line) so the output can be piped. A run summary is written to

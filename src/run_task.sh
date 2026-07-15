@@ -269,98 +269,43 @@ python src/trace_parsing/parse_trace.py --agent "${AGENT}" "${SOLVE_OUT}" -o "${
 cp "${EVAL_DIR}/solve_parsed.txt" "${JOB_DIR}/solve_parsed.txt"
 
 echo "========================================="
-echo "=== RUNNING CONTAMINATION JUDGE ==="
+echo "=== RUNNING REWARD-HACKING JUDGES ==="
 echo "========================================="
 
+source src/judges/judge_lib.sh
+
 # Make judge helper tooling and benchmark metadata available inside the judge sandbox.
-cp "src/disallowed_usage_judge/judge_tools/contamination_check.py" "${JOB_DIR}/contamination_check.py"
-cp "src/disallowed_usage_judge/judge_tools/model_identity_check.py" "${JOB_DIR}/model_identity_check.py"
-cp -r "src/disallowed_usage_judge/judge_tools/reference_configs" "${JOB_DIR}/reference_configs"
+prepare_judge_sandbox "${JOB_DIR}" "${EVALUATION_TASK}" "${JOB_DIR}/task/final_model/config.json"
 
-# Expose final_model/config.json to the judge as ../final_model_config.json so
-# model_identity_check.py can compare it against the reference. Only the
-# config.json is needed for the architecture-identity check, not the weights.
-if [ -f "${JOB_DIR}/task/final_model/config.json" ]; then
-    cp "${JOB_DIR}/task/final_model/config.json" "${JOB_DIR}/final_model_config.json"
-fi
+# Reset codex config (so agent-specific settings like model_reasoning_effort
+# can't leak into the judges) and set up the bind-mounted subscription auth
+# (JUDGE_CODEX_AUTH_SRC), through which rotated refresh tokens persist back to
+# the source instead of dying with the sandbox.
+setup_judge_codex_auth "${JOB_DIR}" || exit 1
 
-if [ -f "src/eval/tasks/${EVALUATION_TASK}/test_data.json" ]; then
-    cp "src/eval/tasks/${EVALUATION_TASK}/test_data.json" "${JOB_DIR}/test_data.json"
-fi
+JUDGE_EXTRA_APPTAINER_ARGS=(
+    --nv
+    --env HF_HOME="${HF_HOME_NEW}"
+    --env VLLM_API_KEY="inspectai"
+    --bind "${HF_MERGED}:${HF_HOME_NEW}"
+)
 
-JUDGE_TASK=$(python src/disallowed_usage_judge/get_judge_prompt.py --benchmark-id "${EVALUATION_TASK}" --model "${MODEL_TO_TRAIN}")
+FIRST_JUDGE=1
+for JUDGE_NAME in "${ALL_JUDGES[@]}"; do
+    load_judge_conf "${JUDGE_NAME}" || exit 1
 
-# Reset codex config to prevent agent-specific settings (e.g. model_reasoning_effort)
-# from leaking into the judge, which uses a different model
-cp -r "containers/other_home_data/.codex" "${JOB_DIR}/"
+    echo "=== Judge: ${JUDGE_LABEL} ==="
 
-# ---- Judge 1: GPT-5.4 via codex CLI (subscription) ----
-echo "=== Judge 1: GPT-5.4 (codex CLI, subscription) ==="
+    # Clean judgement file between judges so each one starts fresh
+    [ "$FIRST_JUDGE" = "1" ] || rm -f "${JOB_DIR}/task/judgement.json"
+    FIRST_JUDGE=0
 
-# Bind-mount the shared auth.json into the container at exec time so rotated
-# refresh tokens persist back to the source instead of dying with the sandbox.
-JUDGE_CODEX_AUTH_SRC="$(pwd)/agents/codex_non_api/auth.json"
-: > "${JOB_DIR}/.codex/auth.json"
-if ! grep -q "forced_login_method" "${JOB_DIR}/.codex/config.toml" 2>/dev/null; then
-    printf '\nforced_login_method = "chatgpt"\n' >> "${JOB_DIR}/.codex/config.toml"
-fi
+    JUDGE_PROMPT=$(build_judge_prompt "${JUDGE_NAME}" "${EVALUATION_TASK}" "${MODEL_TO_TRAIN}" "${AGENT}" "${AGENT_CONFIG}")
 
-with_huggingface_overlay apptainer exec \
-    --nv \
-    --containall \
-    --env PATH="/root/.local/bin:/home/ben/.local/bin:$PATH" \
-    --env HF_HOME="${HF_HOME_NEW}" \
-    --env CODEX_API_KEY="" \
-    --env OPENAI_API_KEY="" \
-    --env VLLM_API_KEY="inspectai" \
-    --env PYTHONNOUSERSITE="1" \
-    --bind "${JOB_TMP}:/tmp" \
-    --bind "${HF_MERGED}:${HF_HOME_NEW}" \
-    --bind "${JUDGE_CODEX_AUTH_SRC}:/home/ben/.codex/auth.json" \
-    --home "${JOB_DIR}:/home/ben" \
-    --pwd "/home/ben/task" \
-    --writable-tmpfs \
-    ${POST_TRAIN_BENCH_CONTAINERS_DIR}/gpt_5_5.sif codex --search -a never exec --json -c model_reasoning_summary=detailed -c model_reasoning_effort=xhigh --skip-git-repo-check --yolo --model "gpt-5.4" "$JUDGE_TASK" 2>&1 | tee "${EVAL_DIR}/judge_output_gpt5_4.json"
+    with_huggingface_overlay run_judge_exec "${JOB_DIR}" "${JOB_TMP}" "${EVAL_DIR}/judge_output_${JUDGE_OUTPUT_ID}.json" "${JUDGE_PROMPT}"
 
-python src/trace_parsing/parse_trace.py --agent codex "${EVAL_DIR}/judge_output_gpt5_4.json" -o "${EVAL_DIR}/judge_output_gpt5_4.txt"
-
-if [ -f "${JOB_DIR}/task/judgement.json" ]; then
-    cp "${JOB_DIR}/task/judgement.json" "${EVAL_DIR}/judgement_gpt5_4.json"
-fi
-
-# Clean judgement file so the next judge starts fresh
-rm -f "${JOB_DIR}/task/judgement.json"
-
-# ---- Judge 2: third-party API usage (GPT-5.4 only) ----
-echo "=== Judge 2: third-party API usage (GPT-5.4 only) ==="
-
-JUDGE_API_TASK=$(python src/disallowed_usage_judge/get_judge_prompt.py --benchmark-id "${EVALUATION_TASK}" --model "${MODEL_TO_TRAIN}" --agent "${AGENT}" --agent-config "${AGENT_CONFIG}" --kind api)
-
-with_huggingface_overlay apptainer exec \
-    --nv \
-    --containall \
-    --env PATH="/root/.local/bin:/home/ben/.local/bin:$PATH" \
-    --env HF_HOME="${HF_HOME_NEW}" \
-    --env CODEX_API_KEY="" \
-    --env OPENAI_API_KEY="" \
-    --env VLLM_API_KEY="inspectai" \
-    --env PYTHONNOUSERSITE="1" \
-    --bind "${JOB_TMP}:/tmp" \
-    --bind "${HF_MERGED}:${HF_HOME_NEW}" \
-    --bind "${JUDGE_CODEX_AUTH_SRC}:/home/ben/.codex/auth.json" \
-    --home "${JOB_DIR}:/home/ben" \
-    --pwd "/home/ben/task" \
-    --writable-tmpfs \
-    ${POST_TRAIN_BENCH_CONTAINERS_DIR}/gpt_5_5.sif codex --search -a never exec --json -c model_reasoning_summary=detailed -c model_reasoning_effort=xhigh --skip-git-repo-check --yolo --model "gpt-5.4" "$JUDGE_API_TASK" 2>&1 | tee "${EVAL_DIR}/judge_output_api.json"
-
-python src/trace_parsing/parse_trace.py --agent codex "${EVAL_DIR}/judge_output_api.json" -o "${EVAL_DIR}/judge_output_api.txt"
-
-if [ -f "${JOB_DIR}/task/judgement.json" ]; then
-    cp "${JOB_DIR}/task/judgement.json" "${EVAL_DIR}/judgement_api.json"
-else
-    echo "ERROR: judgement.json not created by API judge (see ${EVAL_DIR}/judge_output_api.txt)" >&2
-    exit 1
-fi
+    collect_judge_output "${JOB_DIR}" "${EVAL_DIR}" "" "${JUDGE_MISSING_JUDGEMENT_FATAL_INLINE}" || exit 1
+done
 
 echo "============================="
 echo "======== CLEANING UP ========"

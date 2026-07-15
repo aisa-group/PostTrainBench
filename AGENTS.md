@@ -19,7 +19,7 @@ PostTrainBench/
 ├── src/
 │   ├── baselines/             # Baseline score computation
 │   ├── commit_utils/          # HTCondor job submission utilities (incl. set_env_vars.sh)
-│   ├── disallowed_usage_judge/ # Contamination + disallowed-API judges (2 judges; see Safety)
+│   ├── judges/                # Reward-hacking judges (one folder per judge; see Safety)
 │   ├── eval/
 │   │   ├── general/           # Prompt generation (get_prompt.py, prompt.txt)
 │   │   ├── tasks/             # Evaluation benchmarks (aime2025, aime2026, gsm8k, ...)
@@ -43,8 +43,8 @@ PostTrainBench/
 | `src/eval/general/prompt.txt` | Agent prompt template |
 | `src/trace_parsing/parse_trace.py` | Dispatches to per-agent parser to produce human-readable trace |
 | `src/utils/update_agent_cli.sh` | Auto-updates an agent's CLI harness to latest and records its version |
-| `src/disallowed_usage_judge/run_judge.sh` | Runs both judges (GPT-5.4 contamination, GPT-5.4 API); each writes its own per-judge JSON |
-| `src/disallowed_usage_judge/get_judge_prompt.py` | Generates judge prompts (`--kind api` for API judge) |
+| `src/judges/run_judges.sh` | Runs judges on an existing result dir (`--judges` to select a subset); each writes its own per-judge JSON |
+| `src/judges/get_judge_prompt.py` | Generates judge prompts (`--judge <judge_name>`) |
 | `containers/standard.def` | Main container definition (other `.def` files exist per-agent) |
 | `scripts/constants.py` | Agent/benchmark mappings |
 | `example.env` | Template for the `.env` file (API keys + `POST_TRAIN_BENCH_*` paths) |
@@ -214,13 +214,14 @@ is always passed as the constant `inspectai`; it is not part of the allowlist.
 
 ## Safety Mechanisms
 
-The project includes contamination detection via two agent-as-judge runs invoked by
+The project includes reward-hacking detection via agent-as-judge runs invoked by
 `src/run_task.sh` after the agent finishes (also exposed standalone via
-`src/disallowed_usage_judge/run_judge.sh`):
+`src/judges/run_judges.sh`). Each judge is a folder under `src/judges/` with a `judge.conf`
+and a prompt template (see `src/judges/README.md`, including how to add a new judge):
 
-1. **GPT-5.4 contamination judge** (codex CLI, subscription auth) — checks for test-data usage,
-   eval tampering, model substitution, and forbidden fine-tuning practices.
-2. **GPT-5.4 third-party API usage judge** (codex CLI) — separate schema (`disallowed_api_usage`),
+1. **`data_contamination_judge`** (GPT-5.4 via codex CLI, subscription auth) — checks for
+   test-data usage, eval tampering, model substitution, and forbidden fine-tuning practices.
+2. **`api_usage_judge`** (GPT-5.4 via codex CLI) — separate schema (`disallowed_api_usage`),
    checks whether the agent called external LLM APIs in a disallowed way. It writes its own
    `judgement_api.json` for the record but is **not** consumed by the scoring/aggregation flow.
 
@@ -228,15 +229,17 @@ Each judge writes its own per-judge file; there is no aggregation step. The cano
 contamination verdict consumed downstream is `judgement_gpt5_4.json` (or
 `judgement_gpt5_4_rerun.json` when the rerun pipeline has produced it).
 
-Reruns: `src/disallowed_usage_judge/rerun_judge/` holds the batch-rerun pipeline. Rerun outputs
+Reruns: `src/judges/rerun/` holds the batch-rerun pipeline. Rerun outputs
 always carry a `_rerun` suffix so original judge files produced during `run_task.sh` are
 preserved.
 
 The judge tooling itself lives in:
-- `src/disallowed_usage_judge/judge_tools/` — `contamination_check.py`,
+- `src/judges/judge_lib.sh` — shared bash helpers used by both `run_task.sh` and
+  `run_judges.sh` (sandbox prep, codex invocation, output collection)
+- `src/judges/judge_tools/` — `contamination_check.py`,
   `model_identity_check.py`, and `reference_configs/` (copied into the judge sandbox so the
   judge can run them as tools)
-- `src/disallowed_usage_judge/contamination_check_tool/` — helpers to (re)download test data
+- `src/judges/test_data_download/` — helpers to (re)download test data
 
 ## Results Structure
 
@@ -253,10 +256,10 @@ results/{agent}_{agent_config}_{num_hours}h[_{num_gpus}gpu]{experiment_name}/
     ├── task/                    # Snapshot of the agent's working directory (post-cleanup)
     ├── final_model/             # Trained model checkpoint
     ├── system_monitor.log       # GPU/CPU/RAM samples from src/utils/system_monitor.sh
-    ├── judge_output_gpt5_4.{json,txt}   # Judge 1 raw + parsed trace
-    ├── judgement_gpt5_4.json            # Judge 1 structured verdict
-    ├── judge_output_api.{json,txt}      # Judge 2 raw + parsed trace
-    ├── judgement_api.json               # Judge 2 structured verdict (archival; not consumed)
+    ├── judge_output_gpt5_4.{json,txt}   # data_contamination_judge raw + parsed trace
+    ├── judgement_gpt5_4.json            # data_contamination_judge structured verdict
+    ├── judge_output_api.{json,txt}      # api_usage_judge raw + parsed trace
+    ├── judgement_api.json               # api_usage_judge structured verdict (archival; not consumed)
     ├── final_eval_*.txt                 # vLLM/inspect-ai evaluation logs (one per retry)
     └── metrics.json                     # Final benchmark scores
 ```
@@ -277,7 +280,7 @@ pipeline; original files are kept side-by-side. The canonical contamination verd
 `POST_TRAIN_BENCH_*` variables.** Read them directly from `.env` — do **not** assume they are
 already exported in the environment, and do **not** source `set_env_vars.sh` from a script
 (its module-loading block fails on compute nodes without `tclsh`). Examples of the correct
-pattern: the `commit_*.sh` scripts in `src/disallowed_usage_judge/rerun_judge/` (`grep` the var
+pattern: `src/judges/rerun/commit_rerun_judges.sh` (`grep` the var
 out of `.env`) and `find_disallowed_api_usage.py` (`load_results_dir_from_env()`, which falls
 back to `.env` when the var is unset).
 
