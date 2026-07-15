@@ -90,7 +90,24 @@ HARDCODED_AGENT_MAP = {
     "codex_non_api_xhigh_gpt-5.5_10h_run1",
     "codex_non_api_xhigh_gpt-5.5_10h_run2",
 
-    ]
+    ],
+    "Opus-4.8": [
+        "claude_non_api_claude-opus-4-8_10h_run1",
+        "claude_non_api_claude-opus-4-8_10h_run2",
+    ],
+    "Opus-4.8 (Max)": [
+        "claude_non_api_max_claude-opus-4-8_10h_run1",
+        "claude_non_api_max_claude-opus-4-8_10h_run2",
+    ],
+    "GLM 5.2": [
+        "glmx_glm-5.2-preview_1m__10h_run1",
+        "glmx_glm-5.2-preview_1m__10h_run2",
+        "glmx_glm-5.2-preview_1m__10h_run3",
+    ],
+    "Fable 5 (Max)": [
+        "claude_non_api_max_claude-fable-5_1m__10h_run1",
+        "claude_non_api_max_claude-fable-5_1m__10h_run2",
+    ],
 }
 
 HARDCODED_BENCHMARKS = [
@@ -201,6 +218,38 @@ def get_results_dir() -> str:
             f"POST_TRAIN_BENCH_RESULTS_DIR not set in {ENV_PATH}"
         )
     return env["POST_TRAIN_BENCH_RESULTS_DIR"]
+
+
+def get_extra_results_dirs() -> list[str]:
+    """Return additional read-only results roots to union with the primary.
+
+    Reads ``POST_TRAIN_BENCH_EXTRA_RESULTS_DIRS`` from the project's .env file:
+    a colon-separated (PATH-style) list of directories that also contain
+    method subdirs. ``collect.py`` iterates methods across the primary root
+    (``POST_TRAIN_BENCH_RESULTS_DIR``) plus each extra root. Output CSVs are
+    still written to the primary (writable) root.
+
+    Returns an empty list if the variable is unset or empty.
+    """
+    env = load_dotenv()
+    raw = env.get("POST_TRAIN_BENCH_EXTRA_RESULTS_DIRS", "").strip()
+    if not raw:
+        return []
+    return [p for p in raw.split(":") if p]
+
+
+AGGREGATION_SUBDIR = "_aggregated"
+
+
+def get_aggregation_dir() -> str:
+    """Return the directory both collect.py and aggregate.py write their CSVs
+    into by default: ``<POST_TRAIN_BENCH_RESULTS_DIR>/_aggregated``.
+
+    Kept separate from the raw method subdirs so the results root stays tidy.
+    The leading underscore prevents collect.py from mistaking it for a method
+    directory (collect.py skips names starting with ``_``).
+    """
+    return os.path.join(get_results_dir(), AGGREGATION_SUBDIR)
 
 
 # ---------------------------------------------------------------------------

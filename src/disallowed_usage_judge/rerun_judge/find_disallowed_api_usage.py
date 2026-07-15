@@ -44,6 +44,9 @@ def load_results_dir_from_env() -> None:
     .env rather than sourcing set_env_vars.sh (whose module-loading block fails
     on nodes without tclsh).
     """
+    if os.environ.get("POST_TRAIN_BENCH_RESULTS_DIR"):
+        return
+
     env_file = get_repo_root() / ".env"
     if not env_file.exists():
         raise RuntimeError(f".env file not found at {env_file}")

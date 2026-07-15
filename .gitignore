@@ -12,6 +12,7 @@ logs/
 agents/*/auth.json
 agents/*/auth*.json
 agents/*/oauth_token*
+agents/*/*auth*.json
 
 .claude 
 

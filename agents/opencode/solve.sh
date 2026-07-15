@@ -37,6 +37,11 @@ cat > opencode.json << 'EOF'
           "name": "GLM-4.7"
         }
       }
+    },
+    "meta": {
+      "options": {
+        "apiKey": "{env:MODEL_API_KEY}"
+      }
     }
   }
 }

@@ -19,7 +19,7 @@ import os
 import re
 
 from utils import (
-    get_results_dir,
+    get_aggregation_dir,
     load_csv_as_dict,
     write_csv,
     load_factors,
@@ -114,8 +114,9 @@ def compute_weighted_metric(
 
 def aggregate_leaderboard(data_dir: str, output_dir: str):
     """
-    Compute weighted metric for every final_*.csv that has all expected models.
-    Then group by HARDCODED_AGENT_MAP for avg/std.
+    Compute weighted metric for every final_*.csv that has all expected models
+    AND all benchmarks required by factors.json. Then group by
+    HARDCODED_AGENT_MAP for avg/std.
 
     Also writes final_avg_{agent}.csv and final_std_{agent}.csv (identical to
     aggregated_ versions) so their metrics appear in single_metrics.csv.
@@ -165,6 +166,13 @@ def aggregate_leaderboard(data_dir: str, output_dir: str):
             raise
 
         if set(data.keys()) != EXPECTED_MODELS:
+            continue
+
+        # Skip methods that didn't run every benchmark factors.json needs
+        # (extended-hour / METR / partial reruns). The weighted metric is
+        # meaningless without every column.
+        row_benchmarks = set(next(iter(data.values())).keys())
+        if not valid_benchmarks.issubset(row_benchmarks):
             continue
 
         method_name = filename[len("final_"):-len(".csv")]
@@ -299,7 +307,8 @@ def parse_args():
         "--data-dir",
         default=None,
         help="Directory containing final_*.csv files (from collect.py). "
-        "Defaults to POST_TRAIN_BENCH_RESULTS_DIR from the project's .env file.",
+        "Defaults to <POST_TRAIN_BENCH_RESULTS_DIR>/_aggregated, i.e. wherever "
+        "collect.py wrote its output.",
     )
     parser.add_argument(
         "--output-dir",
@@ -320,7 +329,7 @@ def parse_args():
 def main():
     args = parse_args()
 
-    data_dir = args.data_dir or get_results_dir()
+    data_dir = args.data_dir or get_aggregation_dir()
     output_dir = args.output_dir or data_dir
 
     os.makedirs(output_dir, exist_ok=True)

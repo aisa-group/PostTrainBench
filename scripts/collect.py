@@ -29,6 +29,8 @@ import os
 
 from utils import (
     get_results_dir,
+    get_extra_results_dirs,
+    get_aggregation_dir,
     get_baseline_fallback_data,
     walk_latest_runs,
     load_metrics,
@@ -207,7 +209,9 @@ def parse_args():
     parser.add_argument(
         "--output-dir",
         default=None,
-        help="Directory to write output CSVs. Defaults to same as --data-dir.",
+        help="Directory to write output CSVs. Defaults to "
+        "<POST_TRAIN_BENCH_RESULTS_DIR>/_aggregated (kept out of the results "
+        "root so it stays tidy).",
     )
     parser.add_argument(
         "--min-run-id",
@@ -228,7 +232,12 @@ def main():
     args = parse_args()
 
     data_dir = args.data_dir or get_results_dir()
-    output_dir = args.output_dir or data_dir
+    output_dir = args.output_dir or get_aggregation_dir()
+
+    # Extras only apply to the env-driven primary; passing --data-dir means
+    # "just this dir".
+    extra_dirs = [] if args.data_dir else get_extra_results_dirs()
+    all_roots = [data_dir] + extra_dirs
 
     os.makedirs(output_dir, exist_ok=True)
 
@@ -236,26 +245,45 @@ def main():
     baseline_data = get_baseline_fallback_data()
 
     method_stats = {}
+    seen_method_root: dict[str, str] = {}
 
-    for method_name in sorted(os.listdir(data_dir)):
-        method_path = os.path.join(data_dir, method_name)
-        if not os.path.isdir(method_path):
-            continue
+    for root in all_roots:
+        if not os.path.isdir(root):
+            raise FileNotFoundError(f"results root does not exist: {root}")
 
-        # Skip baseline directories — their values are hardcoded
-        if method_name in SKIP_METHODS:
-            continue
+        for method_name in sorted(os.listdir(root)):
+            method_path = os.path.join(root, method_name)
+            if not os.path.isdir(method_path):
+                continue
 
-        stats = collect_method(
-            method_path,
-            method_name,
-            baseline_data,
-            output_dir,
-            min_run_id=args.min_run_id,
-            max_run_id=args.max_run_id,
-        )
-        if stats:
-            method_stats[method_name] = stats
+            # Skip derived-artifact dirs like _aggregated/. Method dirs never
+            # start with an underscore.
+            if method_name.startswith("_"):
+                continue
+
+            # Skip baseline directories — their values are hardcoded
+            if method_name in SKIP_METHODS:
+                continue
+
+            if method_name in seen_method_root:
+                print(
+                    f"WARNING: method {method_name!r} found in {root} but "
+                    f"already collected from {seen_method_root[method_name]}; "
+                    f"skipping this copy"
+                )
+                continue
+            seen_method_root[method_name] = root
+
+            stats = collect_method(
+                method_path,
+                method_name,
+                baseline_data,
+                output_dir,
+                min_run_id=args.min_run_id,
+                max_run_id=args.max_run_id,
+            )
+            if stats:
+                method_stats[method_name] = stats
 
     if method_stats:
         write_time_overview(method_stats, output_dir)

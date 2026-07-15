@@ -34,12 +34,25 @@ case "$BIN" in
         ;;
 esac
 
-echo "[update_agent_cli] updating ${BIN} (${PKG}) to latest ..."
+# Opt-out: when POST_TRAIN_BENCH_SKIP_CLI_UPDATE is truthy, keep the container's
+# pinned CLI and just record what's installed. Lets a run pin exact CLI versions
+# by choosing the container alone.
+SKIP="${POST_TRAIN_BENCH_SKIP_CLI_UPDATE:-}"
+case "${SKIP,,}" in
+    1|true|yes|on) SKIP_UPDATE=1 ;;
+    *)             SKIP_UPDATE=0 ;;
+esac
 
 UPDATE_STATUS="success"
-if ! timeout 300 npm install -g --prefix "$HOME/.local" --no-fund --no-audit "${PKG}@latest"; then
-    UPDATE_STATUS="failed"
-    echo "[update_agent_cli] WARNING: update failed; falling back to pinned ${BIN}" >&2
+if [ "$SKIP_UPDATE" = "1" ]; then
+    UPDATE_STATUS="skipped"
+    echo "[update_agent_cli] POST_TRAIN_BENCH_SKIP_CLI_UPDATE set; using pinned ${BIN}"
+else
+    echo "[update_agent_cli] updating ${BIN} (${PKG}) to latest ..."
+    if ! timeout 300 npm install -g --prefix "$HOME/.local" --no-fund --no-audit "${PKG}@latest"; then
+        UPDATE_STATUS="failed"
+        echo "[update_agent_cli] WARNING: update failed; falling back to pinned ${BIN}" >&2
+    fi
 fi
 
 # Forget cached command locations so the freshly installed binary is resolved.
