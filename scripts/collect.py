@@ -29,6 +29,7 @@ import os
 
 from utils import (
     get_results_dir,
+    get_aggregation_dir,
     get_baseline_fallback_data,
     walk_latest_runs,
     load_metrics,
@@ -207,7 +208,9 @@ def parse_args():
     parser.add_argument(
         "--output-dir",
         default=None,
-        help="Directory to write output CSVs. Defaults to same as --data-dir.",
+        help="Directory to write output CSVs. Defaults to "
+        "<POST_TRAIN_BENCH_RESULTS_DIR>/_aggregated (kept out of the results "
+        "root so it stays tidy).",
     )
     parser.add_argument(
         "--min-run-id",
@@ -228,7 +231,7 @@ def main():
     args = parse_args()
 
     data_dir = args.data_dir or get_results_dir()
-    output_dir = args.output_dir or data_dir
+    output_dir = args.output_dir or get_aggregation_dir()
 
     os.makedirs(output_dir, exist_ok=True)
 
@@ -240,6 +243,11 @@ def main():
     for method_name in sorted(os.listdir(data_dir)):
         method_path = os.path.join(data_dir, method_name)
         if not os.path.isdir(method_path):
+            continue
+
+        # Skip derived-artifact dirs like _aggregated/. Method dirs never
+        # start with an underscore.
+        if method_name.startswith("_"):
             continue
 
         # Skip baseline directories — their values are hardcoded

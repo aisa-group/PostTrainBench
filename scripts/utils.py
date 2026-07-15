@@ -216,6 +216,20 @@ def get_results_dir() -> str:
     return env["POST_TRAIN_BENCH_RESULTS_DIR"]
 
 
+AGGREGATION_SUBDIR = "_aggregated"
+
+
+def get_aggregation_dir() -> str:
+    """Return the directory both collect.py and aggregate.py write their CSVs
+    into by default: ``<POST_TRAIN_BENCH_RESULTS_DIR>/_aggregated``.
+
+    Kept separate from the raw method subdirs so the results root stays tidy.
+    The leading underscore prevents collect.py from mistaking it for a method
+    directory (collect.py skips names starting with ``_``).
+    """
+    return os.path.join(get_results_dir(), AGGREGATION_SUBDIR)
+
+
 # ---------------------------------------------------------------------------
 # CSV I/O
 # ---------------------------------------------------------------------------
