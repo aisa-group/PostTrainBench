@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-List every result directory flagged by a given judge.
+List the latest result directory per benchmark/model flagged by a given judge.
 
 The judge is selected with --judge <judge_name> (a directory under
 src/judges/, e.g. ptb_lookup_judge or general_judge). Its verdict file name
@@ -9,8 +9,9 @@ or future — works without changes here. Every top-level boolean field in the
 verdict JSON is treated as a flag (the single-flag judges have one, the
 contamination judge has two); a run is flagged when any of them is true.
 
-Walks ALL run directories (not just the latest per benchmark/model) under
-POST_TRAIN_BENCH_RESULTS_DIR plus each root in
+Walks only the latest run directory per (benchmark, model) within each
+method directory — the same rule collect.py scores by, via
+utils.walk_latest_runs — under POST_TRAIN_BENCH_RESULTS_DIR plus each root in
 POST_TRAIN_BENCH_EXTRA_RESULTS_DIRS, both read from the project's .env file.
 Roots pointing at the same directory are deduplicated, and a method directory
 appearing under more than one root is only scanned once (first root wins,
@@ -27,6 +28,7 @@ reasoning per flagged dir) goes to stderr.
 
 Usage:
     python scripts/find_flagged_runs.py --judge ptb_lookup_judge
+    python scripts/find_flagged_runs.py --judge api_usage_judge
     python scripts/find_flagged_runs.py --judge general_judge --justification
 """
 
@@ -40,6 +42,7 @@ from utils import (
     get_extra_results_dirs,
     get_results_dir,
     optional_judgement_path,
+    walk_latest_runs,
 )
 
 JUDGES_DIR = os.path.join(PROJECT_ROOT, "src", "judges")
@@ -101,11 +104,13 @@ def get_all_roots() -> list[str]:
 
 
 def iter_run_dirs(roots: list[str]):
-    """Yield every run directory under every method directory of each root.
+    """Yield the latest run dir per (benchmark, model) of each method directory.
 
-    A missing root is a hard error. Method names starting with '_' are
-    derived-artifact dirs (e.g. _aggregated/), never methods. A method name
-    seen under an earlier root shadows later copies (warned, like collect.py).
+    "Latest" is the highest cluster id, decided per method directory by
+    utils.walk_latest_runs — the same rule collect.py scores by. A missing
+    root is a hard error. Method names starting with '_' are derived-artifact
+    dirs (e.g. _aggregated/), never methods. A method name seen under an
+    earlier root shadows later copies (warned, like collect.py).
     """
     seen_method_root: dict[str, str] = {}
     for root in roots:
@@ -127,16 +132,15 @@ def iter_run_dirs(roots: list[str]):
                 continue
             seen_method_root[method_name] = root
 
-            for run_name in sorted(os.listdir(method_path)):
-                run_path = os.path.join(method_path, run_name)
-                if os.path.isdir(run_path):
-                    yield run_path
+            latest_runs = walk_latest_runs(method_path)
+            for key in sorted(latest_runs):
+                yield latest_runs[key]["path"]
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Print absolute paths of all result dirs flagged by the "
-        "given judge."
+        description="Print absolute paths of the latest result dir per "
+        "benchmark/model flagged by the given judge."
     )
     parser.add_argument(
         "--judge",
@@ -183,8 +187,8 @@ def main() -> None:
     print("=" * 60, file=sys.stderr)
     print(f"Judge: {args.judge} (output id: {output_id})", file=sys.stderr)
     print(f"Results roots scanned:            {len(roots)}", file=sys.stderr)
-    print(f"Run dirs with a verdict:          {with_verdict}", file=sys.stderr)
-    print(f"Run dirs without one (ignored):   {without_verdict}", file=sys.stderr)
+    print(f"Latest run dirs with a verdict:   {with_verdict}", file=sys.stderr)
+    print(f"... without one (ignored):        {without_verdict}", file=sys.stderr)
     print(f"Flagged:                          {len(flagged)}", file=sys.stderr)
     print("=" * 60, file=sys.stderr)
 
