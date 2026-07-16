@@ -1,7 +1,9 @@
 #!/bin/bash
 #
-# Submit ptb_lookup_judge reruns (rerun_judges.sub -> run_judges.sh
-# --judges ptb_lookup_judge) for the given result directories.
+# Submit reruns of a single judge (rerun_judges.sub -> run_judges.sh
+# --judges <judge>) for the given result directories. The judge is selected
+# with --judge <judge_name> (a directory under src/judges/, e.g.
+# ptb_lookup_judge or general_judge).
 #
 # Each positional argument may be either
 #   - a method dir (e.g. /fast/hbhatnagar/ptb_results/glmx_glm-5.2-preview_1m__10h_run1):
@@ -13,20 +15,22 @@
 #
 # "Complete" = has a task/ subdir AND a trace file (solve_parsed.txt or
 # solve_out.txt); incomplete dirs are skipped with a note. Outputs always get
-# the _rerun suffix (judgement_ptb_lookup_rerun.json, ...), so any judge files
-# produced during the original run_task.sh are preserved.
+# the _rerun suffix (judgement_<output_id>_rerun.json, ...), so any judge
+# files produced during the original run_task.sh are preserved.
 #
 # Usage:
-#   rerun_lookup_judge.sh [--dry-run] [--skip-existing] <dir> [<dir>...]
+#   rerun_judge.sh --judge <judge_name> [--dry-run] [--skip-existing] <dir> [<dir>...]
 #
 # Options:
+#   --judge          Judge to rerun (directory name under src/judges/, e.g.
+#                    ptb_lookup_judge, general_judge). Required.
 #   --dry-run        Print the result dirs that would be submitted, but do not
 #                    call condor_submit_bid.
 #   --skip-existing  Skip result dirs that already have
-#                    judgement_ptb_lookup_rerun.json.
+#                    judgement_<output_id>_rerun.json.
 #
 # Example (GLM 5.2 test batch):
-#   bash src/judges/rerun/rerun_lookup_judge.sh --dry-run /fast/hbhatnagar/ptb_results/glmx_glm-5.2-preview_1m__10h_run{1,2,3}
+#   bash src/judges/rerun/rerun_judge.sh --judge ptb_lookup_judge --dry-run /fast/hbhatnagar/ptb_results/glmx_glm-5.2-preview_1m__10h_run{1,2,3}
 
 set -euo pipefail
 
@@ -34,16 +38,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 SUB_FILE="src/judges/rerun/rerun_judges.sub"
 
-JUDGE="ptb_lookup_judge"
-source "$SCRIPT_DIR/../judge_lib.sh"
-load_judge_conf "$JUDGE"
-OUTPUT_ID="$JUDGE_OUTPUT_ID"
-
+JUDGE=""
 DRY_RUN=""
 SKIP_EXISTING=""
 INPUT_DIRS=()
 while [[ $# -gt 0 ]]; do
     case $1 in
+        --judge) JUDGE="$2"; shift 2 ;;
         --dry-run) DRY_RUN=1; shift ;;
         --skip-existing) SKIP_EXISTING=1; shift ;;
         -*) echo "Unknown option: $1" >&2; exit 1 ;;
@@ -51,10 +52,15 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [ ${#INPUT_DIRS[@]} -eq 0 ]; then
-    echo "Usage: $0 [--dry-run] [--skip-existing] <method_dir_or_result_dir>..." >&2
+if [ -z "$JUDGE" ] || [ ${#INPUT_DIRS[@]} -eq 0 ]; then
+    echo "Usage: $0 --judge <judge_name> [--dry-run] [--skip-existing] <method_dir_or_result_dir>..." >&2
     exit 1
 fi
+
+# Validates the judge name (errors on an unknown judge) and sets JUDGE_OUTPUT_ID.
+source "$SCRIPT_DIR/../judge_lib.sh"
+load_judge_conf "$JUDGE"
+OUTPUT_ID="$JUDGE_OUTPUT_ID"
 
 echo "Judge: $JUDGE (output id: $OUTPUT_ID)"
 
@@ -117,7 +123,7 @@ cd "$REPO_ROOT"
 
 LOG_DIR="$SCRIPT_DIR/submission_logs"
 mkdir -p "$LOG_DIR"
-CLUSTER_LOG="$LOG_DIR/submitted_lookup_$(date +%Y%m%d_%H%M%S).tsv"
+CLUSTER_LOG="$LOG_DIR/submitted_${OUTPUT_ID}_$(date +%Y%m%d_%H%M%S).tsv"
 
 echo "Result dirs to consider (latest per benchmark+model): ${#RESULT_DIRS[@]}"
 

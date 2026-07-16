@@ -100,7 +100,7 @@ python scripts/verify.py \
 | Script | Description |
 |---|---|
 | `compute_claude_costs.py` | Claude API spend rollup |
-| `find_disallowed_ptb_lookup.py` | List all run dirs flagged by the PTB-lookup judge (all roots, all runs; dirs without a lookup verdict are ignored; `--justification` for details) |
+| `find_flagged_runs.py` | List all run dirs flagged by a given judge (`--judge <judge_name>`; all roots, all runs; dirs without a verdict are ignored; `--justification` for details) |
 | `extract_token_usage.py` | Token-usage extraction from agent traces |
 | `migrate_judgement_files.py` | One-off: migrate older judgement file naming |
 | `list_safetensors.py` | List safetensors files under a result tree |
