@@ -245,5 +245,11 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
-# testing parsed agent traces 
+# testing parsed agent traces
 output.txt
+
+# Nested checkout of the public website (has its own .git); never track from here
+posttrainbench-website/
+
+# HTCondor scheduler logs from rerun_specific_runs.sh submissions
+src/disallowed_usage_judge/rerun_judge/rerun_specific_runs_logs/
