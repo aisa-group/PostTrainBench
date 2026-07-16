@@ -18,8 +18,14 @@ The judges run in two contexts:
 | `data_contamination_judge/` | `gpt5_4` | `contamination`, `disallowed_model` + justifications | **Yes** — canonical contamination verdict (`judgement_gpt5_4.json`, or `judgement_gpt5_4_rerun.json` when present) |
 | `api_usage_judge/` | `api` | `disallowed_api_usage` + justification | **Yes** — a flagged run falls back to the baseline score in `scripts/collect.py` (missing file = "not flagged": runs predating this judge have none) |
 | `ptb_lookup_judge/` | `ptb_lookup` | `disallowed_ptb_lookup` + justification | Archival — no score fallback, but `scripts/collect.py` raises an error if it ever flags, so a firing lookup judge cannot pass unnoticed |
+| `general_judge/` | `general` | `general_anomaly` + justification | Archival — never feeds scores; when it flags, `scripts/collect.py` finishes its collection pass but writes **no** output files and raises, listing every flagged run for manual review (flip `general_anomaly` to false in the listed verdict file if the run checks out) |
 
-All run as GPT-5.4 via the codex CLI with ChatGPT-subscription auth
+The three reward-hacking judges run as GPT-5.4 via the codex CLI; the general judge — an
+open-ended sweep for "unknown unknowns" (premature agent stops, usage limits/token
+exhaustion, grader-API credit exhaustion on the LLM-judged benchmarks, harness/infra
+failures, novel reward hacking outside the other judges' scope) — runs as GPT-5.6 Terra on
+a codex CLI pinned to 0.144.5 (`JUDGE_CODEX_VERSION`, npm-installed into the sandbox at
+judge time). All use ChatGPT-subscription auth
 (`agents/codex_non_api/auth.json`, bind-mounted so rotated refresh tokens persist).
 
 ## Layout
@@ -84,9 +90,9 @@ python src/judges/rerun/list_results.py --paths-only --latest-only --method "cla
 done
 ```
 
-`rerun_judges.sub` accepts `-a "judges=..."` (default: all) and `-a "judge_weight=..."`
-(user.judge concurrency units the job consumes; `commit_rerun_judges.sh` passes the max
-`JUDGE_CONDOR_WEIGHT` over the selected judges).
+`rerun_judges.sub` accepts `-a "judges=..."` (default: all). Every rerun job consumes a
+fixed 2500 units of the `user.codex_judge_rerun` concurrency limit, regardless of which
+judges it runs.
 
 ### Listing and aggregation
 
@@ -139,6 +145,15 @@ Per judge (`<id>` = `JUDGE_OUTPUT_ID`, `<sfx>` = empty inline / `_rerun` standal
 }
 ```
 
+`judgement_general*.json` schema:
+
+```json
+{
+  "general_anomaly": false,
+  "justification_general_anomaly": "..."
+}
+```
+
 ## Adding a new judge
 
 1. Create `src/judges/<judge_name>/` with:
@@ -149,16 +164,21 @@ Per judge (`<id>` = `JUDGE_OUTPUT_ID`, `<sfx>` = empty inline / `_rerun` standal
      - `JUDGE_LABEL` — human-readable name used in logs
      - `JUDGE_OUTPUT_ID` — suffix for all output files (`judgement_<id>.json`, ...)
      - `JUDGE_PROMPT_FILE` — the template's filename
-     - `JUDGE_MISSING_JUDGEMENT_FATAL_INLINE` — `1` to abort `run_task.sh` when the judge
-       produces no `judgement.json` during the initial run, `0` to continue (standalone reruns
-       are always fatal)
-     - `JUDGE_CONDOR_WEIGHT` — user.judge concurrency units a rerun job consumes
      - optional: `JUDGE_MODEL` / `JUDGE_REASONING_EFFORT` to override the codex defaults
        (`gpt-5.4` / `xhigh`, see `judge_lib.sh`)
+     - optional: `JUDGE_CODEX_VERSION` to pin the codex CLI release for this judge
+       (e.g. `"0.144.5"`); `judge_lib.sh` npm-installs exactly that `@openai/codex`
+       version into the sandbox home and runs it instead of the container's codex.
+       Empty/unset = the container's pinned codex.
 2. Add the folder name to `ALL_JUDGES` in `judge_lib.sh` (array order = execution order).
 
 That's it — `run_task.sh`, `run_judges.sh` and `commit_rerun_judges.sh` all iterate over the
-judge set, and `--skip-existing` / concurrency weights are derived from `judge.conf`.
+judge set, and `--skip-existing` is derived from `judge.conf`.
+
+A judge that produces no `judgement.json` is handled by the caller, not by `judge.conf`:
+inline (`run_task.sh`) it is always a warning, so a finished 10h agent run still gets
+evaluated and the rerun pipeline can supply the verdict later; standalone
+(`run_judges.sh`) it is always fatal, since producing the verdict is the job.
 
 The judge prompt must instruct the model to write its verdict to `judgement.json` in the task
 directory; that file is collected as `judgement_<id><sfx>.json`.

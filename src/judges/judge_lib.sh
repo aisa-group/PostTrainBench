@@ -28,10 +28,10 @@ JUDGES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JUDGES_REPO_ROOT="$(cd "$JUDGES_DIR/../.." && pwd)"
 
 # All judges, in execution order.
-ALL_JUDGES=(data_contamination_judge api_usage_judge ptb_lookup_judge)
+ALL_JUDGES=(data_contamination_judge api_usage_judge ptb_lookup_judge general_judge)
 
 # codex CLI defaults shared by the judges; a judge.conf may override
-# JUDGE_MODEL / JUDGE_REASONING_EFFORT per judge.
+# JUDGE_MODEL / JUDGE_REASONING_EFFORT / JUDGE_CODEX_VERSION per judge.
 JUDGE_DEFAULT_MODEL="gpt-5.4"
 JUDGE_DEFAULT_REASONING_EFFORT="xhigh"
 JUDGE_CONTAINER="gpt_5_5.sif"
@@ -49,10 +49,12 @@ load_judge_conf() {
     JUDGE_LABEL=""
     JUDGE_OUTPUT_ID=""
     JUDGE_PROMPT_FILE=""
-    JUDGE_MISSING_JUDGEMENT_FATAL_INLINE=1
-    JUDGE_CONDOR_WEIGHT=1250
     JUDGE_MODEL="$JUDGE_DEFAULT_MODEL"
     JUDGE_REASONING_EFFORT="$JUDGE_DEFAULT_REASONING_EFFORT"
+    # Empty = use the container's pinned codex; a version (e.g. "0.144.5")
+    # makes run_judge_exec npm-install exactly that @openai/codex release into
+    # the sandbox home and run it instead.
+    JUDGE_CODEX_VERSION=""
     source "$conf"
     if [ -z "$JUDGE_LABEL" ] || [ -z "$JUDGE_OUTPUT_ID" ] || [ -z "$JUDGE_PROMPT_FILE" ]; then
         echo "ERROR: $conf must set JUDGE_LABEL, JUDGE_OUTPUT_ID and JUDGE_PROMPT_FILE" >&2
@@ -121,8 +123,33 @@ build_judge_prompt() {
 # Runs the loaded judge's codex CLI in the sandbox, teeing the raw JSON trace
 # to <output_json>. Requires load_judge_conf and setup_judge_codex_auth to
 # have run; extra apptainer flags come from JUDGE_EXTRA_APPTAINER_ARGS.
+# When judge.conf pins JUDGE_CODEX_VERSION, that exact @openai/codex release
+# is npm-installed into a version-specific prefix in the sandbox home
+# (idempotent across judges sharing the sandbox) and used instead of the
+# container's codex.
 run_judge_exec() {
     local job_dir="$1" job_tmp="$2" output_json="$3" prompt="$4"
+
+    local codex_bin="codex"
+    if [ -n "$JUDGE_CODEX_VERSION" ]; then
+        local pin_prefix=".codex-cli-${JUDGE_CODEX_VERSION}"
+        if [ ! -x "$job_dir/$pin_prefix/bin/codex" ]; then
+            echo "  installing pinned codex CLI @openai/codex@${JUDGE_CODEX_VERSION} for ${JUDGE_LABEL} ..."
+            apptainer exec \
+                --containall \
+                --env PATH="/root/.local/bin:/home/ben/.local/bin:$PATH" \
+                --bind "${job_tmp}:/tmp" \
+                --home "${job_dir}:/home/ben" \
+                --writable-tmpfs \
+                "${POST_TRAIN_BENCH_CONTAINERS_DIR}/${JUDGE_CONTAINER}" \
+                npm install -g --prefix "/home/ben/${pin_prefix}" --no-fund --no-audit "@openai/codex@${JUDGE_CODEX_VERSION}"
+        fi
+        if [ ! -x "$job_dir/$pin_prefix/bin/codex" ]; then
+            echo "ERROR: install of pinned @openai/codex@${JUDGE_CODEX_VERSION} failed (no ${pin_prefix}/bin/codex in the sandbox home) — ${JUDGE_LABEL} cannot run" >&2
+            return 1
+        fi
+        codex_bin="/home/ben/${pin_prefix}/bin/codex"
+    fi
 
     apptainer exec \
         --containall \
@@ -137,7 +164,7 @@ run_judge_exec() {
         --pwd "/home/ben/task" \
         --writable-tmpfs \
         "${POST_TRAIN_BENCH_CONTAINERS_DIR}/${JUDGE_CONTAINER}" \
-        codex --search -a never exec --json -c model_reasoning_summary=detailed -c model_reasoning_effort="${JUDGE_REASONING_EFFORT}" --skip-git-repo-check --yolo --model "${JUDGE_MODEL}" "$prompt" 2>&1 | tee "$output_json"
+        "$codex_bin" --search -a never exec --json -c model_reasoning_summary=detailed -c model_reasoning_effort="${JUDGE_REASONING_EFFORT}" --skip-git-repo-check --yolo --model "${JUDGE_MODEL}" "$prompt" 2>&1 | tee "$output_json"
 }
 
 # collect_judge_output <job_dir> <out_dir> <name_suffix> <missing_fatal>
@@ -145,6 +172,12 @@ run_judge_exec() {
 # judgement produced in the sandbox to
 # <out_dir>/judgement_<JUDGE_OUTPUT_ID><name_suffix>.json. Returns 1 on a
 # missing judgement only when <missing_fatal> is 1.
+#
+# <missing_fatal> is a property of the caller, not of the judge: standalone
+# reruns (run_judges.sh) pass 1, because producing the verdict is the whole
+# point of the job. run_task.sh passes 0 — a judge that produces no verdict
+# must never cost a finished 10h agent run its evaluation, and the rerun
+# pipeline can supply the verdict later.
 collect_judge_output() {
     local job_dir="$1" out_dir="$2" suffix="$3" missing_fatal="$4"
     local out_base="judge_output_${JUDGE_OUTPUT_ID}${suffix}"
@@ -158,5 +191,7 @@ collect_judge_output() {
     elif [ "$missing_fatal" = "1" ]; then
         echo "ERROR: judgement.json not created by ${JUDGE_LABEL} (see $out_dir/${out_base}.txt)" >&2
         return 1
+    else
+        echo "WARNING: judgement.json not created by ${JUDGE_LABEL} (see $out_dir/${out_base}.txt); continuing — a missing inline verdict never aborts the task run" >&2
     fi
 }

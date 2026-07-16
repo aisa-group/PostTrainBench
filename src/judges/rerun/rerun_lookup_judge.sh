@@ -27,7 +27,6 @@
 #
 # Example (GLM 5.2 test batch):
 #   bash src/judges/rerun/rerun_lookup_judge.sh --dry-run /fast/hbhatnagar/ptb_results/glmx_glm-5.2-preview_1m__10h_run{1,2,3}
-#   bash src/judges/rerun/rerun_lookup_judge.sh --dry-run /fast/hbhatnagar/ptb_results/glmx_glm-5.2-preview_1m__10h_run1
 
 set -euo pipefail
 
@@ -39,7 +38,6 @@ JUDGE="ptb_lookup_judge"
 source "$SCRIPT_DIR/../judge_lib.sh"
 load_judge_conf "$JUDGE"
 OUTPUT_ID="$JUDGE_OUTPUT_ID"
-WEIGHT="$JUDGE_CONDOR_WEIGHT"
 
 DRY_RUN=""
 SKIP_EXISTING=""
@@ -58,7 +56,7 @@ if [ ${#INPUT_DIRS[@]} -eq 0 ]; then
     exit 1
 fi
 
-echo "Judge: $JUDGE (output id: $OUTPUT_ID, condor weight: $WEIGHT)"
+echo "Judge: $JUDGE (output id: $OUTPUT_ID)"
 
 # Expand method dirs into task result dirs; pass single result dirs through.
 # Within a method dir, keep only the latest run per benchmark+model: dirs are
@@ -161,7 +159,6 @@ for result_dir in "${RESULT_DIRS[@]}"; do
     SUBMIT_OUT="$(condor_submit_bid 100 \
         -a "result_dir=$result_dir" \
         -a "judges=$JUDGE" \
-        -a "judge_weight=$WEIGHT" \
         "$SUB_FILE" 2>&1)"
     echo "$SUBMIT_OUT" | tail -1
     CLUSTER_ID="$(echo "$SUBMIT_OUT" | grep -oE 'cluster [0-9]+' | awk '{print $2}' | tail -1)"

@@ -34,7 +34,7 @@ PostTrainBench/
 
 | File | Purpose |
 |------|---------|
-| `src/run_task.sh` | Main task execution orchestrator (runs agent, then 3 judges, then evaluation) |
+| `src/run_task.sh` | Main task execution orchestrator (runs agent, then 4 judges, then evaluation) |
 | `src/commit_utils/commit.sh` | Batch job submission across agents × benchmarks × models |
 | `src/commit_utils/set_env_vars.sh` | Sources `.env` and exports `POST_TRAIN_BENCH_*` env vars |
 | `src/commit_utils/single_task.sub` | HTCondor submission template |
@@ -231,11 +231,21 @@ and a prompt template (see `src/judges/README.md`, including how to add a new ju
    verdict (`judgement_ptb_lookup.json`) is archival — it does not feed score fallback — but
    `scripts/collect.py` raises an error if it ever flags, so a firing lookup judge cannot pass
    unnoticed.
+4. **`general_judge`** (GPT-5.6 Terra via codex CLI pinned to 0.144.5) — separate schema
+   (`general_anomaly`), an open-ended sweep for **unknown unknowns**: run-integrity problems
+   the other judges were not designed to catch, whether caused by the agent (novel reward
+   hacking outside the other judges' scope) or suffered by it (premature stop without visible
+   reason, agent usage limits / token exhaustion, grader-API credit exhaustion on
+   arenahardwriting/healthbench, harness or infra failures). Its verdict
+   (`judgement_general.json`) never affects any score; when it flags, `scripts/collect.py`
+   finishes its collection pass but writes **no** aggregation files and raises an error listing
+   every flagged run — double-check them and flip `general_anomaly` to false in the listed
+   verdict file for runs that turn out fine.
 
 Each judge writes its own per-judge file; there is no aggregation step. The canonical verdicts
 consumed downstream are `judgement_gpt5_4.json` (contamination/disallowed_model) and
 `judgement_api.json` (API usage) — or their `_rerun` variants when the rerun pipeline has
-produced them. Runs predating the API or PTB-lookup judge lack the corresponding
+produced them. Runs predating the API, PTB-lookup, or general judge lack the corresponding
 `judgement_*.json`; scoring treats a missing file as "not flagged".
 
 Reruns: `src/judges/rerun/` holds the batch-rerun pipeline. Rerun outputs
@@ -271,6 +281,8 @@ results/{agent}_{agent_config}_{num_hours}h[_{num_gpus}gpu]{experiment_name}/
     ├── judgement_api.json               # api_usage_judge structured verdict (flag ⇒ baseline score)
     ├── judge_output_ptb_lookup.{json,txt} # ptb_lookup_judge raw + parsed trace
     ├── judgement_ptb_lookup.json        # ptb_lookup_judge structured verdict (archival; collect.py errors if flagged)
+    ├── judge_output_general.{json,txt}  # general_judge raw + parsed trace
+    ├── judgement_general.json           # general_judge structured verdict (archival; collect.py errors if flagged, writing nothing)
     ├── final_eval_*.txt                 # vLLM/inspect-ai evaluation logs (one per retry)
     └── metrics.json                     # Final benchmark scores
 ```

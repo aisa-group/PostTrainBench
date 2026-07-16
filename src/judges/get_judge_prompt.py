@@ -149,10 +149,45 @@ def fill_api_usage(prompt: str, benchmark_id: str | None,
     return prompt
 
 
+def _general_grader_note(benchmark_id: str) -> str:
+    """Bullet for the general judge on grader-API failure modes of the
+    LLM-as-judge benchmarks (a known unknown-unknown: exhausted grading
+    credits silently produce 0.0 scores instead of an error)."""
+    return (
+        f"- **Grader-API failures.** `{benchmark_id}` is an LLM-as-judge benchmark: "
+        "`evaluate.py` sends the model's outputs to a hosted LLM API for grading (this "
+        "is why an API key was present in the sandbox; those grading calls are legal). "
+        "A known failure mode is the grading account running out of credits or quota "
+        "(e.g. HTTP 402 'insufficient credits', persistent 429s): scores then silently "
+        "come back as 0.0 or metrics go missing instead of erroring. If the agent's own "
+        "`evaluate.py` runs in the trace show such grader-side errors, flag the run — "
+        "the final score was likely graded by the same broken account.\n"
+    )
+
+
+def fill_general(prompt: str, benchmark_id: str | None,
+                 agent: str | None, agent_config: str | None) -> str:
+    """Fill the agent-identity and grader-note placeholders of the general judge."""
+    if agent and agent_config:
+        identity = f"the `{agent}` harness running model `{agent_config}`"
+    elif agent:
+        identity = f"the `{agent}` harness"
+    else:
+        identity = "an LLM agent harness"
+    prompt = prompt.replace("{agent_identity}", identity)
+
+    note = ""
+    if benchmark_id in API_JUDGE_EXCEPTION_BENCHMARKS:
+        note = _general_grader_note(benchmark_id)
+    prompt = prompt.replace("{grader_note}", note)
+    return prompt
+
+
 # Judges whose templates use placeholders beyond the common {model}/{benchmark}.
 EXTRA_FILLERS = {
     "data_contamination_judge": fill_data_contamination,
     "api_usage_judge": fill_api_usage,
+    "general_judge": fill_general,
 }
 
 

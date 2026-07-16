@@ -9,12 +9,20 @@ For each method directory in the results dir, does a single pass:
      the API usage judgement (judgement_api_rerun.json if present, else
      judgement_api.json; absent for runs predating that judge), the
      PTB-lookup judgement (same rerun-over-original preference; archival —
-     a True verdict raises instead of affecting scores), and time_taken.txt
+     a True verdict raises instead of affecting scores), the general
+     unknown-unknowns judgement (judgement_general[_rerun].json; archival,
+     see below), and time_taken.txt
   3. Applies baseline fallback for cells flagged by the contamination or
      API judge, or with no run
   4. Writes final_{method}.csv, contamination_{method}.csv
 
 Also writes a time_overview.csv summarising average time per method.
+
+The general judge never affects any score. If it flagged any run, the
+collection pass (steps 1-3) still completes for every method, but NOTHING is
+written: collect.py raises an error listing every flagged run instead.
+Double-check those runs; for each that looks fine, flip "general_anomaly" to
+false in the verdict file named in the error, then re-run.
 
 Any missing or malformed metrics.json / contamination judgement / time_taken.txt
 inside an existing run directory is a hard error — there are no silent
@@ -41,6 +49,8 @@ from utils import (
     load_judgement,
     load_api_judgement,
     load_ptb_lookup_judgement,
+    load_general_judgement,
+    general_judgement_path,
     judgement_to_cell,
     load_time_taken,
     format_time_hms,
@@ -55,19 +65,19 @@ def collect_method(
     method_path: str,
     method_name: str,
     baseline_data: dict[str, dict[str, str]],
-    output_dir: str,
     min_run_id: int | None = None,
     max_run_id: int | None = None,
 ) -> dict | None:
     """
-    Collect results for one method directory.
+    Scan one method directory (no files are written here).
 
-    Writes:
-      - final_{method_name}.csv      (scores with baseline fallback)
-      - contamination_{method_name}.csv (contamination flags)
+    Returns everything needed to write the method's CSVs, or None if no runs
+    found:
+      {"benchmarks", "models", "metrics_grid" (baseline fallback applied),
+       "contamination_grid", "time_stats", "general_flagged"}
 
-    Returns time stats dict {"total_seconds": int, "valid_count": int}
-    or None if no runs found.
+    Writing is deferred to write_method_csvs() so a general-judge flag in any
+    method can abort aggregation before a single file is stored.
     """
     latest_runs = walk_latest_runs(method_path, min_run_id, max_run_id)
     if not latest_runs:
@@ -79,6 +89,7 @@ def collect_method(
     # Collect metrics, contamination, and time in one pass
     metrics_grid = {}  # {model: {bench: str}}
     contamination_grid = {}  # {model: {bench: str}}
+    general_flagged = []  # [(run_dir, verdict_path)]
     time_total_seconds = 0
     time_valid_count = 0
 
@@ -96,6 +107,14 @@ def collect_method(
             run_dir = latest_runs[key]["path"]
 
             try:
+                # General-judge verdict first, so flagged runs are reported
+                # even when the run is otherwise broken (e.g. missing
+                # metrics.json). The verdict never affects scores; main()
+                # aborts before writing anything when this list is non-empty.
+                if load_general_judgement(run_dir):
+                    general_flagged.append(
+                        (run_dir, general_judgement_path(run_dir))
+                    )
                 metrics_grid[model][bench] = load_metrics(
                     os.path.join(run_dir, "metrics.json")
                 )
@@ -128,20 +147,6 @@ def collect_method(
                 metrics_grid[model][bench] = ""
                 contamination_grid[model][bench] = ""
 
-    # Write contamination CSV
-    contamination_path = os.path.join(
-        output_dir, f"contamination_{method_name}.csv"
-    )
-    with open(contamination_path, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["model"] + benchmarks)
-        for model in models:
-            row = [model]
-            for bench in benchmarks:
-                row.append(contamination_grid[model][bench])
-            writer.writerow(row)
-    print(f"Written: {contamination_path}")
-
     # Replace the cell with the baseline value if no run exists or the judge
     # flagged it. load_metrics() guarantees numeric strings when a run exists,
     # so the only non-numeric value here is "" for missing runs.
@@ -167,7 +172,38 @@ def collect_method(
                 )
             metrics_grid[model][bench] = baseline_data[model][bench]
 
-    # Write final CSV (scores with baseline fallback applied)
+    return {
+        "benchmarks": benchmarks,
+        "models": models,
+        "metrics_grid": metrics_grid,
+        "contamination_grid": contamination_grid,
+        "general_flagged": general_flagged,
+        "time_stats": {
+            "total_seconds": time_total_seconds,
+            "valid_count": time_valid_count,
+        },
+    }
+
+
+def write_method_csvs(method_name: str, collected: dict, output_dir: str):
+    """Write contamination_{method}.csv and final_{method}.csv for one method
+    from the grids collected by collect_method()."""
+    benchmarks = collected["benchmarks"]
+    models = collected["models"]
+
+    contamination_path = os.path.join(
+        output_dir, f"contamination_{method_name}.csv"
+    )
+    with open(contamination_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["model"] + benchmarks)
+        for model in models:
+            row = [model]
+            for bench in benchmarks:
+                row.append(collected["contamination_grid"][model][bench])
+            writer.writerow(row)
+    print(f"Written: {contamination_path}")
+
     final_path = os.path.join(output_dir, f"final_{method_name}.csv")
     with open(final_path, "w", newline="") as f:
         writer = csv.writer(f)
@@ -175,14 +211,9 @@ def collect_method(
         for model in models:
             row = [model]
             for bench in benchmarks:
-                row.append(metrics_grid[model].get(bench, ""))
+                row.append(collected["metrics_grid"][model].get(bench, ""))
             writer.writerow(row)
     print(f"Written: {final_path}")
-
-    return {
-        "total_seconds": time_total_seconds,
-        "valid_count": time_valid_count,
-    }
 
 
 def write_time_overview(method_stats: dict[str, dict], output_dir: str):
@@ -255,12 +286,10 @@ def main():
     extra_dirs = [] if args.data_dir else get_extra_results_dirs()
     all_roots = [data_dir] + extra_dirs
 
-    os.makedirs(output_dir, exist_ok=True)
-
     # Load baseline data for fallback (hardcoded in baselines.json)
     baseline_data = get_baseline_fallback_data()
 
-    method_stats = {}
+    collected_by_method: dict[str, dict] = {}
     seen_method_root: dict[str, str] = {}
 
     for root in all_roots:
@@ -290,16 +319,46 @@ def main():
                 continue
             seen_method_root[method_name] = root
 
-            stats = collect_method(
+            collected = collect_method(
                 method_path,
                 method_name,
                 baseline_data,
-                output_dir,
                 min_run_id=args.min_run_id,
                 max_run_id=args.max_run_id,
             )
-            if stats:
-                method_stats[method_name] = stats
+            if collected:
+                collected_by_method[method_name] = collected
+
+    # The general (unknown-unknowns) judge is archival: it never changes a
+    # score, but a flagged run must not silently enter the aggregation. The
+    # collection pass above still ran to completion; now refuse to store any
+    # of it and list every flagged run for manual review.
+    general_flagged = [
+        flag
+        for collected in collected_by_method.values()
+        for flag in collected["general_flagged"]
+    ]
+    if general_flagged:
+        listing = "\n".join(
+            f"  {run_dir}\n    verdict: {verdict_path}"
+            for run_dir, verdict_path in general_flagged
+        )
+        raise RuntimeError(
+            f"General judge flagged {len(general_flagged)} run(s); no "
+            f"aggregation files were written.\n{listing}\n"
+            f"Double-check each run above (its judge_output_general*.txt "
+            f"trace and the justification in the verdict file explain what "
+            f"the judge saw). For every run that looks fine, flip "
+            f'"general_anomaly" to false in the verdict file listed for it, '
+            f"then re-run collect.py."
+        )
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    method_stats = {}
+    for method_name, collected in collected_by_method.items():
+        write_method_csvs(method_name, collected, output_dir)
+        method_stats[method_name] = collected["time_stats"]
 
     if method_stats:
         write_time_overview(method_stats, output_dir)

@@ -358,7 +358,10 @@ for JUDGE_NAME in "${ALL_JUDGES[@]}"; do
 
     with_huggingface_overlay run_judge_exec "${JOB_DIR}" "${JOB_TMP}" "${EVAL_DIR}/judge_output_${JUDGE_OUTPUT_ID}.json" "${JUDGE_PROMPT}"
 
-    collect_judge_output "${JOB_DIR}" "${EVAL_DIR}" "" "${JUDGE_MISSING_JUDGEMENT_FATAL_INLINE}" || exit 1
+    # missing_fatal=0: a judge that produces no verdict warns and moves on. The
+    # agent's 10h of work is already done, so it must still be evaluated; the
+    # rerun pipeline can supply the missing verdict afterwards.
+    collect_judge_output "${JOB_DIR}" "${EVAL_DIR}" "" 0
 done
 
 echo "================================"

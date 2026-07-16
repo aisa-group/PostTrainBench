@@ -22,6 +22,11 @@ results tree:
 #    + time_taken.txt, applies baseline-zeroshot fallback for flagged/errored cells.
 #    The PTB-lookup judgement is also read, but only as a tripwire: it is
 #    archival, and collect.py raises an error if it ever flags.
+#    The general (unknown-unknowns) judgement is the same kind of tripwire and
+#    likewise never affects a score: when it flags, the collection pass still
+#    finishes, but NOTHING is written and collect.py raises listing every
+#    flagged run + its verdict file. Double-check those runs; for each that
+#    looks fine, flip "general_anomaly" to false in its verdict file and re-run.
 #    Writes:
 #      final_{method}.csv          — score grid (model x benchmark) with fallback
 #      contamination_{method}.csv  — flags ("" or any of "M", "C", "A", or error string)
@@ -95,6 +100,7 @@ python scripts/verify.py \
 | Script | Description |
 |---|---|
 | `compute_claude_costs.py` | Claude API spend rollup |
+| `find_disallowed_ptb_lookup.py` | List all run dirs flagged by the PTB-lookup judge (all roots, all runs; dirs without a lookup verdict are ignored; `--justification` for details) |
 | `extract_token_usage.py` | Token-usage extraction from agent traces |
 | `migrate_judgement_files.py` | One-off: migrate older judgement file naming |
 | `list_safetensors.py` | List safetensors files under a result tree |

@@ -46,12 +46,11 @@ if [ ${#JUDGES[@]} -eq 0 ]; then
     JUDGES=("${ALL_JUDGES[@]}")
 fi
 
-# Validate the judges and cache their output ids + condor weights.
-declare -A OUTPUT_ID_BY_JUDGE WEIGHT_BY_JUDGE
+# Validate the judges and cache their output ids.
+declare -A OUTPUT_ID_BY_JUDGE
 for judge in "${JUDGES[@]}"; do
     load_judge_conf "$judge"
     OUTPUT_ID_BY_JUDGE[$judge]="$JUDGE_OUTPUT_ID"
-    WEIGHT_BY_JUDGE[$judge]="$JUDGE_CONDOR_WEIGHT"
 done
 
 if [ ! -f "$ENV_FILE" ]; then
@@ -113,10 +112,6 @@ while read -r result_dir; do
     fi
 
     JUDGES_ARG=$(IFS=,; echo "${RUN_JUDGES[*]}")
-    WEIGHT=0
-    for judge in "${RUN_JUDGES[@]}"; do
-        [ "${WEIGHT_BY_JUDGE[$judge]}" -gt "$WEIGHT" ] && WEIGHT="${WEIGHT_BY_JUDGE[$judge]}"
-    done
 
     if [ -n "$DRY_RUN" ]; then
         echo "  [dry-run] ($JUDGES_ARG) $result_dir"
@@ -127,7 +122,6 @@ while read -r result_dir; do
     SUBMIT_OUT=$(condor_submit_bid 100 \
         -a "result_dir=$result_dir" \
         -a "judges=$JUDGES_ARG" \
-        -a "judge_weight=$WEIGHT" \
         "$SUB_FILE" 2>&1)
     echo "$SUBMIT_OUT" | tail -2
     CLUSTER_ID=$(echo "$SUBMIT_OUT" | grep -oE 'cluster [0-9]+' | awk '{print $2}' | tail -1)

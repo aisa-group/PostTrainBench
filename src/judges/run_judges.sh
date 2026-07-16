@@ -13,6 +13,11 @@
 #   3. ptb_lookup_judge         -> judgement_ptb_lookup_rerun.json
 #      (separate `disallowed_ptb_lookup` schema; archival, but
 #      scripts/collect.py errors out if it ever flags)
+#   4. general_judge            -> judgement_general_rerun.json
+#      (separate `general_anomaly` schema; GPT-5.6-Terra unknown-unknowns
+#      sweep on codex 0.144.5 — archival, but when it flags,
+#      scripts/collect.py finishes its collection pass without writing any
+#      files and errors out listing the flagged runs)
 #
 # All outputs are always saved with the _rerun suffix so original judge
 # outputs produced by src/run_task.sh are preserved.
