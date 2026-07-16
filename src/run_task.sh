@@ -231,8 +231,8 @@ solve_task() {
 # One curl to a lightweight ChatGPT endpoint tells us the state: it uses the
 # already-issued access token, no refresh path, so it doesn't rotate anything
 # or race parallel job starts.
-# TODO: copy over the task directory before the judge is ran so that it doesnt
-# invalidate the whole run
+# TODO: copy over the task directory before the judge is ran so that it doesnt 
+# invalidate the whole run 
 
 echo "================================"
 echo "======= JUDGE AUTH CHECK ======="
@@ -300,6 +300,28 @@ echo "============================================"
 python src/trace_parsing/parse_trace.py --agent "${AGENT}" "${SOLVE_OUT}" -o "${EVAL_DIR}/solve_parsed.txt"
 cp "${EVAL_DIR}/solve_parsed.txt" "${JOB_DIR}/solve_parsed.txt"
 
+echo "============================="
+echo "======== CLEANING UP ========"
+echo "============================="
+
+echo "Task directory contents:"
+tree ${JOB_DIR}/task
+echo "================================"
+
+if [ -d "${JOB_DIR}/task/final_model" ]; then
+    cp -r "${JOB_DIR}/task/final_model" "$EVAL_DIR/final_model"
+fi
+
+if [ -f "${JOB_DIR}/task/system_monitor.log" ]; then
+    cp "${JOB_DIR}/task/system_monitor.log" "$EVAL_DIR/system_monitor.log"
+fi
+
+python containers/delete_hf_models.py "${JOB_DIR}/task"
+
+cp -r "${JOB_DIR}/task" "$EVAL_DIR/task"
+
+rm -rf /tmp/posttrain_container
+
 echo "========================================="
 echo "=== RUNNING CONTAMINATION JUDGE ==="
 echo "========================================="
@@ -312,8 +334,8 @@ cp -r "src/disallowed_usage_judge/judge_tools/reference_configs" "${JOB_DIR}/ref
 # Expose final_model/config.json to the judge as ../final_model_config.json so
 # model_identity_check.py can compare it against the reference. Only the
 # config.json is needed for the architecture-identity check, not the weights.
-if [ -f "${JOB_DIR}/task/final_model/config.json" ]; then
-    cp "${JOB_DIR}/task/final_model/config.json" "${JOB_DIR}/final_model_config.json"
+if [ -f "${EVAL_DIR}/final_model/config.json" ]; then
+    cp "${EVAL_DIR}/final_model/config.json" "${JOB_DIR}/final_model_config.json"
 fi
 
 if [ -f "src/eval/tasks/${EVALUATION_TASK}/test_data.json" ]; then
@@ -393,28 +415,6 @@ else
     echo "ERROR: judgement.json not created by API judge (see ${EVAL_DIR}/judge_output_api.txt)" >&2
     exit 1
 fi
-
-echo "============================="
-echo "======== CLEANING UP ========"
-echo "============================="
-
-echo "Task directory contents:"
-tree ${JOB_DIR}/task
-echo "================================"
-
-if [ -d "${JOB_DIR}/task/final_model" ]; then
-    cp -r "${JOB_DIR}/task/final_model" "$EVAL_DIR/final_model"
-fi
-
-if [ -f "${JOB_DIR}/task/system_monitor.log" ]; then
-    cp "${JOB_DIR}/task/system_monitor.log" "$EVAL_DIR/system_monitor.log"
-fi
-
-python containers/delete_hf_models.py "${JOB_DIR}/task"
-
-cp -r "${JOB_DIR}/task" "$EVAL_DIR/task"
-
-rm -rf /tmp/posttrain_container
 
 echo "================================"
 echo "========= EVALUATING ==========="
