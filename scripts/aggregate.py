@@ -33,6 +33,16 @@ from utils import (
 )
 
 
+def _fs_agent(agent_name: str) -> str:
+    """Filename-safe form of an agent name: spaces -> underscores.
+
+    Applied only to filenames — CSV row values keep the display form
+    (e.g. "Opus-4.8 (Max)") so the site's AGGREGATED_NAME_TO_KEY lookup
+    still matches.
+    """
+    return agent_name.replace(" ", "_")
+
+
 # ---------------------------------------------------------------------------
 # Per-cell avg/std across runs
 # ---------------------------------------------------------------------------
@@ -79,11 +89,11 @@ def aggregate_per_cell(
             avg_data[model][bench] = str(mean(values))
             std_data[model][bench] = str(stddev(values))
 
-    avg_path = os.path.join(output_dir, f"aggregated_avg_{agent_name}.csv")
+    avg_path = os.path.join(output_dir, f"aggregated_avg_{_fs_agent(agent_name)}.csv")
     write_csv(avg_path, all_models, HARDCODED_BENCHMARKS, avg_data)
     print(f"Written: {avg_path}")
 
-    std_path = os.path.join(output_dir, f"aggregated_std_{agent_name}.csv")
+    std_path = os.path.join(output_dir, f"aggregated_std_{_fs_agent(agent_name)}.csv")
     write_csv(std_path, all_models, HARDCODED_BENCHMARKS, std_data)
     print(f"Written: {std_path}")
 
@@ -132,14 +142,14 @@ def aggregate_leaderboard(data_dir: str, output_dir: str):
         )
         if avg_data is not None:
             # Write final_avg_{agent}.csv (identical to aggregated_avg_)
-            avg_path = os.path.join(output_dir, f"final_avg_{agent_name}.csv")
+            avg_path = os.path.join(output_dir, f"final_avg_{_fs_agent(agent_name)}.csv")
             write_csv(
                 avg_path,
                 sorted(avg_data.keys()),
                 HARDCODED_BENCHMARKS,
                 avg_data,
             )
-            std_path = os.path.join(output_dir, f"final_std_{agent_name}.csv")
+            std_path = os.path.join(output_dir, f"final_std_{_fs_agent(agent_name)}.csv")
             write_csv(
                 std_path,
                 sorted(std_data.keys()),

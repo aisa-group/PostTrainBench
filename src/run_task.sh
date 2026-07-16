@@ -224,6 +224,36 @@ solve_task() {
         bash -c "{ python /home/ben/check_cuda.py && python /home/ben/check_cuda_writing.py || exit 1; bash /home/ben/system_monitor.sh & MONITOR_PID=\$!; bash /home/ben/agent_solve.sh; kill \$MONITOR_PID 2>/dev/null; } 2>&1 | python /home/ben/timestamp_lines.py" > "${SOLVE_OUT}" 2>&1
 }
 
+# ---------- judge OAuth precheck ----------
+# All judges run via the codex CLI with the subscription auth at
+# agents/codex_non_api/auth.json (see src/judges/judge_lib.sh). If its ChatGPT
+# session is invalidated, we'd waste the full agent run only to hard-error at
+# the judge phase. One curl to a lightweight ChatGPT endpoint tells us the
+# state: it uses the already-issued access token, no refresh path, so it
+# doesn't rotate anything or race parallel job starts.
+
+echo "================================"
+echo "======= JUDGE AUTH CHECK ======="
+echo "================================"
+JUDGE_AUTH="agents/codex_non_api/auth.json"
+if [ ! -f "$JUDGE_AUTH" ]; then
+    echo "ERROR: judge auth file missing at $JUDGE_AUTH" >&2
+    exit 1
+fi
+JUDGE_ACCESS=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["tokens"]["access_token"])' "$JUDGE_AUTH") \
+    || { echo "ERROR: could not extract tokens.access_token from $JUDGE_AUTH" >&2; exit 1; }
+JUDGE_HTTP=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 \
+    -H "Authorization: Bearer $JUDGE_ACCESS" \
+    "https://chatgpt.com/backend-api/codex/models?client_version=0.124.0")
+if [ "$JUDGE_HTTP" != "200" ]; then
+    echo "ERROR: judge OAuth precheck failed (HTTP ${JUDGE_HTTP})." >&2
+    echo "The ChatGPT session in $JUDGE_AUTH may be invalidated." >&2
+    echo "Re-login on the head node:" >&2
+    echo "  codex logout && codex login && cp ~/.codex/auth.json $JUDGE_AUTH && chmod 600 $JUDGE_AUTH" >&2
+    exit 1
+fi
+echo "Judge OAuth OK (HTTP 200)"
+
 echo "================================"
 echo "========= RUNNING TASK ========="
 echo "================================"
@@ -268,14 +298,38 @@ echo "============================================"
 python src/trace_parsing/parse_trace.py --agent "${AGENT}" "${SOLVE_OUT}" -o "${EVAL_DIR}/solve_parsed.txt"
 cp "${EVAL_DIR}/solve_parsed.txt" "${JOB_DIR}/solve_parsed.txt"
 
+echo "============================="
+echo "======== CLEANING UP ========"
+echo "============================="
+
+echo "Task directory contents:"
+tree ${JOB_DIR}/task
+echo "================================"
+
+if [ -d "${JOB_DIR}/task/final_model" ]; then
+    cp -r "${JOB_DIR}/task/final_model" "$EVAL_DIR/final_model"
+fi
+
+if [ -f "${JOB_DIR}/task/system_monitor.log" ]; then
+    cp "${JOB_DIR}/task/system_monitor.log" "$EVAL_DIR/system_monitor.log"
+fi
+
+python containers/delete_hf_models.py "${JOB_DIR}/task"
+
+cp -r "${JOB_DIR}/task" "$EVAL_DIR/task"
+
+rm -rf /tmp/posttrain_container
+
 echo "========================================="
 echo "=== RUNNING REWARD-HACKING JUDGES ==="
 echo "========================================="
 
 source src/judges/judge_lib.sh
 
-# Make judge helper tooling and benchmark metadata available inside the judge sandbox.
-prepare_judge_sandbox "${JOB_DIR}" "${EVALUATION_TASK}" "${JOB_DIR}/task/final_model/config.json"
+# Make judge helper tooling and benchmark metadata available inside the judge
+# sandbox. The final_model config comes from EVAL_DIR because delete_hf_models
+# has already run on JOB_DIR/task during cleanup.
+prepare_judge_sandbox "${JOB_DIR}" "${EVALUATION_TASK}" "${EVAL_DIR}/final_model/config.json"
 
 # Reset codex config (so agent-specific settings like model_reasoning_effort
 # can't leak into the judges) and set up the bind-mounted subscription auth
@@ -306,28 +360,6 @@ for JUDGE_NAME in "${ALL_JUDGES[@]}"; do
 
     collect_judge_output "${JOB_DIR}" "${EVAL_DIR}" "" "${JUDGE_MISSING_JUDGEMENT_FATAL_INLINE}" || exit 1
 done
-
-echo "============================="
-echo "======== CLEANING UP ========"
-echo "============================="
-
-echo "Task directory contents:"
-tree ${JOB_DIR}/task
-echo "================================"
-
-if [ -d "${JOB_DIR}/task/final_model" ]; then
-    cp -r "${JOB_DIR}/task/final_model" "$EVAL_DIR/final_model"
-fi
-
-if [ -f "${JOB_DIR}/task/system_monitor.log" ]; then
-    cp "${JOB_DIR}/task/system_monitor.log" "$EVAL_DIR/system_monitor.log"
-fi
-
-python containers/delete_hf_models.py "${JOB_DIR}/task"
-
-cp -r "${JOB_DIR}/task" "$EVAL_DIR/task"
-
-rm -rf /tmp/posttrain_container
 
 echo "================================"
 echo "========= EVALUATING ==========="
