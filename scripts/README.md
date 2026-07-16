@@ -22,11 +22,9 @@ results tree:
 #    + time_taken.txt, applies baseline-zeroshot fallback for flagged/errored cells.
 #    The PTB-lookup judgement is also read, but only as a tripwire: it is
 #    archival, and collect.py raises an error if it ever flags.
-#    The general (unknown-unknowns) judgement is the same kind of tripwire and
-#    likewise never affects a score: when it flags, the collection pass still
-#    finishes, but NOTHING is written and collect.py raises listing every
-#    flagged run + its verdict file. Double-check those runs; for each that
-#    looks fine, flip "general_anomaly" to false in its verdict file and re-run.
+#    The general (unknown-unknowns) judgement is ignored entirely: it never
+#    affects a score and never raises, whether missing or flagged. Review its
+#    flags separately with find_flagged_runs.py --judge general_judge.
 #    Writes:
 #      final_{method}.csv          — score grid (model x benchmark) with fallback
 #      contamination_{method}.csv  — flags ("" or any of "M", "C", "A", or error string)

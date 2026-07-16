@@ -237,16 +237,20 @@ and a prompt template (see `src/judges/README.md`, including how to add a new ju
    hacking outside the other judges' scope) or suffered by it (premature stop without visible
    reason, agent usage limits / token exhaustion, grader-API credit exhaustion on
    arenahardwriting/healthbench, harness or infra failures). Its verdict
-   (`judgement_general.json`) never affects any score; when it flags, `scripts/collect.py`
-   finishes its collection pass but writes **no** aggregation files and raises an error listing
-   every flagged run — double-check them and flip `general_anomaly` to false in the listed
-   verdict file for runs that turn out fine.
+   (`judgement_general.json`) is purely archival: `scripts/collect.py` ignores it entirely —
+   no score impact and no error, whether it is missing or flagged. Review its flags with
+   `scripts/find_flagged_runs.py --judge general_judge`.
 
 Each judge writes its own per-judge file; there is no aggregation step. The canonical verdicts
 consumed downstream are `judgement_gpt5_4.json` (contamination/disallowed_model) and
 `judgement_api.json` (API usage) — or their `_rerun` variants when the rerun pipeline has
-produced them. Runs predating the API, PTB-lookup, or general judge lack the corresponding
-`judgement_*.json`; scoring treats a missing file as "not flagged".
+produced them. `scripts/collect.py` enforces judge coverage: every scored run (metrics.json
+present) must carry a contamination and an API verdict, and runs with ids >=
+`NEWER_JUDGES_MIN_RUN_ID` (`scripts/utils.py`) a PTB-lookup verdict too; a method containing a
+scored run without a required verdict is skipped (warning, no CSVs) instead of aggregated.
+Runs below that id may legitimately lack the PTB-lookup file (they predate the judge) — a
+verdict present on such a run is still read as a tripwire. The general judgement is never
+required.
 
 Reruns: `src/judges/rerun/` holds the batch-rerun pipeline. Rerun outputs
 always carry a `_rerun` suffix so original judge files produced during `run_task.sh` are
@@ -282,7 +286,7 @@ results/{agent}_{agent_config}_{num_hours}h[_{num_gpus}gpu]{experiment_name}/
     ├── judge_output_ptb_lookup.{json,txt} # ptb_lookup_judge raw + parsed trace
     ├── judgement_ptb_lookup.json        # ptb_lookup_judge structured verdict (archival; collect.py errors if flagged)
     ├── judge_output_general.{json,txt}  # general_judge raw + parsed trace
-    ├── judgement_general.json           # general_judge structured verdict (archival; collect.py errors if flagged, writing nothing)
+    ├── judgement_general.json           # general_judge structured verdict (archival; ignored by collect.py)
     ├── final_eval_*.txt                 # vLLM/inspect-ai evaluation logs (one per retry)
     └── metrics.json                     # Final benchmark scores
 ```

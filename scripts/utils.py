@@ -446,16 +446,16 @@ def load_judgement(run_dir: str) -> dict:
 
 API_USAGE_FIELD = "disallowed_api_usage"
 PTB_LOOKUP_FIELD = "disallowed_ptb_lookup"
-GENERAL_ANOMALY_FIELD = "general_anomaly"
 
 
-def _optional_flag_judgement_path(run_dir: str, basename: str) -> str | None:
-    """Return the verdict path for an optional single-boolean judge.
+def optional_judgement_path(run_dir: str, basename: str) -> str | None:
+    """Return the verdict path for a judge whose file may legitimately be absent.
 
-    Prefers ``judgement_{basename}_rerun.json`` (written by the rerun
-    pipeline) over ``judgement_{basename}.json`` from the initial
-    ``run_task.sh`` run; None when neither exists (the run predates the
-    judge).
+    ``basename`` is the judge's output id (JUDGE_OUTPUT_ID in its judge.conf),
+    e.g. ``api``, ``ptb_lookup``, ``general``, ``gpt5_4``. Prefers
+    ``judgement_{basename}_rerun.json`` (written by the rerun pipeline) over
+    ``judgement_{basename}.json`` from the initial ``run_task.sh`` run; None
+    when neither exists (the run predates the judge).
     """
     rerun_path = os.path.join(run_dir, f"judgement_{basename}_rerun.json")
     original_path = os.path.join(run_dir, f"judgement_{basename}.json")
@@ -479,7 +479,7 @@ def _load_optional_flag_judgement(
     instead of raising. Raises json.JSONDecodeError on a malformed file and
     ValueError/TypeError when the schema does not match what the judge writes.
     """
-    path = _optional_flag_judgement_path(run_dir, basename)
+    path = optional_judgement_path(run_dir, basename)
     if path is None:
         return None
 
@@ -510,10 +510,10 @@ def load_api_judgement(run_dir: str) -> bool | None:
 def ptb_lookup_judgement_path(run_dir: str) -> str | None:
     """Return the PTB-lookup judge verdict path for a run directory.
 
-    Prefers the ``_rerun`` file (see ``_optional_flag_judgement_path``); None
+    Prefers the ``_rerun`` file (see ``optional_judgement_path``); None
     when the run has no PTB-lookup judgement (it predates the judge).
     """
-    return _optional_flag_judgement_path(run_dir, "ptb_lookup")
+    return optional_judgement_path(run_dir, "ptb_lookup")
 
 
 def load_ptb_lookup_judgement(run_dir: str) -> bool | None:
@@ -527,26 +527,38 @@ def load_ptb_lookup_judgement(run_dir: str) -> bool | None:
     return _load_optional_flag_judgement(run_dir, "ptb_lookup", PTB_LOOKUP_FIELD)
 
 
-def general_judgement_path(run_dir: str) -> str | None:
-    """Return the general judge verdict path for a run directory.
+# First run id for which the ptb_lookup_judge is required on every scored
+# agent run: chosen above every run id existing on 2026-07-16 (max was
+# 17397666), so it covers exactly the sweeps launched after the judge was
+# part of the inline set in run_task.sh. Verdicts on older runs (e.g. from
+# the rerun pipeline) are still read as tripwires when present — this
+# threshold only governs whether their absence is a violation.
+NEWER_JUDGES_MIN_RUN_ID = 17400000
 
-    Prefers the ``_rerun`` file (see ``_optional_flag_judgement_path``); None
-    when the run has no general judgement. This is the file a human flips
-    ``general_anomaly`` to false in after double-checking a flagged run.
+
+def missing_required_judgements(run_dir: str, run_id: int) -> list[str]:
+    """Names of the judges whose verdict a scored agent run must have but lacks.
+
+    The contamination and API-usage judges are required on every scored run;
+    the PTB-lookup judge only on runs with
+    ``run_id >= NEWER_JUDGES_MIN_RUN_ID`` (older runs predate it). The
+    general (unknown-unknowns) judge is never required: its verdict is
+    ignored by scoring entirely (review it via find_flagged_runs.py).
+    Baseline methods have no judges by design — callers must not apply this
+    check to them. A malformed verdict file still raises; only a genuinely
+    absent one counts as missing.
     """
-    return _optional_flag_judgement_path(run_dir, "general")
-
-
-def load_general_judgement(run_dir: str) -> bool | None:
-    """Load the general (unknown-unknowns) judge verdict for a run directory.
-
-    Returns the ``general_anomaly`` boolean, or None when no general
-    judgement file exists (the run predates this judge). This verdict never
-    affects scores; collect.py finishes its collection pass but refuses to
-    write any output files and raises, listing every flagged run, when it is
-    True.
-    """
-    return _load_optional_flag_judgement(run_dir, "general", GENERAL_ANOMALY_FIELD)
+    missing = []
+    try:
+        load_judgement(run_dir)
+    except FileNotFoundError:
+        missing.append("data_contamination_judge")
+    if load_api_judgement(run_dir) is None:
+        missing.append("api_usage_judge")
+    if run_id >= NEWER_JUDGES_MIN_RUN_ID:
+        if load_ptb_lookup_judgement(run_dir) is None:
+            missing.append("ptb_lookup_judge")
+    return missing
 
 
 def judgement_to_cell(judgement: dict, api_usage: bool | None = None) -> str:
@@ -558,9 +570,9 @@ def judgement_to_cell(judgement: dict, api_usage: bool | None = None) -> str:
       - 'A' = disallowed_api_usage  (API usage judge; pass None when that
         judge never ran, which leaves the letter out)
     Returns '' when no flag is set. Order is fixed (M, C, A) so cells are
-    comparable across runs. The PTB-lookup and general verdicts are
-    deliberately not part of the cell: they are archival, and collect.py
-    errors out when either fires.
+    comparable across runs. The PTB-lookup verdict is deliberately not part
+    of the cell: it is archival, and collect.py errors out when it fires.
+    The general verdict is ignored by scoring entirely.
     """
     parts = []
     if judgement["disallowed_model"]:

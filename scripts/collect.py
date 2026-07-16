@@ -9,20 +9,25 @@ For each method directory in the results dir, does a single pass:
      the API usage judgement (judgement_api_rerun.json if present, else
      judgement_api.json; absent for runs predating that judge), the
      PTB-lookup judgement (same rerun-over-original preference; archival —
-     a True verdict raises instead of affecting scores), the general
-     unknown-unknowns judgement (judgement_general[_rerun].json; archival,
-     see below), and time_taken.txt
+     a True verdict raises instead of affecting scores), and time_taken.txt
   3. Applies baseline fallback for cells flagged by the contamination or
      API judge, or with no run
   4. Writes final_{method}.csv, contamination_{method}.csv
 
 Also writes a time_overview.csv summarising average time per method.
 
-The general judge never affects any score. If it flagged any run, the
-collection pass (steps 1-3) still completes for every method, but NOTHING is
-written: collect.py raises an error listing every flagged run instead.
-Double-check those runs; for each that looks fine, flip "general_anomaly" to
-false in the verdict file named in the error, then re-run.
+The general (unknown-unknowns) judgement (judgement_general[_rerun].json) is
+deliberately ignored here: it never affects a score, and neither its absence
+nor a True verdict raises.
+
+Judge coverage: every scored run (metrics.json present) must carry a
+contamination and an API verdict, and — for run ids >=
+NEWER_JUDGES_MIN_RUN_ID (see utils.py) — a PTB-lookup verdict too. A method containing a scored run without a required verdict is NOT
+aggregated: collect.py warns, writes no CSVs for that method (removing stale
+ones from earlier collects), and continues with the other methods. Rerun the
+missing judges on the listed runs, then re-run collect.py. Unfinished or
+broken runs (no metrics.json) never trigger the skip — they take the
+baseline fallback as before, so collecting mid-sweep stays possible.
 
 Any missing or malformed metrics.json / contamination judgement / time_taken.txt
 inside an existing run directory is a hard error — there are no silent
@@ -49,8 +54,7 @@ from utils import (
     load_judgement,
     load_api_judgement,
     load_ptb_lookup_judgement,
-    load_general_judgement,
-    general_judgement_path,
+    missing_required_judgements,
     judgement_to_cell,
     load_time_taken,
     format_time_hms,
@@ -74,10 +78,11 @@ def collect_method(
     Returns everything needed to write the method's CSVs, or None if no runs
     found:
       {"benchmarks", "models", "metrics_grid" (baseline fallback applied),
-       "contamination_grid", "time_stats", "general_flagged"}
+       "contamination_grid", "time_stats", "judgements_missing"}
 
-    Writing is deferred to write_method_csvs() so a general-judge flag in any
-    method can abort aggregation before a single file is stored.
+    Writing is deferred to write_method_csvs() so a method with incomplete
+    judge coverage (non-empty "judgements_missing") can be skipped entirely
+    instead of aggregated.
     """
     latest_runs = walk_latest_runs(method_path, min_run_id, max_run_id)
     if not latest_runs:
@@ -89,7 +94,7 @@ def collect_method(
     # Collect metrics, contamination, and time in one pass
     metrics_grid = {}  # {model: {bench: str}}
     contamination_grid = {}  # {model: {bench: str}}
-    general_flagged = []  # [(run_dir, verdict_path)]
+    judgements_missing = []  # [(run_dir, [judge names])]
     time_total_seconds = 0
     time_valid_count = 0
 
@@ -105,19 +110,24 @@ def collect_method(
                 continue
 
             run_dir = latest_runs[key]["path"]
+            run_id = latest_runs[key]["run_id"]
 
             try:
-                # General-judge verdict first, so flagged runs are reported
-                # even when the run is otherwise broken (e.g. missing
-                # metrics.json). The verdict never affects scores; main()
-                # aborts before writing anything when this list is non-empty.
-                if load_general_judgement(run_dir):
-                    general_flagged.append(
-                        (run_dir, general_judgement_path(run_dir))
-                    )
                 metrics_grid[model][bench] = load_metrics(
                     os.path.join(run_dir, "metrics.json")
                 )
+                # A scored run must carry every judge verdict required for
+                # its era; one that doesn't makes main() skip this whole
+                # method (warning, no CSVs) instead of aggregating a score
+                # that was never checked. Placed after load_metrics on
+                # purpose: in-flight and broken runs have no metrics.json
+                # yet, take the baseline-fallback path below, and never
+                # trigger the skip — so collect.py stays usable mid-sweep.
+                missing = missing_required_judgements(run_dir, run_id)
+                if missing:
+                    judgements_missing.append((run_dir, missing))
+                    contamination_grid[model][bench] = ""
+                    continue
                 judgement = load_judgement(run_dir)
                 api_usage = load_api_judgement(run_dir)
                 # The PTB-lookup verdict is archival and never expected to
@@ -177,7 +187,7 @@ def collect_method(
         "models": models,
         "metrics_grid": metrics_grid,
         "contamination_grid": contamination_grid,
-        "general_flagged": general_flagged,
+        "judgements_missing": judgements_missing,
         "time_stats": {
             "total_seconds": time_total_seconds,
             "valid_count": time_valid_count,
@@ -329,31 +339,40 @@ def main():
             if collected:
                 collected_by_method[method_name] = collected
 
-    # The general (unknown-unknowns) judge is archival: it never changes a
-    # score, but a flagged run must not silently enter the aggregation. The
-    # collection pass above still ran to completion; now refuse to store any
-    # of it and list every flagged run for manual review.
-    general_flagged = [
-        flag
-        for collected in collected_by_method.values()
-        for flag in collected["general_flagged"]
-    ]
-    if general_flagged:
-        listing = "\n".join(
-            f"  {run_dir}\n    verdict: {verdict_path}"
-            for run_dir, verdict_path in general_flagged
+    # A method where a scored run lacks a required judge verdict is not
+    # aggregated: warn, drop it (including any stale CSVs an earlier collect
+    # wrote for it), and continue with the other methods. This deliberately
+    # does NOT raise — an unfinished sweep or a method awaiting judge reruns
+    # must never block collection of everything else. In-flight and broken
+    # runs are unaffected: they have no metrics.json, so they take the
+    # baseline fallback and never mark their method as incomplete.
+    skipped_methods: dict[str, list] = {}
+    for method_name in sorted(collected_by_method):
+        misses = collected_by_method[method_name]["judgements_missing"]
+        if not misses:
+            continue
+        skipped_methods[method_name] = misses
+        del collected_by_method[method_name]
+        print(
+            f"WARNING: skipping method {method_name!r} — {len(misses)} "
+            f"scored run(s) lack required judge verdicts:"
         )
-        raise RuntimeError(
-            f"General judge flagged {len(general_flagged)} run(s); no "
-            f"aggregation files were written.\n{listing}\n"
-            f"Double-check each run above (its judge_output_general*.txt "
-            f"trace and the justification in the verdict file explain what "
-            f"the judge saw). For every run that looks fine, flip "
-            f'"general_anomaly" to false in the verdict file listed for it, '
-            f"then re-run collect.py."
-        )
+        for run_dir, missing in misses:
+            print(f"  {run_dir}\n    missing: {', '.join(missing)}")
 
     os.makedirs(output_dir, exist_ok=True)
+
+    # Remove a skipped method's CSVs from earlier collects, so downstream
+    # consumers (aggregate.py) see it as absent instead of reading stale data.
+    for method_name in skipped_methods:
+        for stale_name in (
+            f"final_{method_name}.csv",
+            f"contamination_{method_name}.csv",
+        ):
+            stale_path = os.path.join(output_dir, stale_name)
+            if os.path.exists(stale_path):
+                os.remove(stale_path)
+                print(f"Removed stale CSV of skipped method: {stale_path}")
 
     method_stats = {}
     for method_name, collected in collected_by_method.items():
@@ -362,6 +381,20 @@ def main():
 
     if method_stats:
         write_time_overview(method_stats, output_dir)
+
+    if skipped_methods:
+        print()
+        print(
+            f"WARNING: {len(skipped_methods)} method(s) skipped because "
+            f"scored runs lack required judge verdicts (see listings above):"
+        )
+        for method_name in sorted(skipped_methods):
+            print(f"  {method_name}")
+        print(
+            "Rerun the missing judges on those runs "
+            "(src/judges/rerun/commit_rerun_judges.sh or rerun_judges.sub), "
+            "then re-run collect.py to include them."
+        )
 
 
 if __name__ == "__main__":
