@@ -224,6 +224,38 @@ solve_task() {
         bash -c "{ python /home/ben/check_cuda.py && python /home/ben/check_cuda_writing.py || exit 1; bash /home/ben/system_monitor.sh & MONITOR_PID=\$!; bash /home/ben/agent_solve.sh; kill \$MONITOR_PID 2>/dev/null; } 2>&1 | python /home/ben/timestamp_lines.py" > "${SOLVE_OUT}" 2>&1
 }
 
+# ---------- judge OAuth precheck ----------
+# Both judges (contamination + API) hard-code agents/codex_non_api/auth.json.
+# If its ChatGPT session is invalidated, we'd waste the full agent run only to
+# hard-error at the judge phase (leaving no metrics.json / final_model behind).
+# One curl to a lightweight ChatGPT endpoint tells us the state: it uses the
+# already-issued access token, no refresh path, so it doesn't rotate anything
+# or race parallel job starts.
+# TODO: copy over the task directory before the judge is ran so that it doesnt
+# invalidate the whole run
+
+echo "================================"
+echo "======= JUDGE AUTH CHECK ======="
+echo "================================"
+JUDGE_AUTH="agents/codex_non_api/auth.json"
+if [ ! -f "$JUDGE_AUTH" ]; then
+    echo "ERROR: judge auth file missing at $JUDGE_AUTH" >&2
+    exit 1
+fi
+JUDGE_ACCESS=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["tokens"]["access_token"])' "$JUDGE_AUTH") \
+    || { echo "ERROR: could not extract tokens.access_token from $JUDGE_AUTH" >&2; exit 1; }
+JUDGE_HTTP=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 \
+    -H "Authorization: Bearer $JUDGE_ACCESS" \
+    "https://chatgpt.com/backend-api/codex/models?client_version=0.124.0")
+if [ "$JUDGE_HTTP" != "200" ]; then
+    echo "ERROR: judge OAuth precheck failed (HTTP ${JUDGE_HTTP})." >&2
+    echo "The ChatGPT session in $JUDGE_AUTH may be invalidated." >&2
+    echo "Re-login on the head node:" >&2
+    echo "  codex logout && codex login && cp ~/.codex/auth.json $JUDGE_AUTH && chmod 600 $JUDGE_AUTH" >&2
+    exit 1
+fi
+echo "Judge OAuth OK (HTTP 200)"
+
 echo "================================"
 echo "========= RUNNING TASK ========="
 echo "================================"
