@@ -24,11 +24,15 @@ predate the judge — and only show up as a count in the summary.
 
 stdout carries the absolute paths of flagged run dirs, one per line, so the
 output can be piped. The summary (and, with --justification, the judge's
-reasoning per flagged dir) goes to stderr.
+reasoning per flagged dir) goes to stderr. For multi-flag judges (the
+contamination judge: contamination vs. disallowed_model) the summary breaks
+the flagged count down per field, and each flagged dir is listed on stderr
+prefixed with the field(s) that fired.
 
 Usage:
     python scripts/find_flagged_runs.py --judge ptb_lookup_judge
     python scripts/find_flagged_runs.py --judge api_usage_judge
+    python scripts/find_flagged_runs.py --judge data_contamination_judge
     python scripts/find_flagged_runs.py --judge general_judge --justification
 """
 
@@ -36,6 +40,7 @@ import argparse
 import json
 import os
 import sys
+from collections import Counter
 
 from utils import (
     PROJECT_ROOT,
@@ -162,6 +167,8 @@ def main() -> None:
     flagged: list[tuple[str, str, dict[str, str]]] = []
     with_verdict = 0
     without_verdict = 0
+    field_names: set[str] = set()
+    fired_counts: Counter[str] = Counter()
 
     for run_dir in iter_run_dirs(roots):
         verdict_path = optional_judgement_path(run_dir, output_id)
@@ -170,7 +177,9 @@ def main() -> None:
             continue
         with_verdict += 1
         flags, data = load_verdict(verdict_path)
+        field_names.update(flags)
         fired = [field for field, value in flags.items() if value]
+        fired_counts.update(fired)
         if fired:
             justifications = {
                 field: data.get(f"justification_{field}", "") for field in fired
@@ -190,7 +199,15 @@ def main() -> None:
     print(f"Latest run dirs with a verdict:   {with_verdict}", file=sys.stderr)
     print(f"... without one (ignored):        {without_verdict}", file=sys.stderr)
     print(f"Flagged:                          {len(flagged)}", file=sys.stderr)
+    if len(field_names) > 1:
+        for field in sorted(field_names):
+            print(f"  {field + ':':<32}{fired_counts[field]}", file=sys.stderr)
     print("=" * 60, file=sys.stderr)
+
+    if len(field_names) > 1 and flagged and not args.justification:
+        print("", file=sys.stderr)
+        for run_dir, _, justifications in flagged:
+            print(f"[{', '.join(justifications)}] {run_dir}", file=sys.stderr)
 
     if args.justification and flagged:
         print("", file=sys.stderr)
