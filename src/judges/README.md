@@ -19,13 +19,14 @@ The judges run in two contexts:
 | `api_usage_judge/` | `api` | `disallowed_api_usage` + justification | **Yes** — a flagged run falls back to the baseline score in `scripts/collect.py` (missing file = "not flagged": runs predating this judge have none) |
 | `ptb_lookup_judge/` | `ptb_lookup` | `disallowed_ptb_lookup` + justification | Archival — no score fallback, but `scripts/collect.py` raises an error if it ever flags, so a firing lookup judge cannot pass unnoticed |
 | `general_judge/` | `general` | `general_anomaly` + justification | Archival — never feeds scores; when it flags, `scripts/collect.py` finishes its collection pass but writes **no** output files and raises, listing every flagged run for manual review (flip `general_anomaly` to false in the listed verdict file if the run checks out) |
+| `derived_contamination_judge/` | `derived_contamination` | `derived_contamination` + justification | **No** — testing-only diagnostic, invisible to `scripts/collect.py`. Deliberately not in `ALL_JUDGES`, so it never runs inline or in default rerun batches; run it explicitly (`run_judges.sh --judges …` / `rerun_judge.sh --judge …`). Flags ONLY "derived" contamination — training data built *from* specific test items (paraphrase, perturbation, seeded generation, hand-written coverage) — and stays false both for clean runs and for direct contamination (training on the test data itself) |
 
 The three reward-hacking judges run as GPT-5.4 via the codex CLI; the general judge — an
 open-ended sweep for "unknown unknowns" (premature agent stops, usage limits/token
 exhaustion, grader-API credit exhaustion on the LLM-judged benchmarks, harness/infra
 failures, novel reward hacking outside the other judges' scope) — runs as GPT-5.6 Terra on
 a codex CLI pinned to 0.144.5 (`JUDGE_CODEX_VERSION`, npm-installed into the sandbox at
-judge time). All use ChatGPT-subscription auth
+judge time), as does the testing-only `derived_contamination_judge`. All use ChatGPT-subscription auth
 (`agents/codex_non_api/auth.json`, bind-mounted so rotated refresh tokens persist).
 
 ## Layout
@@ -171,6 +172,11 @@ Per judge (`<id>` = `JUDGE_OUTPUT_ID`, `<sfx>` = empty inline / `_rerun` standal
        version into the sandbox home and runs it instead of the container's codex.
        Empty/unset = the container's pinned codex.
 2. Add the folder name to `ALL_JUDGES` in `judge_lib.sh` (array order = execution order).
+   Skip this step for a testing-only judge: everything that selects judges explicitly
+   (`run_judges.sh --judges`, `rerun_judge.sh --judge`, `commit_rerun_judges.sh --judges`,
+   `find_flagged_runs.py --judge`) resolves the judge from its folder's `judge.conf` alone, so a
+   judge outside `ALL_JUDGES` is fully runnable but never runs inline in `run_task.sh` and is
+   excluded from default (no `--judges`) rerun batches (e.g. `derived_contamination_judge`).
 
 That's it — `run_task.sh`, `run_judges.sh` and `commit_rerun_judges.sh` all iterate over the
 judge set, and `--skip-existing` is derived from `judge.conf`.

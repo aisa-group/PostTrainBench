@@ -193,6 +193,7 @@ def fill_general(prompt: str, benchmark_id: str | None,
 # Judges whose templates use placeholders beyond the common {model}/{benchmark}.
 EXTRA_FILLERS = {
     "data_contamination_judge": fill_data_contamination,
+    "derived_contamination_judge": fill_data_contamination,
     "api_usage_judge": fill_api_usage,
     "general_judge": fill_general,
 }
