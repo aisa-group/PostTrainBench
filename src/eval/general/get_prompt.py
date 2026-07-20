@@ -97,9 +97,9 @@ def main():
     else:
         result = result.replace('{decontamination_tool}', "")
 
-    # The template's rule 8 is a general prohibition on using any environment API
+    # The template's rule 9 is a general prohibition on using any environment API
     # key to call an external LLM API directly. Benchmarks whose own grading needs a
-    # provider key (e.g. OPENAI_API_KEY for healthbench/arenahardwriting) get a rule 9
+    # provider key (e.g. OPENAI_API_KEY for healthbench/arenahardwriting) get a rule 10
     # carving out that key as an exception, permitted for evaluation only.
     required_api_keys = read_required_api_keys(args.benchmark_id)
     if required_api_keys:
@@ -109,7 +109,7 @@ def main():
         else:
             exc, prov, use = "are exceptions", "they are provided", "them"
         result = result.replace('{eval_api_note}', (
-            f"9. The {keys_str} in your environment {exc} to the previous rule: {prov} so that "
+            f"10. The {keys_str} in your environment {exc} to the previous rule: {prov} so that "
             f"you can run this benchmark's grading via evaluate.py. Use {use} for that evaluation "
             f"only, and never to generate training data or for any other purpose.\n"
         ))
