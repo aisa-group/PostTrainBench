@@ -128,6 +128,16 @@ cp src/utils/timestamp_lines.py "${JOB_DIR}/timestamp_lines.py"
 cp src/utils/update_agent_cli.sh "${JOB_DIR}/update_agent_cli.sh"
 cp "agents/${AGENT}/solve.sh" "${JOB_DIR}/agent_solve.sh"
 
+# Self-decontamination tooling for the agent: the same n-gram checker and
+# test-set copy the contamination judge gets, at the same paths (the judge
+# phase re-copies both via prepare_judge_sandbox, so the judges never run
+# agent-modified versions). The matching usage instructions are added to the
+# agent prompt by get_prompt.py, conditional on the same test_data.json.
+if [ -f "src/eval/tasks/${EVALUATION_TASK}/test_data.json" ]; then
+    cp src/judges/judge_tools/contamination_check.py "${JOB_DIR}/contamination_check.py"
+    cp "src/eval/tasks/${EVALUATION_TASK}/test_data.json" "${JOB_DIR}/test_data.json"
+fi
+
 # Agent-specific auth: auth.json is bind-mounted at apptainer exec time so the
 # codex CLI can write the rotated refresh token back to the shared source file
 # (single-use refresh tokens otherwise burn after one job).
