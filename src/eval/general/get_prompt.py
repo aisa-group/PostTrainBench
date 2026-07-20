@@ -79,9 +79,8 @@ def main():
         result = result.replace('{decontamination_tool}', (
             "\n## Decontamination Tool\n"
             f"- A copy of the {benchmark_name} test set is available at \\`../test_data.json\\`, "
-            "together with the contamination checker \\`../contamination_check.py\\` — the same "
-            "tool we use to screen your training data for test-set overlap after the run.\n"
-            "- Check any data you scrape or generate before training on it, e.g.:\n"
+            "together with the contamination checker \\`../contamination_check.py\\`\n"
+            "- You can check data which you want to use for training, e.g.:\n"
             "  \\`python ../contamination_check.py --reference ../test_data.json --input train_data.jsonl\\`\n"
             "  The input is JSONL with one document per line (pass \\`--input-format text\\` for "
             "plain text lines, or pipe documents via stdin). It prints one JSON line per "
@@ -91,7 +90,7 @@ def main():
             "to the working-directory rule below.\n"
             "- The test-set copy is provided ONLY as reference input for this checker. Using its "
             "questions or answers for training in any form remains forbidden (see the rules "
-            "below), and a clean checker result does not make benchmark-targeted training data "
+            "below), and a clean checker result does not make benchmark-derived training data "
             "acceptable.\n"
         ))
     else:
