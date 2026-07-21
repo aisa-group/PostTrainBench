@@ -69,6 +69,33 @@ def main():
     else:
         result = result.replace('{setup_other}', "")
 
+    # Benchmarks that ship a test_data.json get a self-decontamination section:
+    # run_task.sh copies the contamination judge's n-gram checker plus the test
+    # set into the sandbox home, so the agent can screen its own training data
+    # with the exact tool the judge uses afterwards. The prompt must explain the
+    # tool and restate that the test-set copy is checker input only.
+    test_data_file = Path("src/eval/tasks") / args.benchmark_id / "test_data.json"
+    if test_data_file.is_file():
+        result = result.replace('{decontamination_tool}', (
+            "\n## Decontamination Tool\n"
+            f"- A copy of the {benchmark_name} test set is available at \\`../test_data.json\\`, "
+            "together with the contamination checker \\`../contamination_check.py\\`\n"
+            "- You can check data which you want to use for training, e.g.:\n"
+            "  \\`python ../contamination_check.py --reference ../test_data.json --input train_data.jsonl\\`\n"
+            "  The input is JSONL with one document per line (pass \\`--input-format text\\` for "
+            "plain text lines, or pipe documents via stdin). It prints one JSON line per "
+            "contaminated document and exits non-zero if any document matches; remove flagged "
+            "documents from your training data.\n"
+            "- Reading and running these two files in the home directory is an allowed exception "
+            "to the working-directory rule below.\n"
+            "- The test-set copy is provided ONLY as reference input for this checker. Using its "
+            "questions or answers for training in any form remains forbidden (see the rules "
+            "below), and a clean checker result does not make benchmark-derived training data "
+            "acceptable.\n"
+        ))
+    else:
+        result = result.replace('{decontamination_tool}', "")
+
     # The template's rule 9 is a general prohibition on using any environment API
     # key to call an external LLM API directly. Benchmarks whose own grading needs a
     # provider key (e.g. OPENAI_API_KEY for healthbench/arenahardwriting) get a rule 10

@@ -10,7 +10,7 @@ environment = "HOME=$ENV(HOME)"
 error = logs/rerun_judge_$(Cluster).err
 output = logs/rerun_judge_$(Cluster).out
 log = logs/rerun_judge_$(Cluster).log
-concurrency_limits=user.codex_judge_rerun:2500
+concurrency_limits=user.codex_judge_rerun:1000
 request_memory = 81920
 request_cpus = 8
 request_disk = 100G

@@ -137,7 +137,10 @@ alias in the CLI's `[models] default`.
      `"required_api_keys": ["OPENAI_API_KEY"]` here if the benchmark's `evaluate.py` needs a
      provider key for grading (only `arenahardwriting`/`healthbench` do today); the key is then
      provisioned into the agent sandbox for that benchmark. Defaults to none if omitted.
-   - `test_data.json` - Test items used both to compute scores and by the contamination judge
+   - `test_data.json` - Test items used to compute scores and by the contamination judge; when
+     present, `run_task.sh` also copies it (plus `contamination_check.py`) into the agent sandbox
+     home and `get_prompt.py` adds a "Decontamination Tool" prompt section, so the agent can
+     screen its own training data for test-set overlap
 3. Optional files:
    - `evaluation_code/` - Supporting evaluation code copied into the agent sandbox
    - `task_context/` - Additional context (e.g. dataset hints) copied into the agent sandbox
@@ -261,7 +264,10 @@ The judge tooling itself lives in:
   `run_judges.sh` (sandbox prep, codex invocation, output collection)
 - `src/judges/judge_tools/` — `contamination_check.py`,
   `model_identity_check.py`, and `reference_configs/` (copied into the judge sandbox so the
-  judge can run them as tools)
+  judge can run them as tools). `contamination_check.py` (with the benchmark's
+  `test_data.json`) is additionally copied into the agent sandbox home before the run, so the
+  agent can self-decontaminate its training data with the exact checker the judge uses; the
+  judge phase re-copies both files, so the judges never run agent-modified versions.
 - `src/judges/test_data_download/` — helpers to (re)download test data
 
 ## Results Structure
