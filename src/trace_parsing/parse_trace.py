@@ -1,10 +1,10 @@
 """Parse an agent or judge trace into a human-readable transcript.
 
 Picks the right per-agent parser by substring-matching the agent name against
-{claude, codex, gemini, opencode}. If the name matches zero keys, the input is
-copied verbatim (preserves the historical fallback for agents like glm5 and
-qwen3max that don't produce a structured trace). If the name matches more than
-one key, the script errors out instead of guessing.
+{claude, codex, cursor, gemini, opencode}. If the name matches zero keys, the
+input is copied verbatim (preserves the historical fallback for agents like
+glm5 and qwen3max that don't produce a structured trace). If the name matches
+more than one key, the script errors out instead of guessing.
 
 After parsing, also drops sanitized companions for both the raw input and the
 parsed output (`<stem>_sanitized<ext>` next to each), with .env API key values
@@ -19,6 +19,7 @@ from pathlib import Path
 
 import claude_parser
 import codex_parser
+import cursor_parser
 import gemini_parser
 import opencode_parser
 import sanitize_trace
@@ -26,6 +27,7 @@ import sanitize_trace
 PARSERS = {
     "claude": claude_parser.parse,
     "codex": codex_parser.parse,
+    "cursor": cursor_parser.parse,
     "gemini": gemini_parser.parse,
     "opencode": opencode_parser.parse,
 }

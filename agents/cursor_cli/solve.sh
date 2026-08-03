@@ -13,7 +13,10 @@ set -eu
 # Install the Cursor CLI into the user prefix. The installer drops `agent` and
 # `cursor-agent` symlinks at $HOME/.local/bin/, pointing at the versioned
 # bundle under $HOME/.local/share/cursor-agent/versions/<v>/cursor-agent.
-if ! command -v agent >/dev/null 2>&1; then
+# NOTE: check `cursor-agent`, not `agent` — xAI's grok CLI also symlinks
+# `agent` (to its own binary), so `command -v agent` returns grok's binary
+# when grok is baked into the container. `cursor-agent` is unambiguous.
+if ! command -v cursor-agent >/dev/null 2>&1; then
     echo "[cursor_cli] installing Cursor CLI from cursor.com/install ..."
     curl -fsS https://cursor.com/install | bash || {
         echo "[cursor_cli] ERROR: Cursor CLI install failed" >&2
@@ -29,14 +32,14 @@ export NODE_USE_ENV_PROXY=1
 
 # Record the CLI version so it appears alongside other agents' cli_version.txt.
 {
-    echo "binary: agent"
+    echo "binary: cursor-agent"
     echo "package: cursor.com/install (curl installer)"
-    echo "path: $(command -v agent || echo '<not found>')"
-    echo "version: $(agent --version 2>&1 || echo '<version lookup failed>')"
+    echo "path: $(command -v cursor-agent || echo '<not found>')"
+    echo "version: $(cursor-agent --version 2>&1 || echo '<version lookup failed>')"
     echo "recorded_at: $(date -Iseconds)"
 } > "$HOME/cli_version.txt"
 
-agent \
+cursor-agent \
     --print \
     --force \
     --trust \
