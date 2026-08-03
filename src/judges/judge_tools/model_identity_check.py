@@ -35,6 +35,28 @@ CORE_FIELDS = (
 ADVISORY_FIELDS = ("architectures", "vocab_size")
 
 
+# Multimodal → text-only sibling variants. Agents legitimately extract just
+# the text stack of a multimodal base model for text-only fine-tuning; the
+# extracted config's model_type carries a `_text` suffix (Gemma-3 case).
+# Add sets here if the same pattern shows up for other multimodal families.
+MODEL_TYPE_EQUIVALENCES = (
+    frozenset({"gemma3", "gemma3_text"}),
+)
+
+
+def field_equal(field: str, ref, cand) -> bool:
+    """True if the candidate value counts as matching the reference for this
+    field. For most fields this is plain equality; `model_type` also accepts
+    sibling values registered in MODEL_TYPE_EQUIVALENCES."""
+    if ref == cand:
+        return True
+    if field == "model_type":
+        for equiv in MODEL_TYPE_EQUIVALENCES:
+            if ref in equiv and cand in equiv:
+                return True
+    return False
+
+
 def load_config(path: Path) -> dict:
     """Load config.json. Accepts either the file path or its parent directory."""
     if path.is_dir():
@@ -80,7 +102,7 @@ def compare(reference: dict, candidate: dict, fields: tuple[str, ...]):
     for field in fields:
         ref = reference.get(field)
         cand = candidate.get(field)
-        match = ref == cand
+        match = field_equal(field, ref, cand)
         rows.append((field, ref, cand, match))
         if not match:
             mismatches.append(field)
