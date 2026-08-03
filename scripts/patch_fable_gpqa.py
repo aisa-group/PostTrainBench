@@ -73,10 +73,14 @@ def patch_pair(fable_seed: str, opus_seed: str, data_dir: str) -> None:
     fable_fields, fable_rows = read_csv(fable_path)
     _, opus_rows = read_csv(opus_path)
 
+    # If Fable didn't run gpqamain at all in this seed, collect.py wrote a CSV
+    # with no gpqamain column. Inject the column so the borrowed values can
+    # land — otherwise aggregate.py's per-cell loop crashes on KeyError.
     if BENCH_TO_PATCH not in fable_fields:
-        raise ValueError(
-            f"{fable_path} has no {BENCH_TO_PATCH!r} column: {fable_fields}"
-        )
+        print(f"  ({BENCH_TO_PATCH} column absent, injecting)")
+        fable_fields = list(fable_fields) + [BENCH_TO_PATCH]
+        for row in fable_rows:
+            row[BENCH_TO_PATCH] = ""
 
     opus_by_model = {row["model"]: row for row in opus_rows}
 

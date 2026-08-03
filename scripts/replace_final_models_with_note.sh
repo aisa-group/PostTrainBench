@@ -18,10 +18,19 @@
 # set_env_vars.sh, whose module-loading block fails on nodes without tclsh).
 #
 # Options:
-#   --apply             Actually delete model files and write markers
-#                       (default: dry-run, no changes).
-#   --results-dir DIR   Override the results dir (default: from .env).
-#   -h, --help          Show this help and exit.
+#   --apply                    Actually delete model files and write markers
+#                              (default: dry-run, no changes).
+#   --results-dir DIR          Override the results dir (default: from .env).
+#   --only-methods REGEX       Only process method dirs whose name matches
+#                              this bash-extended regex. Applied first.
+#   --exclude-methods REGEX    Skip method dirs whose name matches this regex.
+#                              Applied after --only-methods.
+#   --preserve-benchmark NAME  Skip cell dirs starting with "<NAME>_" — e.g.
+#                              --preserve-benchmark bfcl keeps bfcl checkpoints
+#                              for later re-scoring under PR 63. Can be
+#                              repeated: pipe-separated in a single flag or
+#                              pass the flag multiple times.
+#   -h, --help                 Show this help and exit.
 
 set -euo pipefail
 
@@ -31,10 +40,23 @@ usage() {
 
 APPLY=""
 RESULTS_DIR_OVERRIDE=""
+ONLY_METHODS_RE=""
+EXCLUDE_METHODS_RE=""
+PRESERVE_BENCH_RE=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --apply) APPLY=1; shift ;;
         --results-dir) RESULTS_DIR_OVERRIDE="${2:?--results-dir needs an argument}"; shift 2 ;;
+        --only-methods) ONLY_METHODS_RE="${2:?--only-methods needs a regex}"; shift 2 ;;
+        --exclude-methods) EXCLUDE_METHODS_RE="${2:?--exclude-methods needs a regex}"; shift 2 ;;
+        --preserve-benchmark)
+            arg="${2:?--preserve-benchmark needs a benchmark name}"
+            if [ -z "$PRESERVE_BENCH_RE" ]; then
+                PRESERVE_BENCH_RE="$arg"
+            else
+                PRESERVE_BENCH_RE="${PRESERVE_BENCH_RE}|${arg}"
+            fi
+            shift 2 ;;
         -h|--help) usage; exit 0 ;;
         *) echo "Unknown option: $1" >&2; exit 1 ;;
     esac
@@ -75,11 +97,39 @@ EOF
 # final_model dirs live at <results>/<experiment>/<run>/final_model (depth 3).
 # -maxdepth 3 both restricts the search and avoids descending into the model
 # files themselves (depth 4).
-mapfile -t FINAL_MODEL_DIRS < <(find "$RESULTS_DIR" -mindepth 3 -maxdepth 3 -type d -name final_model | sort)
+mapfile -t ALL_DIRS < <(find "$RESULTS_DIR" -mindepth 3 -maxdepth 3 -type d -name final_model | sort)
+ALL_TOTAL=${#ALL_DIRS[@]}
+
+# Apply --only-methods / --exclude-methods / --preserve-benchmark filters.
+# $fm = <results>/<method>/<cell>/final_model — so method = 2nd-to-last dirname
+# and cell (=<benchmark>_<model>_<cid>) = last dirname.
+FINAL_MODEL_DIRS=()
+filtered_out=0
+for fm in "${ALL_DIRS[@]}"; do
+    cell="$(basename "$(dirname "$fm")")"
+    method="$(basename "$(dirname "$(dirname "$fm")")")"
+    if [ -n "$ONLY_METHODS_RE" ] && ! [[ $method =~ $ONLY_METHODS_RE ]]; then
+        filtered_out=$((filtered_out + 1)); continue
+    fi
+    if [ -n "$EXCLUDE_METHODS_RE" ] && [[ $method =~ $EXCLUDE_METHODS_RE ]]; then
+        filtered_out=$((filtered_out + 1)); continue
+    fi
+    if [ -n "$PRESERVE_BENCH_RE" ] && [[ $cell =~ ^(${PRESERVE_BENCH_RE})_ ]]; then
+        filtered_out=$((filtered_out + 1)); continue
+    fi
+    FINAL_MODEL_DIRS+=("$fm")
+done
 
 TOTAL=${#FINAL_MODEL_DIRS[@]}
 echo "Results dir: $RESULTS_DIR"
-echo "Found $TOTAL final_model directories"
+echo "Found $ALL_TOTAL final_model directories total"
+[ -n "$ONLY_METHODS_RE" ]   && echo "  --only-methods:       $ONLY_METHODS_RE"
+[ -n "$EXCLUDE_METHODS_RE" ] && echo "  --exclude-methods:    $EXCLUDE_METHODS_RE"
+[ -n "$PRESERVE_BENCH_RE" ] && echo "  --preserve-benchmark: $PRESERVE_BENCH_RE"
+if [ "$filtered_out" -gt 0 ]; then
+    echo "Filters kept:                  $TOTAL"
+    echo "Filters excluded (preserved):  $filtered_out"
+fi
 if [ -z "$APPLY" ]; then
     echo "MODE: dry-run (no changes will be made). Pass --apply to execute."
 else
