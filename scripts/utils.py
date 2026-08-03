@@ -91,6 +91,10 @@ HARDCODED_AGENT_MAP = {
     "codex_non_api_xhigh_gpt-5.5_10h_run2",
 
     ],
+    "GPT-5.6-Sol": [
+        "codex_non_api_max_gpt-5.6-sol_10h_run1",
+        "codex_non_api_max_gpt-5.6-sol_10h_run2",
+    ],
     "Opus-4.8": [
         "claude_non_api_claude-opus-4-8_10h_run1",
         "claude_non_api_claude-opus-4-8_10h_run2",
@@ -107,6 +111,19 @@ HARDCODED_AGENT_MAP = {
     "Fable 5 (Max)": [
         "claude_non_api_max_claude-fable-5_1m__10h_run1",
         "claude_non_api_max_claude-fable-5_1m__10h_run2",
+    ],
+    "Kimi K3": [
+        "kimi_claude_kismet-0715_1m__10h_run1",
+        "kimi_claude_kismet-0715_1m__10h_run2",
+        "kimi_claude_kismet-0715_1m__10h_run3",
+    ],
+    "Grok 4.5": [
+        "cursor_cli_cursor-grok-4.5-high_10h_run1",
+        "cursor_cli_cursor-grok-4.5-high_10h_run2",
+    ],
+    "Opus-5": [
+        "claude_non_api_claude-opus-5_10h_run1",
+        "claude_non_api_claude-opus-5_10h_run2",
     ],
 }
 
