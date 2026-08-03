@@ -46,7 +46,26 @@ From: nvidia/cuda:12.9.1-cudnn-devel-ubuntu22.04
         @google/gemini-cli@0.18.4 \
         opencode-ai@1.17.18
 
-    
+    # xAI Grok Build CLI (`grok` agent). No npm package exists — xAI ships a
+    # pre-built native binary via their curl installer. Version-pin is passed
+    # as `bash -s <VERSION>` (per the installer's own top-of-file docs), and
+    # GROK_BIN_DIR points at /usr/local/bin so the binary lands directly on
+    # the container's default PATH — no per-user $HOME/.grok/bin needed.
+    GROK_BIN_DIR=/usr/local/bin curl -fsSL https://x.ai/cli/install.sh | bash -s 0.2.102
+
+    # Cursor CLI (`cursor-agent`) — pinned to 2026.07.16-899851b. The standard
+    # installer (`curl cursor.com/install | bash`) has no version-pin flag, so
+    # we download the versioned archive from Cursor's CDN and symlink only
+    # /usr/local/bin/cursor-agent. Deliberately NOT creating a
+    # /usr/local/bin/agent link — grok's installer above also creates an
+    # `agent` binary, and Cursor's cursor-agent is unambiguously named. Agents
+    # should call the CLIs by their unambiguous names (`grok`, `cursor-agent`).
+    CURSOR_VERSION="2026.07.16-899851b"
+    mkdir -p /opt/cursor-agent/versions
+    curl -fsSL "https://downloads.cursor.com/lab/${CURSOR_VERSION}/linux/x64/agent-cli-package.tar.gz" \
+        | tar -xz -C /opt/cursor-agent/versions/
+    mv "/opt/cursor-agent/versions/dist-package" "/opt/cursor-agent/versions/${CURSOR_VERSION}"
+    ln -sf "/opt/cursor-agent/versions/${CURSOR_VERSION}/cursor-agent" /usr/local/bin/cursor-agent
 
     # install inspect evals
     mkdir -p /opt
