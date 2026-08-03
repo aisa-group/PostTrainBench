@@ -165,6 +165,17 @@ if [ -f "agents/${AGENT}/cursor_auth.json" ]; then
     : > "${JOB_DIR}/.config/cursor/auth.json"
 fi
 
+# xAI Grok Build CLI persists its OAuth session at ~/.grok/auth.json. Bind-mount
+# the agent's copy so the CLI inside the sandbox reads and rotates against the
+# shared credential file. Distinct filename in the agent dir (grok_auth.json)
+# avoids collision with the codex auth.json check above.
+GROK_AUTH_SRC=""
+if [ -f "agents/${AGENT}/grok_auth.json" ]; then
+    GROK_AUTH_SRC="$(cd "$(dirname "agents/${AGENT}/grok_auth.json")" && pwd)/grok_auth.json"
+    mkdir -p "${JOB_DIR}/.grok"
+    : > "${JOB_DIR}/.grok/auth.json"
+fi
+
 # Utils
 with_huggingface_overlay() {
     mkdir -p "$TMP_SUBDIR/merged_huggingface"
@@ -205,6 +216,8 @@ solve_task() {
     [ -n "$AGENT_AUTH_SRC" ] && AGENT_AUTH_BIND=(--bind "${AGENT_AUTH_SRC}:/home/ben/.codex/auth.json")
     CURSOR_AUTH_BIND=()
     [ -n "$CURSOR_AUTH_SRC" ] && CURSOR_AUTH_BIND=(--bind "${CURSOR_AUTH_SRC}:/home/ben/.config/cursor/auth.json")
+    GROK_AUTH_BIND=()
+    [ -n "$GROK_AUTH_SRC" ] && GROK_AUTH_BIND=(--bind "${GROK_AUTH_SRC}:/home/ben/.grok/auth.json")
     # Forward the CLI-auto-update opt-out into the sandbox so update_agent_cli.sh
     # can honor it. Only set when the user opts in via .env.
     CLI_UPDATE_ENV=()
@@ -229,6 +242,7 @@ solve_task() {
         --bind "${HF_MERGED}:${HF_HOME_NEW}" \
         "${AGENT_AUTH_BIND[@]}" \
         "${CURSOR_AUTH_BIND[@]}" \
+        "${GROK_AUTH_BIND[@]}" \
         --home "${JOB_DIR}:/home/ben" \
         --pwd "/home/ben/task" \
         --writable-tmpfs \

@@ -32,7 +32,6 @@ export PATH="$HOME/.grok/bin:$PATH"
 grok \
     --oauth \
     --always-approve \
-    --no-auto-update \
     --output-format streaming-json \
     --cwd /home/ben/task \
     -m "$AGENT_CONFIG" \
