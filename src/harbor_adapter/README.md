@@ -28,8 +28,13 @@ Total: **28 tasks** (7 benchmarks x 4 models).
 ## Installation
 
 ```bash
-# Use the included pyproject.toml file to get the python environment with harbor and modal
+# Python environment for the adapter (modal etc.)
 uv sync
+
+# Harbor CLI. Task-declared shared volumes ([[environment.volumes]]) are not
+# yet in a Harbor release — install from the feature branch until the
+# upstream PR (harbor-framework/harbor) lands:
+uv tool install "harbor @ git+https://github.com/surelyMersad/harbor.git@feat/task-shared-volumes"
 ```
 
 ## Quick Start
@@ -98,6 +103,25 @@ posttrainbench-gsm8k-qwen3-1.7b/
 └── tests/
     └── test.sh            # Verifier: contamination judge + 3-phase eval retry
 ```
+
+## Model Hand-off via Shared Volume
+
+The verifier runs in a separate container (`[verifier].environment_mode =
+"separate"`), and the trained model reaches it via a **Harbor task-declared
+shared volume** (`[[environment.volumes]]`, name `model`):
+
+| Container | Mount path | Access |
+|-----------|-----------|--------|
+| Agent | `/home/agent/workspace/final_model` | read-write |
+| Verifier | `/mnt/model` | **read-only** |
+
+Harbor creates one volume per trial (`harbor-<trial>-model`), both containers
+attach the same volume, and Harbor deletes it at trial cleanup. On Modal the
+weights move as a [Modal Volume](https://modal.com/docs/guide/volumes),
+locally as a Docker named volume — never through the tar/host artifact path
+(which previously failed with exit code -1 on multi-GB workspaces).
+`final_model` is therefore excluded from the workspace artifact, which now
+carries only the contamination-judge inputs (the agent's source code).
 
 ## Evaluation Retry Logic
 

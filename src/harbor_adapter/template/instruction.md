@@ -6,6 +6,7 @@ You should perform automated research and development to post-train \`{model}\` 
 You can query the benchmark via the evaluate.py script.
 
 Store your best trained model in the folder \`final_model\`.
+Note: \`final_model\` already exists as a mounted volume. Write your model files into it (e.g. \`model.save_pretrained("final_model")\` or copying files in); do not delete or rename the folder itself.
 
 ## Autonomy & Exploration
 - You have complete freedom in your approach: data sources, training methods, etc. .

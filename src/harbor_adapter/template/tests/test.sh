@@ -17,16 +17,22 @@ set -e
 #     BAKED INTO the verifier image at build time (see tests/Dockerfile)
 #     and live at /tests/.
 #   - The agent's workspace at /home/agent/workspace is transferred from
-#     the agent container by harbor as a configured artifact and
-#     contains the agent's training scripts + final_model. The
-#     contamination judge reads these (cd $WORKSPACE && codex exec ...);
-#     evaluate.py reads /home/agent/workspace/final_model.
-#   - The agent's final_model is the only file the verifier executes
-#     code against (via vllm). Bad weights are penalized by the eval
-#     score, not by tampering.
+#     the agent container by harbor as a configured artifact (weight
+#     files excluded) and contains the agent's training scripts. The
+#     contamination judge reads these (cd $WORKSPACE && codex exec ...).
+#   - The agent's final_model arrives on a harbor task-declared shared
+#     volume mounted READ-ONLY at /mnt/model (see
+#     [[verifier.environment.volumes]] in task.toml) — the same
+#     per-trial volume the agent wrote to at
+#     /home/agent/workspace/final_model. The weights never ride the
+#     tar/host artifact path, and this container cannot modify them.
+#   - The agent's final_model is the only agent-produced input the
+#     verifier executes code against (via vllm). Bad weights are
+#     penalized by the eval score, not by tampering.
 
 TESTS="/tests"
 WORKSPACE="/home/agent/workspace"
+MODEL_DIR="/mnt/model"
 LOGS_DIR="/logs/verifier"
 
 mkdir -p "$LOGS_DIR"
@@ -34,6 +40,7 @@ mkdir -p "$LOGS_DIR"
 echo "=== PostTrainBench Verifier ==="
 echo "Tests dir: $TESTS"
 echo "Workspace: $WORKSPACE"
+echo "Model (read-only shared volume): $MODEL_DIR"
 echo "Logs dir: $LOGS_DIR"
 
 # Check GPU availability
@@ -41,11 +48,13 @@ echo ""
 echo "=== GPU Check ==="
 nvidia-smi 2>&1 | tee "$LOGS_DIR/gpu_check.txt" || echo "nvidia-smi failed"
 
-# Check if final_model exists in agent's workspace
+# Check the trained model on the shared volume. The mountpoint always
+# exists (harbor creates the volume), so also treat an EMPTY volume as
+# "no model" — that means the agent never wrote weights into final_model.
 echo ""
-echo "=== Checking final_model ==="
-if [ ! -d "$WORKSPACE/final_model" ]; then
-    echo "ERROR: final_model directory not found"
+echo "=== Checking final_model (at $MODEL_DIR) ==="
+if [ ! -d "$MODEL_DIR" ] || [ -z "$(ls -A "$MODEL_DIR" 2>/dev/null)" ]; then
+    echo "ERROR: final_model is missing or empty on the shared volume"
     ls -la "$WORKSPACE" > "$LOGS_DIR/workspace_listing.txt" 2>&1
     echo '{"error": "final_model not found", "accuracy": 0}' > "$LOGS_DIR/metrics.json"
     echo "0" > "$LOGS_DIR/reward.txt"
@@ -54,9 +63,9 @@ fi
 
 # Check if final_model has required files
 echo "Contents of final_model:"
-ls -la "$WORKSPACE/final_model" | tee "$LOGS_DIR/final_model_listing.txt"
+ls -la "$MODEL_DIR" | tee "$LOGS_DIR/final_model_listing.txt"
 
-if [ ! -f "$WORKSPACE/final_model/config.json" ]; then
+if [ ! -f "$MODEL_DIR/config.json" ]; then
     echo "ERROR: final_model/config.json not found - not a valid model"
     echo '{"error": "invalid model - no config.json", "accuracy": 0}' > "$LOGS_DIR/metrics.json"
     echo "0" > "$LOGS_DIR/reward.txt"
@@ -66,13 +75,13 @@ fi
 # Show model config
 echo ""
 echo "=== Model config.json ==="
-cat "$WORKSPACE/final_model/config.json" | head -50 | tee "$LOGS_DIR/model_config.txt"
+cat "$MODEL_DIR/config.json" | head -50 | tee "$LOGS_DIR/model_config.txt"
 
 # Check for tokenizer
 echo ""
 echo "=== Checking tokenizer files ==="
-ls -la "$WORKSPACE/final_model/"*token* 2>/dev/null || echo "No tokenizer files found with 'token' in name"
-ls -la "$WORKSPACE/final_model/"*.json 2>/dev/null || echo "No json files found"
+ls -la "$MODEL_DIR/"*token* 2>/dev/null || echo "No tokenizer files found with 'token' in name"
+ls -la "$MODEL_DIR/"*.json 2>/dev/null || echo "No json files found"
 
 # ============================================================
 # Read metadata for benchmark and model info — from /tests, NOT workspace,
@@ -152,8 +161,8 @@ fi
 #
 # evaluate.py is run from /tests (untamperable). Some evaluate.py scripts
 # (arenahardwriting, healthbench) `from evaluation_code.X import Y`, so
-# /tests must be cwd for the import to resolve. final_model lives in
-# the agent's workspace (only place it could exist), so --model-path is
+# /tests must be cwd for the import to resolve. final_model arrives on
+# the read-only shared volume at /mnt/model, so --model-path is
 # absolute.
 # ============================================================
 echo ""
@@ -187,7 +196,7 @@ run_evaluation() {
 
     set +e
     python3 "$TESTS/evaluate.py" \
-        --model-path "$WORKSPACE/final_model" \
+        --model-path "$MODEL_DIR" \
         --json-output-file "$LOGS_DIR/metrics.json" \
         --templates-dir "$TESTS/templates" \
         --limit -1 \
