@@ -29,6 +29,16 @@ start_period_sec = 5
 start_interval_sec = 1
 retries = 3
 
+# The agent's final_model directory is a harbor task-declared shared volume
+# ([[environment.volumes]]). The trained weights land directly on a
+# provider-managed persistent volume (Modal Volume on modal, named volume on
+# docker), and the separate verifier below attaches the SAME per-trial volume
+# read-only — the multi-GB weights never ride the tar/host artifact path that
+# previously died with exit code -1 on large workspaces.
+[[environment.volumes]]
+name = "model"
+path = "/home/agent/workspace/final_model"
+
 # Verifier runs in a SEPARATE container from the agent — harbor 0.7.0's
 # separate-verifier mode (PR #1655, docs:
 # https://www.harborframework.com/docs/tasks#verifier-environment-shared-vs-separate).
@@ -68,6 +78,14 @@ start_period_sec = 5
 start_interval_sec = 1
 retries = 3
 
+# Same logical volume as the agent's final_model (same `name` = same
+# underlying per-trial volume), mounted READ-ONLY so the verification phase
+# cannot modify the evidence it grades. test.sh evaluates /mnt/model.
+[[verifier.environment.volumes]]
+name = "model"
+path = "/mnt/model"
+read_only = true
+
 [agent]
 timeout_sec = 36000.0
 
@@ -75,22 +93,12 @@ timeout_sec = 36000.0
 # is transferred from the agent env to the verifier env at the same
 # path AND archived under <trial_dir>/artifacts/workspace/ on the host.
 #
-# One entry (was previously two — workspace + a separate final_model).
-# Rationale for collapsing:
-#   1. Two overlapping artifacts (final_model nested inside workspace)
-#      triggered harbor 0.15's UserWarning at task load and made
-#      upload order load-bearing (`upload_artifacts` calls
-#      `empty_dirs(target)` before each upload, so a later workspace
-#      upload would wipe an earlier final_model).
-#   2. Two tar ops on the agent env is two chances to hit harbor's
-#      flaky transfer path (empty stderr, code -1). One op is
-#      strictly better.
-#
-# `final_model` is NOT in the exclude list — we want the trained
-# weights carried in via this single artifact so the verifier has them
-# at /home/agent/workspace/final_model/. On the host they land at
-# artifacts/workspace/final_model/ (postmortem access, just one path
-# deeper than before).
+# This transfer now carries ONLY the contamination-judge inputs (the
+# agent's source code: .py, .md, .json configs, .sh). The trained
+# weights travel on the `model` shared volume declared above — they are
+# no longer part of this tar, which keeps the agent-side tar small and
+# avoids the flaky multi-GB transfer path (empty stderr, code -1) that
+# killed the 2026-05-27 and 2026-06-27 trials.
 #
 # The contamination judge in test.sh reads the agent's code via
 # `cd $WORKSPACE && codex exec ...` — the workspace transfer supplies
@@ -98,14 +106,11 @@ timeout_sec = 36000.0
 [[artifacts]]
 source = "/home/agent/workspace"
 destination = "workspace"
-# Aggressive excludes to keep the agent-side tar tractable. The
-# 2026-05-27 and 2026-06-27 trials died with harbor's tar exit code
-# -1 / empty stderr on multi-GB workspaces containing HF cache +
-# wandb + checkpoint dirs. Drop anything the contamination judge
-# doesn't need — judge only reads the agent's source code (.py, .md,
-# .json configs, .sh), not caches/checkpoints/logs. `final_model` is
-# deliberately kept so the verifier gets the weights.
 exclude = [
+    # The trained model arrives via the shared volume, not this tar.
+    # (final_model is a volume mountpoint in the agent container; tarring
+    # it would re-introduce the multi-GB transfer this PR removes.)
+    "final_model",
     # Standard hygiene:
     "__pycache__",
     "*.pyc",
@@ -118,13 +123,18 @@ exclude = [
     # Experiment tracking:
     "wandb",
     ".wandb",
-    # Training output dirs commonly produced by HF Trainer / Hydra
-    # (final_model is NOT excluded — we want it transferred):
+    # Training output dirs commonly produced by HF Trainer / Hydra:
     "checkpoint-*",
     "runs",
     "outputs",
     "output",
     "logs",
+    # Stray weight files outside final_model (large, not useful for judge):
+    "*.safetensors",
+    "*.pt",
+    "*.pth",
+    "*.ckpt",
+    "*.gguf",
     # Tokenized dataset shards (large, not useful for judge):
     "*.arrow",
     "*.parquet",
