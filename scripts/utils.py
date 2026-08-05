@@ -113,9 +113,9 @@ HARDCODED_AGENT_MAP = {
         "claude_non_api_max_claude-fable-5_1m__10h_run2",
     ],
     "Kimi K3": [
-        "kimi_claude_kismet-0715_1m__10h_run1",
-        "kimi_claude_kismet-0715_1m__10h_run2",
-        "kimi_claude_kismet-0715_1m__10h_run3",
+        "kimi_claude_k3-0715_1m__10h_run1",
+        "kimi_claude_k3-0715_1m__10h_run2",
+        "kimi_claude_k3-0715_1m__10h_run3",
     ],
     "Grok 4.5": [
         "cursor_cli_cursor-grok-4.5-high_10h_run1",
