@@ -465,6 +465,15 @@ def _process_subdir(subdir_str: str, dest_dir_str: str, force: bool) -> dict:
     copy_preferring_rerun(subdir, dest_dir, 'judge_output_gpt5_4.json', api_keys=_WORKER_API_KEYS)
     copy_preferring_rerun(subdir, dest_dir, 'judge_output_gpt5_4.txt',  api_keys=_WORKER_API_KEYS)
 
+    # Legacy v1.0 judge artifacts (pre-revamp benchmark version) — copied
+    # as fallback so old cells that were never re-judged still show a
+    # verdict in the viewer. build.py prefers the _gpt5_4 files when both
+    # eras coexist. Optional — no-ops on cells that were only ever
+    # v1.1-judged.
+    copy_preferring_rerun(subdir, dest_dir, 'contamination_judgement.txt',   api_keys=_WORKER_API_KEYS)
+    copy_preferring_rerun(subdir, dest_dir, 'disallowed_model_judgement.txt', api_keys=_WORKER_API_KEYS)
+    copy_preferring_rerun(subdir, dest_dir, 'judge_output.json',              api_keys=_WORKER_API_KEYS)
+
     # Workspace — copy text files only, skip weights/checkpoints/caches.
     ws_count = copy_workspace(subdir / "task", dest_dir / "task", _WORKER_API_KEYS)
 
