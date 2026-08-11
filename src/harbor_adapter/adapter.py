@@ -293,6 +293,8 @@ fi
         benchmark_id: str,
         model_info: "ModelInfo",
         benchmark_info: "BenchmarkInfo",
+        *,
+        include_judge: bool = False,
     ) -> None:
         """Copy the evaluation pipeline files into target_dir.
 
@@ -307,7 +309,7 @@ fi
           - templates/             (chat templates for all model families)
           - evaluation_code/       (arenahardwriting, healthbench only)
           - task_context/<*>       (bfcl has bfcl_evaluation_code.py)
-          - contamination_judge.py (judge prompt builder)
+          - contamination_judge.py (judge prompt builder, tests/ only)
           - metadata.json          (benchmark + model info for verifier)
         """
         # evaluate.py
@@ -337,11 +339,12 @@ fi
                 else:
                     shutil.copy(item, dst)
 
-        # contamination judge script (kept in template/environment/ as
-        # the canonical source, copied into both env_dir and tests_dir)
-        judge_src = TEMPLATE_DIR / "environment" / "contamination_judge.py"
-        if judge_src.exists():
-            shutil.copy(judge_src, target_dir / "contamination_judge.py")
+        # Keep judge criteria in the separate verifier. Copying the prompt into
+        # environment/ exposes scoring machinery to the agent being judged.
+        if include_judge:
+            judge_src = TEMPLATE_DIR / "environment" / "contamination_judge.py"
+            if judge_src.exists():
+                shutil.copy(judge_src, target_dir / "contamination_judge.py")
 
         # metadata.json
         metadata = {
@@ -399,7 +402,9 @@ fi
         # Eval pipeline (also baked into the agent workspace via
         # environment/, but the verifier reads from /tests/ where these
         # land via the verifier Dockerfile's `COPY .`).
-        self._copy_eval_files(tests_dir, benchmark_id, model_info, benchmark_info)
+        self._copy_eval_files(
+            tests_dir, benchmark_id, model_info, benchmark_info, include_judge=True
+        )
 
     def generate_task(
         self,
