@@ -1,6 +1,4 @@
 #!/bin/bash
-unset ANTHROPIC_API_KEY
-unset GEMINI_API_KEY
 
 # Set reasoning effort to xhigh (prepend to ensure precedence)
 file=/home/ben/.codex/config.toml
@@ -10,6 +8,9 @@ printf 'model_reasoning_effort = "xhigh"\n\n' > "$tmp"
 mv "$tmp" "$file"
 
 MIN_REMAINING_MINUTES=30
+
+# Auto-update the CLI harness to the latest release and record its version.
+bash /home/ben/update_agent_cli.sh codex
 
 printf '%s' "$PROMPT" | codex --search exec --json -c model_reasoning_summary=detailed --skip-git-repo-check --yolo --model "$AGENT_CONFIG"
 

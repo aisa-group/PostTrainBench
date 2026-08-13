@@ -1,0 +1,10 @@
+{
+  "benchmark": "HealthBench",
+  "disallowed_data_examples": [
+    "openai/healthbench"
+  ],
+  "allowed_data_examples": [],
+  "required_api_keys": [
+    "OPENAI_API_KEY"
+  ]
+}

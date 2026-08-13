@@ -1,8 +1,8 @@
 ## Tips for running the benchmark
 These comments are mainly for internal use.
 
-You can use the `POST_TRAIN_BENCH_EXPERIMENT_NAME` to set experiment names for the benchmark, e.g. to distinguish experiments where you test and ones which are for actual results.
-E.g. you can set `export POST_TRAIN_BENCH_EXPERIMENT_NAME="_testing"`.
+You can use `experiment_name` to set experiment names for the benchmark, e.g. to distinguish experiments where you test and ones which are for actual results.
+E.g. you can pass `-a "experiment_name=_testing"` when submitting jobs with `condor_submit_bid`.
 
 Some useful scripts after running experiments:
 - `dev_utils/list_cuda_not_avl.py` lists runs where the cuda check failed (those runs need to be rerun)
@@ -33,7 +33,7 @@ It is good to double check if the judge worked correctly.
 For this you can use the `dev_utils/contamination_list.py` script to list flagged runs.
 Then look at the `error.log` to see the judges reasoning and potentially at `task/` to see the output code of the agent.
 
-If the judge was wrong, flip the judgement by adding "no " in front of the "contamination detected" in `contamination_judgement.txt`.
+If the judge was wrong, flip the judgement by editing the GPT-5.4 contamination judgement file (`judgement_gpt5_4_rerun.json` if it exists, otherwise `judgement_gpt5_4.json`) and setting the relevant boolean field (`contamination` or `disallowed_model`) to the opposite value.
 
 For all runs which you went over, add them to the `POST_TRAIN_BENCH_CONTAMINATION_CORRECT` environment variable which is build up like this:
 ```
@@ -54,17 +54,14 @@ to get vllm logs in the output.
 
 ## For our internal cluster (MPI)
 ### Env var
-Set this in your `.bashrc` or `.zshrc`
+Set these in your `.env` file:
 ```
-export POST_TRAIN_BENCH_JOB_SCHEDULER="htcondor_mpi-is"
+POST_TRAIN_BENCH_JOB_SCHEDULER="htcondor_mpi-is"
+POST_TRAIN_BENCH_CONTAINERS_DIR="/fast/username/ptb_containers"
+POST_TRAIN_BENCH_RESULTS_DIR="/fast/username/ptb_results"
 ```
-Likely it is also good to set
-```
-export POST_TRAIN_BENCH_CONTAINERS_DIR="/fast/username/ptb_containers"
-export POST_TRAIN_BENCH_RESULTS_DIR="/fast/username/ptb_results"
-```
-or similar. Substitute "username" by your username.
-You will need to move your containers there after this this.
+Substitute "username" by your username.
+You will need to move your containers there after this.
 
 ### Gemini issues
 Gemini sometimes runs into issues like "API Error: exception TypeError: fetch failed sending request".

@@ -18,11 +18,16 @@ results tree:
 
 ```bash
 # 1. Collect raw per-run data into per-method CSVs.
-#    Reads metrics.json + contamination/disallowed_model judgements + time_taken.txt,
-#    applies baseline-zeroshot fallback for contaminated/errored cells.
+#    Reads metrics.json + contamination/disallowed_model + API-usage judgements
+#    + time_taken.txt, applies baseline-zeroshot fallback for flagged/errored cells.
+#    The PTB-lookup judgement is also read, but only as a tripwire: it is
+#    archival, and collect.py raises an error if it ever flags.
+#    The general (unknown-unknowns) judgement is ignored entirely: it never
+#    affects a score and never raises, whether missing or flagged. Review its
+#    flags separately with find_flagged_runs.py --judge general_judge.
 #    Writes:
 #      final_{method}.csv          — score grid (model x benchmark) with fallback
-#      contamination_{method}.csv  — flags ("", "C", "M", "MC", or error string)
+#      contamination_{method}.csv  — flags ("" or any of "M", "C", "A", or error string)
 #      time_overview.csv           — average wall time per method
 python scripts/collect.py
 
@@ -93,6 +98,7 @@ python scripts/verify.py \
 | Script | Description |
 |---|---|
 | `compute_claude_costs.py` | Claude API spend rollup |
+| `find_flagged_runs.py` | List all run dirs flagged by a given judge (`--judge <judge_name>`; all roots, all runs; dirs without a verdict are ignored; `--justification` for details) |
 | `extract_token_usage.py` | Token-usage extraction from agent traces |
 | `migrate_judgement_files.py` | One-off: migrate older judgement file naming |
 | `list_safetensors.py` | List safetensors files under a result tree |

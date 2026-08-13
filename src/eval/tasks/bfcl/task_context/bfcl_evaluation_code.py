@@ -78,8 +78,16 @@ def bfcl_scorer() -> Scorer:
 
         target_obj = state.metadata["target_obj"]
 
-        args_identical = tool_calls[0].arguments == target_obj["arguments"]
         function_identical = tool_calls[0].function == target_obj["function"]
+        args_identical = function_identical and canonicalize(
+            tool_calls[0].function,
+            tool_calls[0].arguments,
+            state.metadata["tools"],
+        ) == canonicalize(
+            target_obj["function"],
+            target_obj["arguments"],
+            state.metadata["tools"],
+        )
         logger.info(
             f"args: {tool_calls[0].arguments} == {target_obj['arguments']}\nfunction: {tool_calls[0].function} == {target_obj['function']}"
         )
@@ -92,6 +100,25 @@ def bfcl_scorer() -> Scorer:
         return Score(value=value, answer=repr(tool_call_string))
 
     return score
+
+
+def canonicalize(
+    function_name: str,
+    arguments: dict[str, Any],
+    tools: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Fill optional argument defaults before comparing tool calls."""
+    tool = next(tool for tool in tools if tool["name"] == function_name)
+    parameters = tool["parameters"]
+    required = set(parameters.get("required") or [])
+    defaults = {
+        name: schema["default"]
+        for name, schema in (parameters.get("properties") or {}).items()
+        if name not in required
+        and isinstance(schema, dict)
+        and "default" in schema
+    }
+    return defaults | arguments
 
 
 def record_to_sample(record: dict[str, Any]) -> Sample:

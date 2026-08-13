@@ -2,19 +2,31 @@ test*.err
 test*.out
 test*.log
 
-# Agent auth tokens 
+# NFS silly-rename leftovers (deleted-but-still-open files)
+.nfs*
+
+logs/
+!/logs/
+
+# Agent auth tokens
 agents/*/auth.json
-agents/*/oauth_token
+agents/*/auth*.json
+agents/*/oauth_token*
+agents/*/*auth*.json
 
 .claude 
-
-AGENTS.md
-CLAUDE.md
 
 logs
 .vscode
 
+# Cluster-ID logs from commit_rerun_judges.sh submissions (incl. legacy_* dirs
+# from the pre-src/judges pipeline)
+src/judges/rerun/submission_logs/
+
 containers/empty_dot_git
+
+# Downloaded benchmark test data for contamination checking
+**/test_data.json
 
 2025-10-13/*
 data/*
@@ -229,5 +241,11 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
-# testing parsed agent traces 
+# testing parsed agent traces
 output.txt
+
+# Nested checkout of the public website (has its own .git); never track from here
+posttrainbench-website/
+
+# HTCondor scheduler logs from rerun_specific_runs.sh submissions
+src/disallowed_usage_judge/rerun_judge/rerun_specific_runs_logs/

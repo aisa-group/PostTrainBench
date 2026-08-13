@@ -1,9 +1,4 @@
 #!/bin/bash
-unset GEMINI_API_KEY
-unset CODEX_API_KEY
-
-# Clear API key so the CLI uses the OAuth token from subscription
-export ANTHROPIC_API_KEY=""
 
 # Load OAuth token from file (copied by run_task.sh)
 if [ -f /home/ben/oauth_token ]; then
@@ -15,8 +10,14 @@ fi
 
 export BASH_MAX_TIMEOUT_MS="36000000"
 
-# Set default effort level to high for consistency  
+export CLAUDE_CODE_EFFORT_LEVEL="high"
+
+# Auto-update the CLI harness to the latest release and record its version.
+bash /home/ben/update_agent_cli.sh claude
+
+# Use default effort level for consistency, not high by default 
+
 
 printf '%s' "$PROMPT" | claude --print --verbose --model "$AGENT_CONFIG" \
-    --output-format stream-json --effort high --thinking-display summarized \
+    --output-format stream-json --thinking-display summarized \
     --dangerously-skip-permissions

@@ -12,6 +12,8 @@ import re
 # ---------------------------------------------------------------------------
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
+ENV_PATH = os.path.join(PROJECT_ROOT, ".env")
 FACTORS_PATH = os.path.join(SCRIPT_DIR, "factors.json")
 BASELINES_PATH = os.path.join(SCRIPT_DIR, "baselines.json")
 
@@ -88,7 +90,41 @@ HARDCODED_AGENT_MAP = {
     "codex_non_api_xhigh_gpt-5.5_10h_run1",
     "codex_non_api_xhigh_gpt-5.5_10h_run2",
 
-    ]
+    ],
+    "GPT-5.6-Sol": [
+        "codex_non_api_max_gpt-5.6-sol_10h_run1",
+        "codex_non_api_max_gpt-5.6-sol_10h_run2",
+    ],
+    "Opus-4.8": [
+        "claude_non_api_claude-opus-4-8_10h_run1",
+        "claude_non_api_claude-opus-4-8_10h_run2",
+    ],
+    "Opus-4.8 (Max)": [
+        "claude_non_api_max_claude-opus-4-8_10h_run1",
+        "claude_non_api_max_claude-opus-4-8_10h_run2",
+    ],
+    "GLM 5.2": [
+        "glmx_glm-5.2-preview_1m__10h_run1",
+        "glmx_glm-5.2-preview_1m__10h_run2",
+        "glmx_glm-5.2-preview_1m__10h_run3",
+    ],
+    "Fable 5 (Max)": [
+        "claude_non_api_max_claude-fable-5_1m__10h_run1",
+        "claude_non_api_max_claude-fable-5_1m__10h_run2",
+    ],
+    "Kimi K3": [
+        "kimi_claude_k3-0715_1m__10h_run1",
+        "kimi_claude_k3-0715_1m__10h_run2",
+        "kimi_claude_k3-0715_1m__10h_run3",
+    ],
+    "Grok 4.5": [
+        "cursor_cli_cursor-grok-4.5-high_10h_run1",
+        "cursor_cli_cursor-grok-4.5-high_10h_run2",
+    ],
+    "Opus-5": [
+        "claude_non_api_claude-opus-5_10h_run1",
+        "claude_non_api_claude-opus-5_10h_run2",
+    ],
 }
 
 HARDCODED_BENCHMARKS = [
@@ -156,8 +192,81 @@ def stddev(values: list[float]) -> float:
 # Paths
 # ---------------------------------------------------------------------------
 
+def load_dotenv(path: str = ENV_PATH) -> dict[str, str]:
+    """Parse the project's .env file into a dict.
+
+    Raises FileNotFoundError if the .env file does not exist — collect.py
+    and aggregate.py read configuration from .env, not from the ambient
+    environment, so a missing file is a hard error.
+    """
+    if not os.path.exists(path):
+        raise FileNotFoundError(
+            f".env file not found at {path}; collect.py and aggregate.py "
+            f"require a project-level .env file"
+        )
+
+    env = {}
+    with open(path, "r") as f:
+        for raw_line in f:
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip()
+            # Strip a trailing inline comment when the value is unquoted
+            if value and value[0] not in ("'", '"'):
+                hash_idx = value.find("#")
+                if hash_idx != -1:
+                    value = value[:hash_idx].strip()
+            # Strip surrounding quotes
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+                value = value[1:-1]
+            env[key] = value
+    return env
+
+
 def get_results_dir() -> str:
-    return os.environ.get("POST_TRAIN_BENCH_RESULTS_DIR", "results")
+    env = load_dotenv()
+    if "POST_TRAIN_BENCH_RESULTS_DIR" not in env:
+        raise KeyError(
+            f"POST_TRAIN_BENCH_RESULTS_DIR not set in {ENV_PATH}"
+        )
+    return env["POST_TRAIN_BENCH_RESULTS_DIR"]
+
+
+def get_extra_results_dirs() -> list[str]:
+    """Return additional read-only results roots to union with the primary.
+
+    Reads ``POST_TRAIN_BENCH_EXTRA_RESULTS_DIRS`` from the project's .env file:
+    a colon-separated (PATH-style) list of directories that also contain
+    method subdirs. ``collect.py`` iterates methods across the primary root
+    (``POST_TRAIN_BENCH_RESULTS_DIR``) plus each extra root. Output CSVs are
+    still written to the primary (writable) root.
+
+    Returns an empty list if the variable is unset or empty.
+    """
+    env = load_dotenv()
+    raw = env.get("POST_TRAIN_BENCH_EXTRA_RESULTS_DIRS", "").strip()
+    if not raw:
+        return []
+    return [p for p in raw.split(":") if p]
+
+
+AGGREGATION_SUBDIR = "_aggregated"
+
+
+def get_aggregation_dir() -> str:
+    """Return the directory both collect.py and aggregate.py write their CSVs
+    into by default: ``<POST_TRAIN_BENCH_RESULTS_DIR>/_aggregated``.
+
+    Kept separate from the raw method subdirs so the results root stays tidy.
+    The leading underscore prevents collect.py from mistaking it for a method
+    directory (collect.py skips names starting with ``_``).
+    """
+    return os.path.join(get_results_dir(), AGGREGATION_SUBDIR)
 
 
 # ---------------------------------------------------------------------------
@@ -267,117 +376,243 @@ def walk_latest_runs(
 # Metrics loading
 # ---------------------------------------------------------------------------
 
-def load_metrics(metrics_path: str, method_name: str = None) -> str:
+def load_metrics(metrics_path: str) -> str:
+    """Read the accuracy from metrics.json as a string.
+
+    Raises FileNotFoundError if metrics.json is missing, json.JSONDecodeError
+    if it is unparseable, KeyError if the 'accuracy' field is absent, and
+    TypeError if 'accuracy' is not numeric. There is no silent fallback —
+    callers that want a baseline fallback for missing runs must guard the
+    call themselves.
     """
-    Return the accuracy as a string, or an error label.
-
-    Error labels for non-baseline methods:
-      - "not avl."   if time_taken.txt doesn't exist
-      - "not stored" if time_taken.txt exists but final_model/ doesn't
-      - "ERR"        otherwise
-    For baseline: always "ERR" on failure.
-    """
-    if os.path.exists(metrics_path):
-        try:
-            with open(metrics_path, "r") as f:
-                data = json.load(f)
-            acc = data.get("accuracy")
-            if acc is not None:
-                return str(acc)
-        except Exception:
-            pass
-
-    if method_name == "baseline_zeroshot":
-        return "ERR"
-
-    run_dir = os.path.dirname(metrics_path)
-
-    if not os.path.exists(os.path.join(run_dir, "time_taken.txt")):
-        return "not avl."
-
-    if not os.path.isdir(os.path.join(run_dir, "final_model")):
-        return "not stored"
-
-    return "ERR"
+    if not os.path.exists(metrics_path):
+        raise FileNotFoundError(f"metrics.json not found: {metrics_path}")
+    with open(metrics_path, "r") as f:
+        data = json.load(f)
+    if "accuracy" not in data:
+        raise KeyError(f"{metrics_path}: missing 'accuracy' field")
+    accuracy = data["accuracy"]
+    if not isinstance(accuracy, (int, float)) or isinstance(accuracy, bool):
+        raise TypeError(
+            f"{metrics_path}: 'accuracy' is not a number (got "
+            f"{type(accuracy).__name__}: {accuracy!r})"
+        )
+    return str(accuracy)
 
 
 # ---------------------------------------------------------------------------
-# Contamination loading
+# Judge result loading
 # ---------------------------------------------------------------------------
 
-def load_contamination(contamination_path: str):
-    """Return True, False, "IMPORTANT ERR", or "ERR"."""
-    if not os.path.exists(contamination_path):
-        return "ERR"
-    try:
-        with open(contamination_path, "r") as f:
-            content = f.read().strip()
-    except Exception:
-        return "ERR"
-    if content == "contamination detected":
-        return True
-    elif content == "no contamination detected":
-        return False
-    else:
-        return "IMPORTANT ERR"
+JUDGEMENT_FIELDS = ("contamination", "disallowed_model")
 
 
-def load_disallowed_model(disallowed_path: str):
-    """Return True, False, "IMPORTANT ERR", or "ERR"."""
-    if not os.path.exists(disallowed_path):
-        return "ERR"
-    try:
-        with open(disallowed_path, "r") as f:
-            content = f.read().strip()
-    except Exception:
-        return "ERR"
-    if content == "disallowed use detected":
-        return True
-    elif content == "only allowed use detected":
-        return False
-    else:
-        return "IMPORTANT ERR"
+def judgement_path(run_dir: str) -> str:
+    """Return the GPT-5.4 contamination judgement path for a run directory.
 
-
-def combine_contamination_results(contamination, disallowed_model) -> str:
+    Prefers ``judgement_gpt5_4_rerun.json`` (written by the rerun pipeline) and
+    falls back to ``judgement_gpt5_4.json`` from the initial ``run_task.sh``
+    run. This is the single place that encodes the rerun-over-original
+    preference; everything that needs the judgement should go through here (or
+    through ``load_judgement``). Raises FileNotFoundError when neither exists.
     """
-    Combine contamination and disallowed model results into a cell value.
+    rerun_path = os.path.join(run_dir, "judgement_gpt5_4_rerun.json")
+    original_path = os.path.join(run_dir, "judgement_gpt5_4.json")
 
-    Returns "" (clean), "C", "M", "MC", or an error string.
+    if os.path.exists(rerun_path):
+        return rerun_path
+    if os.path.exists(original_path):
+        return original_path
+    raise FileNotFoundError(
+        f"No GPT-5.4 contamination judgement in {run_dir} "
+        f"(expected judgement_gpt5_4_rerun.json or judgement_gpt5_4.json)"
+    )
+
+
+def load_judgement(run_dir: str) -> dict:
+    """Load the GPT-5.4 contamination judge verdict for a single run directory.
+
+    Reads only the GPT-5.4 contamination judge output (preferring the rerun
+    file; see ``judgement_path``). The API usage and PTB-lookup judges have
+    their own loaders (``load_api_judgement`` / ``load_ptb_lookup_judgement``).
+
+    Raises FileNotFoundError when neither judgement file exists,
+    json.JSONDecodeError on a malformed file, and ValueError/TypeError when the
+    schema does not match what the contamination judge writes.
     """
-    if contamination in ("ERR", "IMPORTANT ERR") or disallowed_model in (
-        "ERR",
-        "IMPORTANT ERR",
-    ):
-        errors = []
-        if contamination in ("ERR", "IMPORTANT ERR"):
-            errors.append(f"C:{contamination}")
-        if disallowed_model in ("ERR", "IMPORTANT ERR"):
-            errors.append(f"M:{disallowed_model}")
-        return " ".join(errors)
+    path = judgement_path(run_dir)
 
-    if disallowed_model and contamination:
-        return "MC"
-    elif disallowed_model and not contamination:
-        return "M"
-    elif not disallowed_model and contamination:
-        return "C"
-    else:
-        return ""
+    with open(path, "r") as f:
+        data = json.load(f)
+    if not isinstance(data, dict):
+        raise ValueError(f"{path}: top-level JSON is not an object")
+
+    missing = [f for f in JUDGEMENT_FIELDS if f not in data]
+    if missing:
+        raise ValueError(f"{path}: missing fields: {', '.join(missing)}")
+
+    for field in JUDGEMENT_FIELDS:
+        if not isinstance(data[field], bool):
+            raise TypeError(
+                f"{path}: field {field!r} must be bool, got "
+                f"{type(data[field]).__name__}: {data[field]!r}"
+            )
+
+    return {field: data[field] for field in JUDGEMENT_FIELDS}
+
+
+API_USAGE_FIELD = "disallowed_api_usage"
+PTB_LOOKUP_FIELD = "disallowed_ptb_lookup"
+
+
+def optional_judgement_path(run_dir: str, basename: str) -> str | None:
+    """Return the verdict path for a judge whose file may legitimately be absent.
+
+    ``basename`` is the judge's output id (JUDGE_OUTPUT_ID in its judge.conf),
+    e.g. ``api``, ``ptb_lookup``, ``general``, ``gpt5_4``. Prefers
+    ``judgement_{basename}_rerun.json`` (written by the rerun pipeline) over
+    ``judgement_{basename}.json`` from the initial ``run_task.sh`` run; None
+    when neither exists (the run predates the judge).
+    """
+    rerun_path = os.path.join(run_dir, f"judgement_{basename}_rerun.json")
+    original_path = os.path.join(run_dir, f"judgement_{basename}.json")
+
+    if os.path.exists(rerun_path):
+        return rerun_path
+    if os.path.exists(original_path):
+        return original_path
+    return None
+
+
+def _load_optional_flag_judgement(
+    run_dir: str, basename: str, field: str
+) -> bool | None:
+    """Load a single-boolean judge verdict that may legitimately be absent.
+
+    Prefers ``judgement_{basename}_rerun.json`` (written by the rerun
+    pipeline) and falls back to ``judgement_{basename}.json`` from the initial
+    ``run_task.sh`` run. Unlike the contamination judgement, a missing file is
+    not an error: runs that predate the judge have none, so None is returned
+    instead of raising. Raises json.JSONDecodeError on a malformed file and
+    ValueError/TypeError when the schema does not match what the judge writes.
+    """
+    path = optional_judgement_path(run_dir, basename)
+    if path is None:
+        return None
+
+    with open(path, "r") as f:
+        data = json.load(f)
+    if not isinstance(data, dict):
+        raise ValueError(f"{path}: top-level JSON is not an object")
+    if field not in data:
+        raise ValueError(f"{path}: missing field: {field}")
+    if not isinstance(data[field], bool):
+        raise TypeError(
+            f"{path}: field {field!r} must be bool, got "
+            f"{type(data[field]).__name__}: {data[field]!r}"
+        )
+    return data[field]
+
+
+def load_api_judgement(run_dir: str) -> bool | None:
+    """Load the third-party API usage judge verdict for a run directory.
+
+    Returns the ``disallowed_api_usage`` boolean, or None when no API
+    judgement file exists (the run predates this judge). A True verdict is
+    consumed by scoring: the run's score falls back to the baseline.
+    """
+    return _load_optional_flag_judgement(run_dir, "api", API_USAGE_FIELD)
+
+
+def ptb_lookup_judgement_path(run_dir: str) -> str | None:
+    """Return the PTB-lookup judge verdict path for a run directory.
+
+    Prefers the ``_rerun`` file (see ``optional_judgement_path``); None
+    when the run has no PTB-lookup judgement (it predates the judge).
+    """
+    return optional_judgement_path(run_dir, "ptb_lookup")
+
+
+def load_ptb_lookup_judgement(run_dir: str) -> bool | None:
+    """Load the PTB-lookup judge verdict for a single run directory.
+
+    Returns the ``disallowed_ptb_lookup`` boolean, or None when no PTB-lookup
+    judgement file exists (the run predates this judge). This verdict is
+    archival — it does not feed score fallback — but collect.py raises when
+    it is True so a firing lookup judge cannot pass unnoticed.
+    """
+    return _load_optional_flag_judgement(run_dir, "ptb_lookup", PTB_LOOKUP_FIELD)
+
+
+# First run id for which the ptb_lookup_judge is required on every scored
+# agent run: chosen above every run id existing on 2026-07-16 (max was
+# 17397666), so it covers exactly the sweeps launched after the judge was
+# part of the inline set in run_task.sh. Verdicts on older runs (e.g. from
+# the rerun pipeline) are still read as tripwires when present — this
+# threshold only governs whether their absence is a violation.
+NEWER_JUDGES_MIN_RUN_ID = 17400000
+
+
+def missing_required_judgements(run_dir: str, run_id: int) -> list[str]:
+    """Names of the judges whose verdict a scored agent run must have but lacks.
+
+    The contamination and API-usage judges are required on every scored run;
+    the PTB-lookup judge only on runs with
+    ``run_id >= NEWER_JUDGES_MIN_RUN_ID`` (older runs predate it). The
+    general (unknown-unknowns) judge is never required: its verdict is
+    ignored by scoring entirely (review it via find_flagged_runs.py).
+    Baseline methods have no judges by design — callers must not apply this
+    check to them. A malformed verdict file still raises; only a genuinely
+    absent one counts as missing.
+    """
+    missing = []
+    try:
+        load_judgement(run_dir)
+    except FileNotFoundError:
+        missing.append("data_contamination_judge")
+    if load_api_judgement(run_dir) is None:
+        missing.append("api_usage_judge")
+    if run_id >= NEWER_JUDGES_MIN_RUN_ID:
+        if load_ptb_lookup_judgement(run_dir) is None:
+            missing.append("ptb_lookup_judge")
+    return missing
+
+
+def judgement_to_cell(judgement: dict, api_usage: bool | None = None) -> str:
+    """Encode the judge booleans into a single cell.
+
+    The cell concatenates the letter for each flag that is True:
+      - 'M' = disallowed_model      (GPT-5.4 contamination judge)
+      - 'C' = contamination         (GPT-5.4 contamination judge)
+      - 'A' = disallowed_api_usage  (API usage judge; pass None when that
+        judge never ran, which leaves the letter out)
+    Returns '' when no flag is set. Order is fixed (M, C, A) so cells are
+    comparable across runs. The PTB-lookup verdict is deliberately not part
+    of the cell: it is archival, and collect.py errors out when it fires.
+    The general verdict is ignored by scoring entirely.
+    """
+    parts = []
+    if judgement["disallowed_model"]:
+        parts.append("M")
+    if judgement["contamination"]:
+        parts.append("C")
+    if api_usage:
+        parts.append("A")
+    return "".join(parts)
 
 
 # ---------------------------------------------------------------------------
 # Time loading
 # ---------------------------------------------------------------------------
 
-def parse_time_hms(time_str: str) -> int | None:
-    """Parse H:M:S string to total seconds. Returns None on failure."""
+def parse_time_hms(time_str: str) -> int:
+    """Parse an H:M:S string into total seconds. Raises ValueError on bad input."""
     match = re.match(r"^(\d+):(\d{1,2}):(\d{1,2})$", time_str.strip())
     if not match:
-        return None
+        raise ValueError(f"time string is not H:M:S: {time_str!r}")
     hours, minutes, seconds = map(int, match.groups())
     if minutes >= 60 or seconds >= 60:
-        return None
+        raise ValueError(f"time string has invalid minutes/seconds: {time_str!r}")
     return hours * 3600 + minutes * 60 + seconds
 
 
@@ -389,22 +624,16 @@ def format_time_hms(total_seconds: int) -> str:
     return f"{hours}:{minutes:02d}:{seconds:02d}"
 
 
-def load_time_taken(run_dir: str) -> tuple[str, int | None]:
-    """
-    Return (display_string, total_seconds).
-    Returns ("ERR", None) on failure.
+def load_time_taken(run_dir: str) -> tuple[str, int]:
+    """Return (display_string, total_seconds) from time_taken.txt.
+
+    Raises FileNotFoundError if the file is missing and ValueError if the
+    contents are not in H:M:S format.
     """
     time_taken_path = os.path.join(run_dir, "time_taken.txt")
-
     if not os.path.exists(time_taken_path):
-        return "ERR", None
-
-    try:
-        with open(time_taken_path, "r") as f:
-            time_str = f.read().strip()
-        total_seconds = parse_time_hms(time_str)
-        if total_seconds is None:
-            return "ERR", None
-        return format_time_hms(total_seconds), total_seconds
-    except Exception:
-        return "ERR", None
+        raise FileNotFoundError(f"time_taken.txt not found: {time_taken_path}")
+    with open(time_taken_path, "r") as f:
+        time_str = f.read().strip()
+    total_seconds = parse_time_hms(time_str)
+    return format_time_hms(total_seconds), total_seconds

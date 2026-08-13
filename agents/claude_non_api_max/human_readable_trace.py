@@ -1,1 +1,0 @@
-../claude/human_readable_trace.py

@@ -60,14 +60,39 @@ bash containers/build_container.sh standard
 # 3. Download HuggingFace cache
 bash containers/download_hf_cache/download_hf_cache.sh
 
-# 4. Set API keys
-export OPENAI_API_KEY="your-key"
-export ANTHROPIC_API_KEY="your-key"
-export GEMINI_API_KEY="your-key"
+# 4. Set up environment variables
+cp example.env .env
+# Edit .env and fill in your API keys and paths
 
 # 5. Run jobs
 bash src/commit_utils/commit.sh
 ```
+
+### Environment Setup
+
+Copy `example.env` to `.env` and fill in your values:
+
+```bash
+cp example.env .env
+```
+
+The `.env` file contains API keys and configuration. See `example.env` for all available variables:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `OPENAI_API_KEY` | OpenAI API key | — |
+| `ANTHROPIC_API_KEY` | Anthropic API key | — |
+| `GEMINI_API_KEY` | Google Gemini API key | — |
+| `OPENCODE_API_KEY` | OpenCode API key (used by the `opencode` agent) | — |
+| `ZAI_API_KEY` | Z.AI API key (used by the `opencode` and `glm5` agents) | — |
+| `HF_HOME` | HuggingFace cache directory | `$HOME/.cache/huggingface` |
+| `POST_TRAIN_BENCH_RESULTS_DIR` | Directory for results | `results` |
+| `POST_TRAIN_BENCH_CONTAINERS_DIR` | Directory for containers | `containers` |
+| `POST_TRAIN_BENCH_CONTAINER_NAME` | Container name | `standard` |
+| `POST_TRAIN_BENCH_PROMPT` | Prompt variant | `prompt` |
+| `POST_TRAIN_BENCH_JOB_SCHEDULER` | Job scheduler (`htcondor` or `htcondor_mpi-is`) | `htcondor` |
+
+Environment variables already set in your shell take precedence over `.env` values.
 
 Currently, we only support the HTCondor job scheduler. [Harbor](https://github.com/harbor-framework/harbor) support is planned.
 
@@ -129,6 +154,7 @@ The `solve.sh` script reads the token from the file, exports it as `CLAUDE_CODE_
 | `src/baselines/` | Scripts to compute baseline scores |
 | `src/eval/` | Evaluation tasks |
 | `results/` | Evaluation results (baseline runs prefixed with `baseline_`) |
+| `logs/` | HTCondor scheduler logs (`.err`/`.out`/`.log` per job; gitignored) |
 
 Each evaluation folder in `src/eval/tasks/` contains:
 - `benchmark.txt`: Official benchmark name
@@ -160,6 +186,13 @@ We observed some failure modes in earlier iterations:
 2. **Model substitution**: Claude Code downloaded an instruction-tuned model instead of fine-tuning the base model.
 
 We addressed these by updating the system prompt and employing an agent-as-judge to review generated code. When reward hacking is detected, we discard the run and use the base model's performance instead.
+
+Since v1.1, every run is reviewed by two independent agent-as-judge passes:
+
+1. A **contamination judge** that checks for test-data usage, evaluation tampering, model substitution, and forbidden fine-tuning practices. It is equipped with programmatic tools: a contamination check that matches the agent's training data against the benchmark's test set, and a model-identity check against reference configs.
+2. A **third-party API usage judge** that checks whether the agent called external LLM APIs in a disallowed way (e.g., to generate synthetic training data).
+
+See the [website](http://posttrainbench.com/#observations) for a qualitative analysis of the reward hacking we observed.
 
 ## Agent Prompt
 
@@ -204,14 +237,6 @@ For Claude Code, we add the following line (Claude Code can run tasks in the bac
 
 
 </details>
-
-## Roadmap
-
-- [x] More evaluation tasks (v1: 7 benchmarks, up from 5)
-- [x] More agent scaffolds and agents (v1: 4 scaffolds, 20+ agent configurations)
-- [ ] Enhanced data decontamination
-- [ ] Enhanced method to detect reward hacking
-- [x] Ablation studies (e.g., varying compute budgets)
 
 ## Contact
 
