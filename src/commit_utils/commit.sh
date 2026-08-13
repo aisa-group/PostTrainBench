@@ -1,7 +1,7 @@
 #!/bin/bash
 source src/commit_utils/set_env_vars.sh
 
-# Kitchen-sink sweep template. Every submission line below is active by
+# Sweep template. Every submission line below is active by
 # default — comment out what you don't want to run in a given session
 # (agents, benchmarks, or base models).
 
@@ -77,7 +77,6 @@ for model in "${models[@]}"; do
             condor_submit_bid 100 -a "experiment_name=$EXPERIMENT_NAME" -a "agent=cursor_cli" -a "agent_config=cursor-grok-4.5-high" -a "eval=$eval" -a "model_to_train=$model" -a "num_hours=10" src/commit_utils/single_task.sub
 
             # ---------- Kimi (Moonshot) via anthropic-compatible endpoint ----------
-            # Needs kimi.sif (claude-code baked in) + KIMI_API_KEY in .env
             condor_submit_bid 100 -a "experiment_name=$EXPERIMENT_NAME" -a "agent=kimi_claude" -a "agent_config=kismet-0715[1m]" -a "eval=$eval" -a "model_to_train=$model" -a "num_hours=10" src/commit_utils/single_task_kimi.sub
             condor_submit_bid 100 -a "experiment_name=$EXPERIMENT_NAME" -a "agent=kimi_claude" -a "agent_config=biui-0724"       -a "eval=$eval" -a "model_to_train=$model" -a "num_hours=10" src/commit_utils/single_task_kimi.sub
 
