@@ -124,6 +124,14 @@ WORKSPACE_SKIP_EXTS = {
     # both ops; matters when task/ has many of these (training dumps).
     ".npy", ".npz", ".parquet", ".arrow", ".feather",
 }
+# Filename shapes that Hugging Face's dataset uploader rejects with
+# "Invalid filename ... cannot be an absolute, drive-relative or UNC path".
+# Agents occasionally create files with Windows-style paths on Linux
+# (e.g. `C:\sqlite\students.db` — a POSIX-valid but Windows-looking filename).
+# Skip them at extract time so they never reach the HF upload stage. This
+# only matches the BASENAME, so regular colon-in-filename cases like
+# `Re:_Hello.eml` are untouched.
+WORKSPACE_SKIP_NAME_RE = re.compile(r'^(?:[A-Za-z]:[\\/]|\\\\)')
 # Hard cap on a single workspace file. The viewer can only inline up to
 # 256 KB per file anyway; anything above ~2 MB is almost certainly a
 # training-data jsonl or eval dump that's not interesting to scroll. We
@@ -739,6 +747,10 @@ def copy_workspace(src_root: Path, dest_root: Path, api_keys: list[str]) -> int:
         for fn in filenames:
             src = Path(dirpath) / fn
             if src.suffix.lower() in WORKSPACE_SKIP_EXTS:
+                continue
+            if WORKSPACE_SKIP_NAME_RE.match(fn):
+                # Windows-style path used as a filename (agent typo on Linux).
+                # HF's dataset uploader rejects these — see WORKSPACE_SKIP_NAME_RE.
                 continue
             try:
                 size = src.stat().st_size
