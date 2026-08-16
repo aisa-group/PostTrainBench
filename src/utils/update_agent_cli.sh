@@ -27,6 +27,7 @@ case "$BIN" in
     claude)   PKG="@anthropic-ai/claude-code" ;;
     codex)    PKG="@openai/codex" ;;
     gemini)   PKG="@google/gemini-cli" ;;
+    mcode)    PKG="@minimax-ai/code" ;;
     opencode) PKG="opencode-ai" ;;
     *)
         echo "[update_agent_cli] ERROR: no npm package mapping for binary '$BIN'" >&2

@@ -39,8 +39,8 @@ From: nvidia/cuda:12.9.1-cudnn-devel-ubuntu22.04
     # 3) flash-attn (needs no-build-isolation)
     uv pip install --system --no-cache flash-attn==2.8.3 --no-build-isolation
 
-    # 4) AI CLI tools via npm (only for the judge, the other ones are installed in solve.sh)
-    npm install -g @openai/codex@0.137.0
+    # 4) Pinned AI CLI fallbacks (solve.sh may best-effort update them per run)
+    npm install -g @openai/codex@0.137.0 @minimax-ai/code@0.1.2
 
     # 5) inspect_evals from source (pinned commit)
     mkdir -p /opt

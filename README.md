@@ -85,6 +85,7 @@ The `.env` file contains API keys and configuration. See `example.env` for all a
 | `GEMINI_API_KEY` | Google Gemini API key | — |
 | `OPENCODE_API_KEY` | OpenCode API key (used by the `opencode` agent) | — |
 | `ZAI_API_KEY` | Z.AI API key (used by the `opencode` and `glm5` agents) | — |
+| `MINIMAX_API_KEY` | MiniMax API key (used by the `mcode` agent) | — |
 | `HF_HOME` | HuggingFace cache directory | `$HOME/.cache/huggingface` |
 | `POST_TRAIN_BENCH_RESULTS_DIR` | Directory for results | `results` |
 | `POST_TRAIN_BENCH_CONTAINERS_DIR` | Directory for containers | `containers` |
@@ -99,6 +100,24 @@ Currently, we only support the HTCondor job scheduler. [Harbor](https://github.c
 #### API-based agents
 
 Most agents authenticate via API keys set as environment variables (e.g., `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`). These are passed into the container automatically by `run_task.sh`. Set them in your environment before running `commit.sh`.
+
+**MiniMax Code (`agents/mcode/`)**
+
+Set `MINIMAX_API_KEY`, then submit a job with the `mcode` agent and a provider-qualified model ID:
+
+```bash
+condor_submit_bid 50 \
+  -a "agent=mcode" \
+  -a "agent_config=minimax/MiniMax-M3" \
+  -a "eval=gsm8k" \
+  -a "model_to_train=Qwen/Qwen3-1.7B" \
+  -a "num_hours=10" \
+  src/commit_utils/single_task.sub
+```
+
+The runner creates a mode-0700 temporary `MINIMAX_DATA_DIR`, seeds its per-run provider config
+from `MINIMAX_API_KEY`, streams the prompt through `mcode exec`, and removes all temporary state
+on exit so the key is not retained between benchmark runs.
 
 #### Subscription-based agents (non-API)
 
