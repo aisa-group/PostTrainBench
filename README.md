@@ -7,31 +7,6 @@ We introduce PostTrainBench, a benchmark that measures the ability of CLI agents
 > [!IMPORTANT]
 > **Harbor support coming soon!** This repository currently targets our internal HPC cluster (HTCondor). We are adding [Harbor](https://github.com/harbor-framework/harbor) support to make it straightforward to run on rented hardware (e.g., cloud GPUs). See our [PR](https://github.com/aisa-group/PostTrainBench/pull/8).
 
-## Leaderboard
-
-![Main Plot](assets/main_plot_v1.png)
-
-Scores are weighted averages across 7 benchmarks and 4 models (Qwen3-1.7B, Qwen3-4B, SmolLM3-3B, and Gemma-3-4B). Agents with multiple runs show averaged results.
-
-| Rank | Agent | Scaffold | Avg | AIME 2025 | Arena Hard | BFCL | GPQA | GSM8K | HealthBench | HumanEval |
-|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| - | Official Instruct Models | - | 51.1 | 29.2 | 70.2 | 85.0 | 36.2 | 87.0 | 43.3 | 71.5 |
-| 1 | Opus 4.6 | Claude Code | 23.2 | 5.0 | 7.8 | 75.9 | 25.5 | 41.0 | 18.8 | 24.7 |
-| 2 | Gemini 3.1 Pro | OpenCode | 21.6 | 3.9 | 7.4 | 62.8 | 18.5 | 45.5 | 14.5 | 40.2 |
-| 3 | GPT-5.2 | Codex CLI | 21.4 | 0.8 | 6.6 | 52.5 | 23.7 | 55.9 | 15.8 | 30.2 |
-| 4 | GPT 5.4 | Codex CLI | 20.2 | 0.6 | 10.1 | 31.1 | 28.0 | 48.2 | 17.3 | 27.3 |
-| 5 | GPT 5.1 Codex Max | Codex CLI | 19.7 | 0.6 | 4.0 | 30.8 | 24.0 | 51.6 | 17.8 | 32.0 |
-| 6 | Gemini 3 Pro | Gemini CLI | 18.1 | 1.7 | 6.3 | 42.3 | 21.2 | 39.1 | 17.3 | 22.7 |
-| 7 | GPT 5.3 Codex | Codex CLI | 17.8 | 0.6 | 2.4 | 45.5 | 27.7 | 33.1 | 8.9 | 29.1 |
-| 8 | GPT 5.2 Codex | Codex CLI | 17.2 | 0.3 | 2.5 | 45.2 | 24.1 | 37.6 | 11.5 | 23.8 |
-| 9 | Opus 4.5 | Claude Code | 17.1 | 2.2 | 3.8 | 61.7 | 19.0 | 28.5 | 8.9 | 29.3 |
-| 10 | Sonnet 4.6 | Claude Code | 16.4 | 3.3 | 10.2 | 23.8 | 13.8 | 25.7 | 16.2 | 42.4 |
-| 11 | GLM 5 | OpenCode | 13.9 | 0.8 | 4.2 | 21.5 | 15.2 | 40.3 | 14.6 | 17.4 |
-| 12 | Sonnet 4.5 | Claude Code | 9.9 | 0.8 | 1.0 | 1.8 | 14.6 | 30.9 | 5.0 | 23.0 |
-| - | Base Models | Zero Shot | 7.5 | 1.7 | 1.3 | 1.5 | 8.5 | 20.4 | 9.5 | 12.8 |
-
-"Official Instruct Models" is not directly comparable since it exceeds the 10h + 1 GPU constraint. See the full interactive leaderboard at [posttrainbench.com](http://posttrainbench.com/), which includes OpenCode variants and additional agents.
-
 ## Scaffolds
 
 Agents are run through one of 4 CLI scaffolds: Claude Code, Codex CLI, Gemini CLI, and OpenCode. 
@@ -160,39 +135,6 @@ Each evaluation folder in `src/eval/tasks/` contains:
 - `benchmark.txt`: Official benchmark name
 - `evaluate.py`: Evaluation script
 - `task_context/` (optional): Additional files for the agent. This could be information on how exactly the evalution is performed, such that the agent doesn't have to guess.
-
-## Contributing
-
-We welcome contributions! Get in touch through a pull request, by opening an issue, or via [email](#contact).
-
-We are especially interested in new evaluation tasks.
-
-### Adding Tasks
-
-Add your code to `src/eval/tasks/<task_name>/` with:
-1. `evaluate.py` - Evaluation script (see existing tasks for examples)
-2. `benchmark.txt` - Official benchmark name
-
-Requirements for new tasks:
-- The task should be achievable by instruction-tuned versions of our test models ([Qwen3-1.7B](https://huggingface.co/Qwen/Qwen3-1.7B), [Qwen3-4B](https://huggingface.co/Qwen/Qwen3-4B), [SmolLM3-3B](https://huggingface.co/HuggingFaceTB/SmolLM3-3B), [Gemma-3-4B](https://huggingface.co/google/gemma-3-4b-it)) - significantly above random chance
-- Evaluation should run in ~15 minutes on an H100 (use vLLM for inference, subsample if needed during development) For the final evaluation, please use the full benchmark
-
-
-## On Reward Hacking
-
-We observed some failure modes in earlier iterations:
-
-1. **Evaluation tampering**: The Codex agent modified the evaluation framework code to inflate its scores.
-2. **Model substitution**: Claude Code downloaded an instruction-tuned model instead of fine-tuning the base model.
-
-We addressed these by updating the system prompt and employing an agent-as-judge to review generated code. When reward hacking is detected, we discard the run and use the base model's performance instead.
-
-Since v1.1, every run is reviewed by two independent agent-as-judge passes:
-
-1. A **contamination judge** that checks for test-data usage, evaluation tampering, model substitution, and forbidden fine-tuning practices. It is equipped with programmatic tools: a contamination check that matches the agent's training data against the benchmark's test set, and a model-identity check against reference configs.
-2. A **third-party API usage judge** that checks whether the agent called external LLM APIs in a disallowed way (e.g., to generate synthetic training data).
-
-See the [website](http://posttrainbench.com/#observations) for a qualitative analysis of the reward hacking we observed.
 
 ## Agent Prompt
 

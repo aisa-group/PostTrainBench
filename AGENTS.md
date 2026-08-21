@@ -11,7 +11,6 @@ PostTrainBench is a benchmark framework that measures AI agents' ability to perf
 ```
 PostTrainBench/
 ├── agents/              # Agent implementations (claude, codex, gemini, opencode, qwen3max, glm5, ...)
-├── assets/              # Static assets (e.g. images for the README)
 ├── cluster/             # Cluster-specific helper artifacts
 ├── containers/          # Apptainer/Singularity container definitions and helpers
 ├── dev_utils/           # Development/debugging utilities (run failure triage, trace extraction, ...)
