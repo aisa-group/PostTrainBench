@@ -65,8 +65,9 @@ PostTrainBench/
    the harness to the latest npm release and writes its version to `cli_version.txt` (surfaced in
    the result dir). The helper (`src/utils/update_agent_cli.sh`, copied into the sandbox by
    `run_task.sh`) holds the binary→npm-package mapping; add a `case` entry there if the agent uses
-   a CLI not already covered (`claude`, `codex`, `gemini`, `opencode`). The update is best-effort —
-   a failure falls back to the container's pinned version and still records what actually ran.
+   a CLI not already covered (`claude`, `codex`, `gemini`, `mcode`, `opencode`). The update is
+   best-effort — a failure falls back to the container's pinned version and still records what
+   actually ran.
    Set `POST_TRAIN_BENCH_SKIP_CLI_UPDATE=1` in `.env` to disable the update globally and pin CLI
    versions to whatever the container ships; `cli_version.txt` still records what ran
    (`update: skipped`).
@@ -87,7 +88,7 @@ below. With the allowlist in place there is **no** need to `unset`/blank keys in
 
 Currently supported agents include: `claude`, `claude_non_api`, `claude_non_api_max`, `codex`,
 `codex_non_api` (and `_high`, `_xhigh`, `_reprompt`, ...), `codexhigh`, `codexlow`, `cursor_cli`,
-`gemini`, `glm5`, `grok_cli`, `opencode`, `qwen3max`.
+`gemini`, `glm5`, `grok_cli`, `mcode`, `opencode`, `qwen3max`.
 
 `cursor_cli` uses the Cursor CLI (`agent`) with subscription auth: `solve.sh` installs the CLI
 via the official curl installer (`cursor.com/install`, drops `agent` + `cursor-agent` symlinks in
