@@ -252,6 +252,14 @@ fi
         # timer.sh — agent reads it during the run. Verifier doesn't need it.
         self.generate_timer_sh(env_dir)
 
+        # ptb_collect.sh — post-agent hook (weights -> shared volume, code
+        # snapshot -> /logs/artifacts). Installed by the Dockerfile at
+        # /usr/local/bin and stripped from the workspace; agent image only.
+        collect_src = TEMPLATE_DIR / "environment" / "ptb_collect.sh"
+        collect_dst = env_dir / "ptb_collect.sh"
+        shutil.copy(collect_src, collect_dst)
+        collect_dst.chmod(0o755)
+
     def _copy_build_context_support(self, target_dir: Path) -> None:
         """Copy entrypoint.sh + system_monitor.sh + requirements-direct.txt
         into a Dockerfile build context.

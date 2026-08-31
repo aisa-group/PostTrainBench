@@ -11,8 +11,9 @@ Usage:
     # List available benchmarks and models
     python run_adapter.py --list
 
-After generating tasks, run them with Harbor:
-    harbor run --path ./tasks/posttrainbench-gsm8k-qwen3-1.7b --agent claude-code --model anthropic/claude-sonnet-4 --env modal
+After generating tasks, run them on Modal with the wrapper (it creates the
+shared volume that hands the trained model to the separate verifier):
+    bash run_modal_task.sh --task ./tasks/posttrainbench-gsm8k-qwen3-1.7b --agent claude-code --model anthropic/claude-opus-4-8
 """
 
 import argparse
@@ -91,16 +92,16 @@ def main():
         print(f"Generating all tasks to {args.output}/...")
         tasks = adapter.generate_all_tasks()
         print(f"\nGenerated {len(tasks)} tasks.")
-        print("\nTo run a task with Harbor:")
-        print(f"  harbor run --path {tasks[0]} --agent claude-code --model anthropic/claude-sonnet-4 --env modal")
+        print("\nTo run a task on Modal (one volume per task run):")
+        print(f"  bash run_modal_task.sh --task {tasks[0]} --agent claude-code --model anthropic/claude-opus-4-8")
         return
 
     if not args.benchmark or not args.model:
         parser.error("Either --all or both --benchmark and --model are required")
 
     task_dir = adapter.generate_task(args.benchmark, args.model)
-    print(f"\nTo run this task with Harbor:")
-    print(f"  harbor run --path {task_dir} --agent claude-code --model anthropic/claude-sonnet-4 --env modal")
+    print("\nTo run this task on Modal (one volume per task run):")
+    print(f"  bash run_modal_task.sh --task {task_dir} --agent claude-code --model anthropic/claude-opus-4-8")
 
 
 if __name__ == "__main__":

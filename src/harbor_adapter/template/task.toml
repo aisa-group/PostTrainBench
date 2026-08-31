@@ -48,6 +48,10 @@ environment_mode = "separate"
 [verifier.env]
 OPENAI_API_KEY = "${OPENAI_API_KEY}"
 CODEX_API_KEY = "${OPENAI_API_KEY}"
+# The verifier reads the trained model from the shared Modal volume (see the
+# [[verifier.collect]] hook below), not from the transferred workspace.
+# tests/test.sh falls back to $WORKSPACE/final_model when this is unset.
+PTB_MODEL_DIR = "/mnt/ptb_final_model"
 
 # Verifier container resources. Same as agent env so vllm + flash-attn
 # behave the same (model loading, batch sizes, etc.).
@@ -68,67 +72,42 @@ start_period_sec = 5
 start_interval_sec = 1
 retries = 3
 
+# ---------------------------------------------------------------------------
+# Post-agent collection: /usr/local/bin/ptb_collect.sh (template/environment/
+# ptb_collect.sh, baked into the agent image). Harbor runs main-service collect
+# hooks after the agent process exits and before the agent container is
+# stopped; failures are logged as warnings and never abort the trial.
+#
+#  1. Weights -> shared Modal volume mounted at /mnt/ptb_final_model in BOTH
+#     the agent and the verifier sandbox. Harbor's artifact transfer cannot
+#     carry them: it downloads through Modal's filesystem API, which has a
+#     hard 5 GiB per-file limit (every PTB model except Qwen3-1.7B-bf16 is
+#     larger). The volume is passed at launch (harbor never creates/deletes it):
+#         modal volume create <NAME>
+#         harbor run ... --env modal --ek 'volumes={"/mnt/ptb_final_model":"<NAME>"}'
+#     run_modal_task.sh wraps this. One volume per task run.
+#
+#     Why a neutral path + copy, not a mount at workspace/final_model: Modal
+#     exposes nested mounts as symlinks, harbor's pre-upload cleanup in the
+#     verifier deletes that symlink, and an agent doing
+#     `rm -rf final_model && cp -r ckpt final_model` would write off-volume.
+#     With the copy, the agent's workspace is byte-for-byte the condor layout.
+#
+#  2. Size-filtered code snapshot -> /logs/artifacts/workspace. Harbor always
+#     transfers the conventional /logs/artifacts dir to the host
+#     (<trial>/artifacts/logs/artifacts/) and into the verifier, where the
+#     contamination judge reads it. There is deliberately NO [[artifacts]]
+#     entry for the whole workspace: agents leave arbitrary multi-GB dirs
+#     behind (a leftover `final_model2/` broke the very first 1h run), and one
+#     such dir blows harbor's 120 s tar timeout and the 5 GiB cap.
+[[verifier.collect]]
+service = "main"
+timeout_sec = 3600.0
+command = "bash /usr/local/bin/ptb_collect.sh"
+
 [agent]
 timeout_sec = 36000.0
 
-# Single workspace artifact. In separate-verifier mode this `source`
-# is transferred from the agent env to the verifier env at the same
-# path AND archived under <trial_dir>/artifacts/workspace/ on the host.
-#
-# One entry (was previously two — workspace + a separate final_model).
-# Rationale for collapsing:
-#   1. Two overlapping artifacts (final_model nested inside workspace)
-#      triggered harbor 0.15's UserWarning at task load and made
-#      upload order load-bearing (`upload_artifacts` calls
-#      `empty_dirs(target)` before each upload, so a later workspace
-#      upload would wipe an earlier final_model).
-#   2. Two tar ops on the agent env is two chances to hit harbor's
-#      flaky transfer path (empty stderr, code -1). One op is
-#      strictly better.
-#
-# `final_model` is NOT in the exclude list — we want the trained
-# weights carried in via this single artifact so the verifier has them
-# at /home/agent/workspace/final_model/. On the host they land at
-# artifacts/workspace/final_model/ (postmortem access, just one path
-# deeper than before).
-#
-# The contamination judge in test.sh reads the agent's code via
-# `cd $WORKSPACE && codex exec ...` — the workspace transfer supplies
-# everything under /home/agent/workspace/ minus the excludes below.
-[[artifacts]]
-source = "/home/agent/workspace"
-destination = "workspace"
-# Aggressive excludes to keep the agent-side tar tractable. The
-# 2026-05-27 and 2026-06-27 trials died with harbor's tar exit code
-# -1 / empty stderr on multi-GB workspaces containing HF cache +
-# wandb + checkpoint dirs. Drop anything the contamination judge
-# doesn't need — judge only reads the agent's source code (.py, .md,
-# .json configs, .sh), not caches/checkpoints/logs. `final_model` is
-# deliberately kept so the verifier gets the weights.
-exclude = [
-    # Standard hygiene:
-    "__pycache__",
-    "*.pyc",
-    ".git",
-    ".venv",
-    "venv",
-    # HF / transformers / datasets caches (often many GB):
-    ".cache",
-    ".huggingface",
-    # Experiment tracking:
-    "wandb",
-    ".wandb",
-    # Training output dirs commonly produced by HF Trainer / Hydra
-    # (final_model is NOT excluded — we want it transferred):
-    "checkpoint-*",
-    "runs",
-    "outputs",
-    "output",
-    "logs",
-    # Tokenized dataset shards (large, not useful for judge):
-    "*.arrow",
-    "*.parquet",
-    # Misc:
-    "tmp",
-    ".tmp",
-]
+# No [[artifacts]] entry: the weights travel via the shared volume and the
+# code via the /logs/artifacts snapshot (see the collect hook above). The
+# trained model stays on the run's volume: `modal volume get <NAME> / ./final_model`.

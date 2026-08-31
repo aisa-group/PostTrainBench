@@ -48,9 +48,12 @@ RUN uv pip install --system --no-cache -r /opt/requirements-direct.txt
 
 RUN uv pip install --system --no-cache flash-attn==2.8.3 --no-build-isolation
 
-# Pinned agent CLIs (matches opus_4_6_1m.def).
+# Pinned agent CLIs. claude-code is pinned newer than opus_4_6_1m.def
+# (2.1.76): that version sends fixed-budget `thinking.type.enabled`, which the
+# API rejects for claude-opus-4-8+ ("Use thinking.type.adaptive"). Override
+# per run without rebuilding via `harbor run --ak version=<x.y.z>`.
 RUN npm install -g \
-    @anthropic-ai/claude-code@2.1.76 \
+    @anthropic-ai/claude-code@2.1.251 \
     @openai/codex@0.98.0 \
     @google/gemini-cli@0.18.4 \
     opencode-ai@1.1.59
@@ -74,18 +77,22 @@ RUN cd /opt && \
 # is up.
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY system_monitor.sh /usr/local/bin/system_monitor.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/system_monitor.sh
+# Post-agent collection (weights -> shared volume, code snapshot -> /logs/artifacts);
+# run by the [[verifier.collect]] hook in task.toml.
+COPY ptb_collect.sh /usr/local/bin/ptb_collect.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/system_monitor.sh /usr/local/bin/ptb_collect.sh
 
 # Workspace
 RUN mkdir -p /home/agent/workspace
 WORKDIR /home/agent/workspace
 
 # Task files. The Dockerfile is excluded via .dockerignore. entrypoint.sh,
-# system_monitor.sh, and requirements-direct.txt land here too via `COPY .`,
+# system_monitor.sh, ptb_collect.sh and requirements-direct.txt land here too via `COPY .`,
 # but they're container-internal — strip them from the workspace.
 COPY . /home/agent/workspace/
 RUN rm -f /home/agent/workspace/entrypoint.sh \
           /home/agent/workspace/system_monitor.sh \
+          /home/agent/workspace/ptb_collect.sh \
           /home/agent/workspace/requirements-direct.txt
 
 RUN chmod -R a+rw /home/agent/workspace/ && \

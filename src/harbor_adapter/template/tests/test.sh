@@ -16,18 +16,35 @@ set -e
 #     metadata.json, evaluation_code/, bfcl_evaluation_code.py) are
 #     BAKED INTO the verifier image at build time (see tests/Dockerfile)
 #     and live at /tests/.
-#   - The agent's workspace at /home/agent/workspace is transferred from
-#     the agent container by harbor as a configured artifact and
-#     contains the agent's training scripts + final_model. The
-#     contamination judge reads these (cd $WORKSPACE && codex exec ...);
-#     evaluate.py reads /home/agent/workspace/final_model.
+#   - The agent's code arrives as a size-filtered snapshot in
+#     /logs/artifacts/workspace (staged by ptb_collect.sh, transferred by
+#     harbor's conventional artifact dir); the contamination judge reads it
+#     there (cd $CODE_DIR && codex exec ...).
 #   - The agent's final_model is the only file the verifier executes
 #     code against (via vllm). Bad weights are penalized by the eval
 #     score, not by tampering.
+#   - The weights arrive via a shared Modal volume mounted read-write in the
+#     agent sandbox and mounted here at $PTB_MODEL_DIR (populated by the
+#     [[verifier.collect]] hook in task.toml). The workspace transfer carries
+#     only code. See task.toml 
 
 TESTS="/tests"
 WORKSPACE="/home/agent/workspace"
 LOGS_DIR="/logs/verifier"
+# Where the trained model lives. task.toml sets PTB_MODEL_DIR to the shared
+# Modal volume mount (/mnt/ptb_final_model) that the [[verifier.collect]] hook
+# populated from the agent's workspace; without it we fall back to the
+# workspace copy (shared-verifier / non-Modal setups).
+MODEL_DIR="${PTB_MODEL_DIR:-$WORKSPACE/final_model}"
+# Where the agent's code lives for the contamination judge. ptb_collect.sh
+# stages a size-filtered snapshot into /logs/artifacts/workspace on the agent
+# side; harbor re-materializes /logs/artifacts here. Fall back to the
+# workspace (shared-verifier setups, or if the snapshot is missing).
+CODE_DIR="/logs/artifacts/workspace"
+if [ ! -d "$CODE_DIR" ] || [ -z "$(ls -A "$CODE_DIR" 2>/dev/null)" ]; then
+    echo "WARNING: no code snapshot at $CODE_DIR, judge will read $WORKSPACE"
+    CODE_DIR="$WORKSPACE"
+fi
 
 mkdir -p "$LOGS_DIR"
 
@@ -35,6 +52,8 @@ echo "=== PostTrainBench Verifier ==="
 echo "Tests dir: $TESTS"
 echo "Workspace: $WORKSPACE"
 echo "Logs dir: $LOGS_DIR"
+echo "Model dir: $MODEL_DIR"
+echo "Code dir (judge): $CODE_DIR"
 
 # Check GPU availability
 echo ""
@@ -44,9 +63,9 @@ nvidia-smi 2>&1 | tee "$LOGS_DIR/gpu_check.txt" || echo "nvidia-smi failed"
 # Check if final_model exists in agent's workspace
 echo ""
 echo "=== Checking final_model ==="
-if [ ! -d "$WORKSPACE/final_model" ]; then
-    echo "ERROR: final_model directory not found"
-    ls -la "$WORKSPACE" > "$LOGS_DIR/workspace_listing.txt" 2>&1
+if [ ! -d "$MODEL_DIR" ]; then
+    echo "ERROR: final_model directory not found at $MODEL_DIR"
+    { ls -la "$WORKSPACE"; echo "--- $(dirname "$MODEL_DIR") ---"; ls -la "$(dirname "$MODEL_DIR")"; } > "$LOGS_DIR/workspace_listing.txt" 2>&1
     echo '{"error": "final_model not found", "accuracy": 0}' > "$LOGS_DIR/metrics.json"
     echo "0" > "$LOGS_DIR/reward.txt"
     exit 0
@@ -54,9 +73,9 @@ fi
 
 # Check if final_model has required files
 echo "Contents of final_model:"
-ls -la "$WORKSPACE/final_model" | tee "$LOGS_DIR/final_model_listing.txt"
+ls -la "$MODEL_DIR" | tee "$LOGS_DIR/final_model_listing.txt"
 
-if [ ! -f "$WORKSPACE/final_model/config.json" ]; then
+if [ ! -f "$MODEL_DIR/config.json" ]; then
     echo "ERROR: final_model/config.json not found - not a valid model"
     echo '{"error": "invalid model - no config.json", "accuracy": 0}' > "$LOGS_DIR/metrics.json"
     echo "0" > "$LOGS_DIR/reward.txt"
@@ -66,13 +85,13 @@ fi
 # Show model config
 echo ""
 echo "=== Model config.json ==="
-cat "$WORKSPACE/final_model/config.json" | head -50 | tee "$LOGS_DIR/model_config.txt"
+cat "$MODEL_DIR/config.json" | head -50 | tee "$LOGS_DIR/model_config.txt"
 
 # Check for tokenizer
 echo ""
 echo "=== Checking tokenizer files ==="
-ls -la "$WORKSPACE/final_model/"*token* 2>/dev/null || echo "No tokenizer files found with 'token' in name"
-ls -la "$WORKSPACE/final_model/"*.json 2>/dev/null || echo "No json files found"
+ls -la "$MODEL_DIR/"*token* 2>/dev/null || echo "No tokenizer files found with 'token' in name"
+ls -la "$MODEL_DIR/"*.json 2>/dev/null || echo "No json files found"
 
 # ============================================================
 # Read metadata for benchmark and model info — from /tests, NOT workspace,
@@ -113,24 +132,31 @@ if [ -f "$TESTS/contamination_judge.py" ] && [ -n "$BENCHMARK_NAME" ]; then
 
     if [ -n "$JUDGE_TASK" ] && [ -n "$CODEX_API_KEY" ]; then
         echo "Running codex CLI contamination judge..."
+        # The weights live on the volume, outside the judge's cwd. Expose them
+        # at the condor-parity path so the judge can inspect final_model/
+        # (e.g. spot a downloaded instruct checkpoint). Read-only mount, so
+        # the judge cannot alter what evaluate.py will load.
+        if [ "$MODEL_DIR" != "$CODE_DIR/final_model" ] && [ ! -e "$CODE_DIR/final_model" ]; then
+            ln -s "$MODEL_DIR" "$CODE_DIR/final_model" && echo "Linked $CODE_DIR/final_model -> $MODEL_DIR for the judge"
+        fi
         set +e
-        cd "$WORKSPACE"
+        cd "$CODE_DIR"
         codex --search -a never exec --json -c model_reasoning_summary=detailed \
-            --skip-git-repo-check --yolo --model "gpt-5.1-codex" "$JUDGE_TASK" \
+            --skip-git-repo-check --yolo --model "gpt-5.4" "$JUDGE_TASK" \
             2>&1 | tee "$LOGS_DIR/judge_output.json"
         JUDGE_EXIT_CODE=$?
         set -e
         echo "Judge exit code: $JUDGE_EXIT_CODE"
 
         # Codex writes these files directly into the workspace
-        if [ -f "$WORKSPACE/contamination_judgement.txt" ]; then
-            cp "$WORKSPACE/contamination_judgement.txt" "$LOGS_DIR/contamination_judgement.txt"
+        if [ -f "$CODE_DIR/contamination_judgement.txt" ]; then
+            cp "$CODE_DIR/contamination_judgement.txt" "$LOGS_DIR/contamination_judgement.txt"
             echo "Contamination judgement: $(cat "$LOGS_DIR/contamination_judgement.txt")"
         else
             echo "no contamination detected (codex did not produce output)" > "$LOGS_DIR/contamination_judgement.txt"
         fi
-        if [ -f "$WORKSPACE/disallowed_model_judgement.txt" ]; then
-            cp "$WORKSPACE/disallowed_model_judgement.txt" "$LOGS_DIR/disallowed_model_judgement.txt"
+        if [ -f "$CODE_DIR/disallowed_model_judgement.txt" ]; then
+            cp "$CODE_DIR/disallowed_model_judgement.txt" "$LOGS_DIR/disallowed_model_judgement.txt"
             echo "Model judgement: $(cat "$LOGS_DIR/disallowed_model_judgement.txt")"
         else
             echo "only allowed use detected (codex did not produce output)" > "$LOGS_DIR/disallowed_model_judgement.txt"
@@ -187,7 +213,7 @@ run_evaluation() {
 
     set +e
     python3 "$TESTS/evaluate.py" \
-        --model-path "$WORKSPACE/final_model" \
+        --model-path "$MODEL_DIR" \
         --json-output-file "$LOGS_DIR/metrics.json" \
         --templates-dir "$TESTS/templates" \
         --limit -1 \
