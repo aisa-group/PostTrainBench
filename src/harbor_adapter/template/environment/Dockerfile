@@ -1,7 +1,7 @@
 FROM nvidia/cuda:12.9.1-cudnn-devel-ubuntu22.04
 
-# This Dockerfile mirrors containers/opus_4_6_1m.def (the apptainer
-# image used by the HTCondor pipeline) for cross-environment parity.
+# This Dockerfile mirrors containers/opus_5.def (the PostTrainBench v1.1
+# apptainer image used by the HTCondor pipeline) for cross-environment parity.
 # Differences vs. apptainer build:
 #   - --torch-backend=cu128 is explicit. Modal's build VM has no
 #     nvidia-smi/CUDA driver, so --torch-backend=auto would resolve to CPU
@@ -48,15 +48,16 @@ RUN uv pip install --system --no-cache -r /opt/requirements-direct.txt
 
 RUN uv pip install --system --no-cache flash-attn==2.8.3 --no-build-isolation
 
-# Pinned agent CLIs. claude-code is pinned newer than opus_4_6_1m.def
-# (2.1.76): that version sends fixed-budget `thinking.type.enabled`, which the
-# API rejects for claude-opus-4-8+ ("Use thinking.type.adaptive"). Override
-# per run without rebuilding via `harbor run --ak version=<x.y.z>`.
+# Agent CLIs, pinned to containers/opus_5.def (the PostTrainBench v1.1
+# container era this image mirrors). opus_5.def additionally installs the
+# xAI Grok and Cursor CLIs for agents this adapter does not run; they are
+# omitted here. Override the Claude Code version per run without rebuilding
+# via `harbor run --ak version=<x.y.z>`.
 RUN npm install -g \
-    @anthropic-ai/claude-code@2.1.251 \
-    @openai/codex@0.98.0 \
+    @anthropic-ai/claude-code@2.1.219 \
+    @openai/codex@0.144.0 \
     @google/gemini-cli@0.18.4 \
-    opencode-ai@1.1.59
+    opencode-ai@1.17.18
 
 RUN mkdir -p /opt && \
     cd /opt && \
@@ -82,18 +83,29 @@ COPY system_monitor.sh /usr/local/bin/system_monitor.sh
 COPY ptb_collect.sh /usr/local/bin/ptb_collect.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/system_monitor.sh /usr/local/bin/ptb_collect.sh
 
+# Self-decontamination tooling (parity with run_task.sh, which copies both
+# into the sandbox HOME): the judges' n-gram checker and the benchmark test
+# set live one level above the workspace, exactly where the prompt's
+# "Decontamination Tool" section points (`../contamination_check.py`,
+# `../test_data.json`).
+COPY contamination_check.py /home/agent/contamination_check.py
+COPY test_data.json /home/agent/test_data.json
+
 # Workspace
 RUN mkdir -p /home/agent/workspace
 WORKDIR /home/agent/workspace
 
 # Task files. The Dockerfile is excluded via .dockerignore. entrypoint.sh,
-# system_monitor.sh, ptb_collect.sh and requirements-direct.txt land here too via `COPY .`,
+# system_monitor.sh, ptb_collect.sh, requirements-direct.txt, contamination_check.py
+# and test_data.json land here too via `COPY .`,
 # but they're container-internal — strip them from the workspace.
 COPY . /home/agent/workspace/
 RUN rm -f /home/agent/workspace/entrypoint.sh \
           /home/agent/workspace/system_monitor.sh \
           /home/agent/workspace/ptb_collect.sh \
-          /home/agent/workspace/requirements-direct.txt
+          /home/agent/workspace/requirements-direct.txt \
+          /home/agent/workspace/contamination_check.py \
+          /home/agent/workspace/test_data.json
 
 RUN chmod -R a+rw /home/agent/workspace/ && \
     chmod +x /home/agent/workspace/timer.sh

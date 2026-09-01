@@ -59,6 +59,14 @@ def main():
         help="Number of hours for the training task (default: 10)",
     )
     parser.add_argument(
+        "--agent-name",
+        type=str,
+        default="claude",
+        help="PostTrainBench agent name for prompt generation (get_prompt.py --agent); "
+             "only agent-specific prompt clauses depend on it. Harbor's claude-code "
+             "agent corresponds to 'claude' (default).",
+    )
+    parser.add_argument(
         "--all", "-a",
         action="store_true",
         help="Generate tasks for all benchmark + model combinations",
@@ -72,9 +80,10 @@ def main():
     args = parser.parse_args()
 
     if args.list:
-        print("Available benchmarks:")
+        print("Available benchmarks (src/eval/tasks/*/info.json):")
         for bm_id, bm_info in BENCHMARKS.items():
-            print(f"  {bm_id}: {bm_info.benchmark_name}")
+            keys = f"  [needs {', '.join(bm_info.required_api_keys)}]" if bm_info.required_api_keys else ""
+            print(f"  {bm_id}: {bm_info.benchmark_name}{keys}")
         print("\nAvailable models:")
         for model_key, model_info in MODELS.items():
             print(f"  {model_key}: {model_info.model_id}")
@@ -86,6 +95,7 @@ def main():
     adapter = PostTrainBenchAdapter(
         output_dir=args.output,
         num_hours=args.num_hours,
+        agent_name=args.agent_name,
     )
 
     if args.all:

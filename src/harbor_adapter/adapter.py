@@ -1,25 +1,49 @@
+"""Generate Harbor tasks from the PostTrainBench sources.
+
+Everything benchmark-specific is read from the PostTrainBench tree so the
+Harbor tasks stay in lockstep with the condor pipeline (src/run_task.sh):
+
+  - src/eval/tasks/<id>/info.json      benchmark name, required_api_keys,
+                                        allowed/disallowed data examples
+  - src/eval/tasks/<id>/benchmark.txt   official benchmark name (prompt)
+  - src/eval/tasks/<id>/test_data.json  test set for the decontamination tool
+                                        (gitignored; see
+                                        src/judges/test_data_download/)
+  - src/eval/general/get_prompt.py      the agent prompt (rendered by calling
+                                        it, so the Harbor instruction is
+                                        byte-for-byte the condor prompt)
+  - src/judges/judge_tools/             contamination checker given to the agent
+"""
+
 import json
+import os
 import shutil
+import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 ADAPTER_NAME = "POSTTRAINBENCH"
 TEMPLATE_DIR = Path(__file__).parent / "template"
 
-# PostTrainBench source directory (relative to repo root)
+# PostTrainBench repo root
 POSTTRAINBENCH_ROOT = Path(__file__).parent.parent.parent
+TASKS_ROOT = POSTTRAINBENCH_ROOT / "src" / "eval" / "tasks"
+JUDGE_TOOLS_DIR = POSTTRAINBENCH_ROOT / "src" / "judges" / "judge_tools"
+GET_PROMPT = POSTTRAINBENCH_ROOT / "src" / "eval" / "general" / "get_prompt.py"
 
-# Claude-specific instruction clause (from original get_prompt.py)
-CLAUDE_CLAUSE = """
-You are running in a non-interactive mode. So make sure every process you are running finishes before you write your last message.
-"""
+# Benchmarks present in src/eval/tasks/ that are deliberately not offered as
+# Harbor tasks.
+#   aime2026: upstream's test-data downloader has no entry for it, so
+#             run_task.sh cannot run it either (test_data.json is mandatory).
+SKIP_BENCHMARKS = {"aime2026"}
 
 
 @dataclass
 class BenchmarkInfo:
-    task_id: str           # e.g., "gsm8k"
-    benchmark_name: str    # e.g., "GSM8K (Grade School Math 8K)"
-    setup_note: str = ""   # Additional setup instructions
+    task_id: str            # e.g. "gsm8k"
+    benchmark_name: str     # e.g. "GSM8K (Grade School Math 8K)" (info.json)
+    required_api_keys: list[str]  # provider keys the benchmark's grading needs
 
 
 @dataclass
@@ -28,69 +52,29 @@ class ModelInfo:
     short_name: str        # Short name for task IDs, e.g., "qwen3-1.7b"
 
 
-BENCHMARKS = {
-    "gsm8k": BenchmarkInfo(
-        task_id="gsm8k",
-        benchmark_name="GSM8K (Grade School Math 8K)",
-        setup_note="- A final note: the evaluate.py script sometimes outputs ERROR warnings. "
-                   "Do not be alarmed by this, this is normal behavior for inspect-ai. "
-                   "Also if you run into issues with the evaluate.py script, this is likely "
-                   "due to memory constraints on the GPU. In this case please decrease "
-                   "--max-connections or --max-tokens.\n"
-    ),
-    "humaneval": BenchmarkInfo(
-        task_id="humaneval",
-        benchmark_name="HumanEval",
-        setup_note="- A final note: the evaluate.py script sometimes outputs ERROR warnings. "
-                   "Do not be alarmed by this, this is normal behavior for inspect-ai.\n"
-    ),
-    "aime2025": BenchmarkInfo(
-        task_id="aime2025",
-        benchmark_name="AIME 2025",
-        setup_note="- A final note: the evaluate.py script sometimes outputs ERROR warnings. "
-                   "Do not be alarmed by this, this is normal behavior for inspect-ai.\n"
-    ),
-    "gpqamain": BenchmarkInfo(
-        task_id="gpqamain",
-        benchmark_name="GPQA",
-        setup_note="- A final note: the evaluate.py script sometimes outputs ERROR warnings. "
-                   "Do not be alarmed by this, this is normal behavior for inspect-ai.\n"
-    ),
-    "bfcl": BenchmarkInfo(
-        task_id="bfcl",
-        benchmark_name="Berkeley Function Calling Leaderboard",
-        setup_note="- A final note: the evaluate.py script sometimes outputs ERROR warnings. "
-                   "Do not be alarmed by this, this is normal behavior for inspect-ai.\n"
-    ),
-    "arenahardwriting": BenchmarkInfo(
-        task_id="arenahardwriting",
-        benchmark_name="Arena-Hard-v2.0 (Writing)",
-        setup_note="",
-    ),
-    "healthbench": BenchmarkInfo(
-        task_id="healthbench",
-        benchmark_name="HealthBench",
-        setup_note="",
-    ),
-}
+def _discover_benchmarks() -> dict[str, BenchmarkInfo]:
+    """All benchmarks with an info.json under src/eval/tasks/, minus SKIP_BENCHMARKS."""
+    found = {}
+    for info_file in sorted(TASKS_ROOT.glob("*/info.json")):
+        task_id = info_file.parent.name
+        if task_id in SKIP_BENCHMARKS:
+            continue
+        info = json.loads(info_file.read_text(encoding="utf-8"))
+        found[task_id] = BenchmarkInfo(
+            task_id=task_id,
+            benchmark_name=info["benchmark"],
+            required_api_keys=list(info.get("required_api_keys", [])),
+        )
+    return found
+
+
+BENCHMARKS: dict[str, BenchmarkInfo] = _discover_benchmarks()
 
 MODELS = {
-    "qwen3-1.7b": ModelInfo(
-        model_id="Qwen/Qwen3-1.7B-Base",
-        short_name="qwen3-1.7b"
-    ),
-    "qwen3-4b": ModelInfo(
-        model_id="Qwen/Qwen3-4B-Base",
-        short_name="qwen3-4b"
-    ),
-    "smollm3-3b": ModelInfo(
-        model_id="HuggingFaceTB/SmolLM3-3B-Base",
-        short_name="smollm3-3b"
-    ),
-    "gemma3-4b": ModelInfo(
-        model_id="google/gemma-3-4b-pt",
-        short_name="gemma3-4b"
-    ),
+    "qwen3-1.7b": ModelInfo(model_id="Qwen/Qwen3-1.7B-Base", short_name="qwen3-1.7b"),
+    "qwen3-4b": ModelInfo(model_id="Qwen/Qwen3-4B-Base", short_name="qwen3-4b"),
+    "smollm3-3b": ModelInfo(model_id="HuggingFaceTB/SmolLM3-3B-Base", short_name="smollm3-3b"),
+    "gemma3-4b": ModelInfo(model_id="google/gemma-3-4b-pt", short_name="gemma3-4b"),
 }
 
 
@@ -101,95 +85,110 @@ class PostTrainBenchAdapter:
         self,
         output_dir: Path,
         num_hours: int = 10,
-        include_claude_clause: bool = True,
+        agent_name: str = "claude",
     ):
         """
-        Initialize the adapter.
-
         Args:
             output_dir: Directory where Harbor tasks will be generated.
-            num_hours: Number of hours for the training task (default: 10).
-            include_claude_clause: Whether to include the Claude non-interactive clause.
+            num_hours: Agent time budget in hours (default: 10).
+            agent_name: PostTrainBench agent name passed to get_prompt.py
+                (`--agent`). It only affects agent-specific prompt clauses
+                (e.g. the non-interactive note added when the name contains
+                "claude"); Harbor's claude-code agent corresponds to "claude".
         """
         self.output_dir = Path(output_dir)
         self.num_hours = num_hours
-        self.include_claude_clause = include_claude_clause
+        self.agent_name = agent_name
         self.posttrainbench_root = POSTTRAINBENCH_ROOT
 
-    def _read_benchmark_name(self, benchmark_id: str) -> str:
-        """Read the human-readable benchmark name from benchmark.txt."""
-        bench_file = self.posttrainbench_root / "src" / "eval" / "tasks" / benchmark_id / "benchmark.txt"
-        if bench_file.is_file():
-            return bench_file.read_text(encoding="utf-8").strip()
-        # Fallback to the dataclass info
-        if benchmark_id in BENCHMARKS:
-            return BENCHMARKS[benchmark_id].benchmark_name
-        raise FileNotFoundError(f"Benchmark file not found: {bench_file}")
+    # ------------------------------------------------------------------ inputs
 
-    def generate_task_toml(self, task_dir: Path, benchmark_id: str = "") -> None:
-        """Generate task.toml for the Harbor task."""
-        # Copy template and adjust timeout based on num_hours
-        template_path = TEMPLATE_DIR / "task.toml"
-        target_path = task_dir / "task.toml"
+    @staticmethod
+    def _task_src(benchmark_id: str) -> Path:
+        return TASKS_ROOT / benchmark_id
 
-        content = template_path.read_text()
+    def _test_data_path(self, benchmark_id: str) -> Path:
+        """test_data.json is mandatory (as in run_task.sh): the agent gets it
+        for self-decontamination and the judges use it for the n-gram check."""
+        path = self._task_src(benchmark_id) / "test_data.json"
+        if not path.is_file():
+            raise FileNotFoundError(
+                f"{path} not found. It is gitignored; generate it with\n"
+                f"  python src/judges/test_data_download/download_test_data.py --tasks {benchmark_id}\n"
+                f"(needs the `datasets` package; gpqamain additionally needs MY_HF_TOKEN "
+                f"for the gated dataset)."
+            )
+        return path
 
-        # Adjust agent timeout based on num_hours
-        agent_timeout = self.num_hours * 3600  # Convert hours to seconds
+    # ------------------------------------------------------------- task.toml
+
+    def generate_task_toml(self, task_dir: Path, benchmark_info: BenchmarkInfo) -> None:
+        """Generate task.toml: template + agent timeout + benchmark-required API keys."""
+        content = (TEMPLATE_DIR / "task.toml").read_text()
+
+        agent_timeout = self.num_hours * 3600
         content = content.replace(
             "timeout_sec = 36000.0",
-            f"timeout_sec = {float(agent_timeout)}"
+            f"timeout_sec = {float(agent_timeout)}",
         )
 
-        # For arenahardwriting/healthbench, agents need OPENAI_API_KEY
-        # during their run (to run evaluate.py which uses OpenAI judge)
-        if benchmark_id in ("arenahardwriting", "healthbench"):
-            content += '\n[agent.env]\nOPENAI_API_KEY = "${OPENAI_API_KEY}"\n'
+        # API-key allowlist (mirrors run_task.sh): the agent sandbox receives
+        # only what harbor's agent injects for its own provider plus the keys
+        # the benchmark's grading declares in info.json (e.g. OPENAI_API_KEY
+        # for the LLM-judged benchmarks). Nothing else reaches the agent.
+        # `[environment.env]` is harbor's per-task sandbox env (resolved from
+        # the host at runtime); it applies to the agent sandbox only — the
+        # separate verifier has its own `[verifier.env]`. (There is no
+        # `[agent.env]` in harbor's task schema; unknown tables are ignored.)
+        if benchmark_info.required_api_keys:
+            content += (
+                "\n# Provider keys this benchmark's own grading (evaluate.py) needs, from\n"
+                "# src/eval/tasks/<id>/info.json `required_api_keys`. The agent prompt\n"
+                "# (rule 10) restricts them to running the evaluation.\n"
+                "[environment.env]\n"
+            )
+            for key in benchmark_info.required_api_keys:
+                content += f'{key} = "${{{key}}}"\n'
 
-        target_path.write_text(content)
+        (task_dir / "task.toml").write_text(content)
+
+    # ---------------------------------------------------------- instruction
 
     def generate_instruction(
         self,
         task_dir: Path,
         model_info: ModelInfo,
-        benchmark_info: BenchmarkInfo,
-        benchmark_id: str = "",
+        benchmark_id: str,
     ) -> None:
-        """Generate instruction.md for the Harbor task."""
-        template_path = TEMPLATE_DIR / "instruction.md"
-        target_path = task_dir / "instruction.md"
+        """Render instruction.md by running PostTrainBench's own get_prompt.py.
 
-        content = template_path.read_text()
+        get_prompt.py resolves benchmark.txt / info.json / test_data.json
+        relative to the repo root and applies the same placeholders the condor
+        pipeline uses, so the Harbor instruction is identical to the condor
+        prompt for the same (model, benchmark, hours, agent).
+        """
+        cmd = [
+            sys.executable, str(GET_PROMPT),
+            "--agent", self.agent_name,
+            "--model-to-train", model_info.model_id,
+            "--benchmark-id", benchmark_id,
+            "--num-hours", str(self.num_hours),
+            "--num-gpus", "1",
+        ]
+        env = dict(os.environ)
+        env.setdefault("POST_TRAIN_BENCH_PROMPT", "prompt")
+        result = subprocess.run(
+            cmd, cwd=self.posttrainbench_root, env=env,
+            capture_output=True, text=True, check=True,
+        )
+        (task_dir / "instruction.md").write_text(result.stdout)
 
-        # Fill in placeholders
-        content = content.replace("{model}", model_info.model_id)
-        content = content.replace("{benchmark}", benchmark_info.benchmark_name)
-        content = content.replace("{num_hours}", str(self.num_hours))
-        content = content.replace("{setup_other}", benchmark_info.setup_note)
-
-        # OpenAI restriction for benchmarks that provide OPENAI_API_KEY to agents
-        if benchmark_id in ("arenahardwriting", "healthbench"):
-            content = content.replace(
-                "{openai_restriction}",
-                "- IMPORTANT: You are NOT allowed to use the OpenAI API for anything but the evaluation script.\n"
-            )
-        else:
-            content = content.replace("{openai_restriction}", "")
-
-        if self.include_claude_clause:
-            content += CLAUDE_CLAUSE
-
-        target_path.write_text(content)
+    # ---------------------------------------------------------------- timer
 
     def generate_timer_sh(self, env_dir: Path) -> None:
-        """Generate timer.sh script that tracks remaining time.
-
-        Reads the start timestamp from the absolute path /timer_start, which
-        is written by the task.toml healthcheck immediately before the agent
-        launches. Using an absolute path makes the timer immune to the
-        agent's `cd`s (the previous sentinel-file approach used
-        `dirname "$0"` which resolved differently per cwd).
-        """
+        """timer.sh: remaining time from /timer_start, written by the task.toml
+        healthcheck right before the agent launches (absolute path, so the
+        agent's `cd`s don't matter)."""
         timer_script = f"""#!/bin/bash
 
 NUM_HOURS={self.num_hours}
@@ -218,75 +217,57 @@ fi
         timer_path.write_text(timer_script)
         timer_path.chmod(0o755)
 
+    # ---------------------------------------------------------- environment
+
     def generate_environment(
         self,
         task_dir: Path,
         benchmark_id: str,
-        model_info: "ModelInfo",
-        benchmark_info: "BenchmarkInfo",
+        model_info: ModelInfo,
+        benchmark_info: BenchmarkInfo,
     ) -> None:
-        """Generate the environment/ directory: Dockerfile + agent runtime."""
+        """environment/: the agent image build context."""
         env_dir = task_dir / "environment"
         env_dir.mkdir(parents=True, exist_ok=True)
 
-        # Copy Dockerfile template and .dockerignore
-        shutil.copy(
-            TEMPLATE_DIR / "environment" / "Dockerfile",
-            env_dir / "Dockerfile"
-        )
+        shutil.copy(TEMPLATE_DIR / "environment" / "Dockerfile", env_dir / "Dockerfile")
         dockerignore_src = TEMPLATE_DIR / "environment" / ".dockerignore"
         if dockerignore_src.exists():
             shutil.copy(dockerignore_src, env_dir / ".dockerignore")
 
-        # Build-context support files (entrypoint, system monitor,
-        # requirements-direct). Shared with tests/ — see _copy_build_context_support.
         self._copy_build_context_support(env_dir)
 
-        # Eval files: evaluate.py, templates/, optional evaluation_code/
-        # and task_context contents, plus contamination_judge.py and
-        # metadata.json. The agent gets these in /home/agent/workspace
-        # (via the Dockerfile's `COPY .`) for fast iteration during
-        # training.
+        # Eval files land in /home/agent/workspace (the agent iterates on them).
         self._copy_eval_files(env_dir, benchmark_id, model_info, benchmark_info)
 
-        # timer.sh — agent reads it during the run. Verifier doesn't need it.
         self.generate_timer_sh(env_dir)
 
         # ptb_collect.sh — post-agent hook (weights -> shared volume, code
         # snapshot -> /logs/artifacts). Installed by the Dockerfile at
         # /usr/local/bin and stripped from the workspace; agent image only.
-        collect_src = TEMPLATE_DIR / "environment" / "ptb_collect.sh"
         collect_dst = env_dir / "ptb_collect.sh"
-        shutil.copy(collect_src, collect_dst)
+        shutil.copy(TEMPLATE_DIR / "environment" / "ptb_collect.sh", collect_dst)
         collect_dst.chmod(0o755)
 
-    def _copy_build_context_support(self, target_dir: Path) -> None:
-        """Copy entrypoint.sh + system_monitor.sh + requirements-direct.txt
-        into a Dockerfile build context.
+        # Self-decontamination tooling (mirrors run_task.sh): the judges'
+        # n-gram checker and the benchmark test set, installed by the
+        # Dockerfile at /home/agent/ — i.e. `../` from the workspace, the same
+        # relative layout the prompt's "Decontamination Tool" section
+        # describes (`../contamination_check.py`, `../test_data.json`).
+        shutil.copy(JUDGE_TOOLS_DIR / "contamination_check.py", env_dir / "contamination_check.py")
+        shutil.copy(self._test_data_path(benchmark_id), env_dir / "test_data.json")
 
-        Both environment/ (agent) and tests/ (verifier under harbor's
-        separate-verifier mode) use the same Dockerfile structure and
-        need these files at build time. The canonical sources live under
-        template/environment/ and containers/.
-        """
-        # entrypoint.sh — Dockerfile installs it at /usr/local/bin/ and
-        # sets it as ENTRYPOINT so its stdout becomes Modal's live log
-        # stream (see template/environment/entrypoint.sh).
-        entrypoint_src = TEMPLATE_DIR / "environment" / "entrypoint.sh"
+    def _copy_build_context_support(self, target_dir: Path) -> None:
+        """entrypoint.sh + system_monitor.sh + requirements-direct.txt, needed
+        by both Dockerfiles (environment/ and tests/)."""
         entrypoint_dst = target_dir / "entrypoint.sh"
-        shutil.copy(entrypoint_src, entrypoint_dst)
+        shutil.copy(TEMPLATE_DIR / "environment" / "entrypoint.sh", entrypoint_dst)
         entrypoint_dst.chmod(0o755)
 
-        # system_monitor.sh — kicked off by entrypoint.sh as a background
-        # daemon; ports condor's src/utils/system_monitor.sh.
-        monitor_src = TEMPLATE_DIR / "environment" / "system_monitor.sh"
         monitor_dst = target_dir / "system_monitor.sh"
-        shutil.copy(monitor_src, monitor_dst)
+        shutil.copy(TEMPLATE_DIR / "environment" / "system_monitor.sh", monitor_dst)
         monitor_dst.chmod(0o755)
 
-        # containers/requirements-direct.txt — the Dockerfile pins ML
-        # deps from this file (mirrors the condor opus_4_6_1m.def
-        # pipeline).
         reqs_src = self.posttrainbench_root / "containers" / "requirements-direct.txt"
         if not reqs_src.exists():
             raise FileNotFoundError(
@@ -299,44 +280,29 @@ fi
         self,
         target_dir: Path,
         benchmark_id: str,
-        model_info: "ModelInfo",
-        benchmark_info: "BenchmarkInfo",
+        model_info: ModelInfo,
+        benchmark_info: BenchmarkInfo,
+        *,
+        for_tests: bool = False,
     ) -> None:
-        """Copy the evaluation pipeline files into target_dir.
+        """The evaluation pipeline files (what run_task.sh copies into task/):
+        evaluate.py, templates/, evaluation_code/ and task_context/*, plus
+        metadata.json. With for_tests=True also the verifier-only files."""
+        task_src = self._task_src(benchmark_id)
 
-        Used for both:
-          - environment/ (so the agent has them in /home/agent/workspace
-            for iterative testing during training)
-          - tests/ (so the verifier runs against an untampered copy that
-            Harbor uploads only after the agent process exits)
-
-        Files copied:
-          - evaluate.py            (benchmark-specific)
-          - templates/             (chat templates for all model families)
-          - evaluation_code/       (arenahardwriting, healthbench only)
-          - task_context/<*>       (bfcl has bfcl_evaluation_code.py)
-          - contamination_judge.py (judge prompt builder)
-          - metadata.json          (benchmark + model info for verifier)
-        """
-        # evaluate.py
-        eval_src = self.posttrainbench_root / "src" / "eval" / "tasks" / benchmark_id / "evaluate.py"
+        eval_src = task_src / "evaluate.py"
         if not eval_src.exists():
             raise FileNotFoundError(f"evaluate.py not found: {eval_src}")
         shutil.copy(eval_src, target_dir / "evaluate.py")
 
-        # templates/
         templates_src = self.posttrainbench_root / "src" / "eval" / "templates"
-        if not templates_src.exists():
-            raise FileNotFoundError(f"templates directory not found: {templates_src}")
         shutil.copytree(templates_src, target_dir / "templates", dirs_exist_ok=True)
 
-        # evaluation_code/ (arenahardwriting, healthbench)
-        eval_code_src = self.posttrainbench_root / "src" / "eval" / "tasks" / benchmark_id / "evaluation_code"
+        eval_code_src = task_src / "evaluation_code"
         if eval_code_src.is_dir():
             shutil.copytree(eval_code_src, target_dir / "evaluation_code", dirs_exist_ok=True)
 
-        # task_context/* (bfcl has bfcl_evaluation_code.py)
-        task_context_src = self.posttrainbench_root / "src" / "eval" / "tasks" / benchmark_id / "task_context"
+        task_context_src = task_src / "task_context"
         if task_context_src.is_dir():
             for item in task_context_src.iterdir():
                 dst = target_dir / item.name
@@ -345,85 +311,52 @@ fi
                 else:
                     shutil.copy(item, dst)
 
-        # contamination judge script (kept in template/environment/ as
-        # the canonical source, copied into both env_dir and tests_dir)
-        judge_src = TEMPLATE_DIR / "environment" / "contamination_judge.py"
-        if judge_src.exists():
-            shutil.copy(judge_src, target_dir / "contamination_judge.py")
+        if for_tests:
+            # v1.0 judge prompt builder; replaced by src/judges in the
+            # verifier rework. Verifier-only: the agent must not see it.
+            judge_src = TEMPLATE_DIR / "environment" / "contamination_judge.py"
+            if judge_src.exists():
+                shutil.copy(judge_src, target_dir / "contamination_judge.py")
 
-        # metadata.json
         metadata = {
             "benchmark_id": benchmark_id,
             "benchmark_name": benchmark_info.benchmark_name,
+            "required_api_keys": benchmark_info.required_api_keys,
             "model_id": model_info.model_id,
             "model_short_name": model_info.short_name,
             "num_hours": self.num_hours,
+            "agent_name": self.agent_name,
         }
         (target_dir / "metadata.json").write_text(json.dumps(metadata, indent=2))
+
+    # ---------------------------------------------------------------- tests
 
     def generate_tests(
         self,
         task_dir: Path,
         benchmark_id: str,
-        model_info: "ModelInfo",
-        benchmark_info: "BenchmarkInfo",
+        model_info: ModelInfo,
+        benchmark_info: BenchmarkInfo,
     ) -> None:
-        """Generate the tests/ directory.
-
-        Under harbor 0.7.0's separate-verifier mode, tests/ doubles as
-        the verifier image's build context: harbor builds it into a
-        container the agent never touches, then transfers configured
-        artifacts in at runtime. The image must self-contain test.sh and
-        everything test.sh reads — harbor does not upload tests/ at
-        runtime for separate verifier envs.
-
-        Files placed here:
-          - Dockerfile      builds the verifier image
-          - test.sh         the verifier orchestrator (baked in via COPY .)
-          - entrypoint.sh   PID-1 streamer (matches agent env)
-          - system_monitor.sh  background system monitor
-          - requirements-direct.txt  pinned ML deps for the Dockerfile
-          - evaluate.py + templates/ + evaluation_code/ + task_context/*
-            + contamination_judge.py + metadata.json — the eval pipeline
-        """
+        """tests/: the verifier image build context (harbor separate-verifier
+        mode builds it into a container the agent never touches). Must
+        self-contain test.sh and everything it reads, under /tests/."""
         tests_dir = task_dir / "tests"
         tests_dir.mkdir(parents=True, exist_ok=True)
 
-        # Verifier image Dockerfile (canonical source: template/tests/Dockerfile).
-        shutil.copy(
-            TEMPLATE_DIR / "tests" / "Dockerfile",
-            tests_dir / "Dockerfile",
-        )
+        shutil.copy(TEMPLATE_DIR / "tests" / "Dockerfile", tests_dir / "Dockerfile")
 
-        # Verifier orchestrator (test.sh)
-        test_sh_src = TEMPLATE_DIR / "tests" / "test.sh"
         test_sh_dst = tests_dir / "test.sh"
-        shutil.copy(test_sh_src, test_sh_dst)
+        shutil.copy(TEMPLATE_DIR / "tests" / "test.sh", test_sh_dst)
         test_sh_dst.chmod(0o755)
 
-        # Build-context support files (same set the agent env needs).
         self._copy_build_context_support(tests_dir)
+        self._copy_eval_files(tests_dir, benchmark_id, model_info, benchmark_info, for_tests=True)
 
-        # Eval pipeline (also baked into the agent workspace via
-        # environment/, but the verifier reads from /tests/ where these
-        # land via the verifier Dockerfile's `COPY .`).
-        self._copy_eval_files(tests_dir, benchmark_id, model_info, benchmark_info)
+    # ------------------------------------------------------------- driver
 
-    def generate_task(
-        self,
-        benchmark_id: str,
-        model_key: str,
-    ) -> Path:
-        """
-        Generate a complete Harbor task for a benchmark + model combination.
-
-        Args:
-            benchmark_id: The benchmark ID (e.g., "gsm8k").
-            model_key: The model key (e.g., "qwen3-1.7b").
-
-        Returns:
-            Path to the generated task directory.
-        """
+    def generate_task(self, benchmark_id: str, model_key: str) -> Path:
+        """Generate a complete Harbor task for a benchmark + model combination."""
         if benchmark_id not in BENCHMARKS:
             raise ValueError(f"Unknown benchmark: {benchmark_id}. Available: {list(BENCHMARKS.keys())}")
         if model_key not in MODELS:
@@ -432,26 +365,21 @@ fi
         benchmark_info = BENCHMARKS[benchmark_id]
         model_info = MODELS[model_key]
 
-        # Try to get actual benchmark name from file
-        try:
-            benchmark_info = BenchmarkInfo(
-                task_id=benchmark_info.task_id,
-                benchmark_name=self._read_benchmark_name(benchmark_id),
-                setup_note=benchmark_info.setup_note,
-            )
-        except FileNotFoundError:
-            pass  # Use default from dataclass
+        # Fail early, before writing anything.
+        self._test_data_path(benchmark_id)
 
-        # Create task directory
         task_id = f"posttrainbench-{benchmark_id}-{model_info.short_name}"
         task_dir = self.output_dir / task_id
-        task_dir.mkdir(parents=True, exist_ok=True)
+        # Start from a clean directory so files dropped by earlier template
+        # versions cannot linger in the build contexts.
+        if task_dir.exists():
+            shutil.rmtree(task_dir)
+        task_dir.mkdir(parents=True)
 
         print(f"Generating task: {task_id}")
 
-        # Generate all components
-        self.generate_task_toml(task_dir, benchmark_id)
-        self.generate_instruction(task_dir, model_info, benchmark_info, benchmark_id)
+        self.generate_task_toml(task_dir, benchmark_info)
+        self.generate_instruction(task_dir, model_info, benchmark_id)
         self.generate_environment(task_dir, benchmark_id, model_info, benchmark_info)
         self.generate_tests(task_dir, benchmark_id, model_info, benchmark_info)
 
@@ -460,19 +388,17 @@ fi
 
     def generate_all_tasks(self) -> list[Path]:
         """Generate tasks for all benchmark + model combinations."""
-        tasks = []
-        for benchmark_id in BENCHMARKS:
-            for model_key in MODELS:
-                task_dir = self.generate_task(benchmark_id, model_key)
-                tasks.append(task_dir)
-        return tasks
+        return [
+            self.generate_task(benchmark_id, model_key)
+            for benchmark_id in BENCHMARKS
+            for model_key in MODELS
+        ]
 
 
 def list_available_tasks() -> list[str]:
     """List all available task combinations."""
-    tasks = []
-    for benchmark_id in BENCHMARKS:
-        for model_key in MODELS:
-            task_id = f"posttrainbench-{benchmark_id}-{MODELS[model_key].short_name}"
-            tasks.append(task_id)
-    return tasks
+    return [
+        f"posttrainbench-{benchmark_id}-{MODELS[model_key].short_name}"
+        for benchmark_id in BENCHMARKS
+        for model_key in MODELS
+    ]

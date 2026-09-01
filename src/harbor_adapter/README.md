@@ -4,15 +4,15 @@ This adapter generates [Harbor](https://harborframework.com)-compatible tasks fo
 
 ## Supported Benchmarks
 
-| Benchmark ID | Name | Type | Notes |
-|-------------|------|------|-------|
-| gsm8k | GSM8K (Grade School Math 8K) | inspect-ai | |
-| humaneval | HumanEval | inspect-ai | |
-| aime2025 | AIME 2025 | inspect-ai | |
-| gpqamain | GPQA | inspect-ai | |
-| bfcl | Berkeley Function Calling Leaderboard | inspect-ai | Includes `bfcl_evaluation_code.py` via task_context |
-| arenahardwriting | Arena-Hard-v2.0 (Writing) | vLLM + OpenAI judge | Requires `OPENAI_API_KEY` for agent |
-| healthbench | HealthBench | vLLM + OpenAI judge | Requires `OPENAI_API_KEY` for agent |
+Benchmarks are discovered from `src/eval/tasks/*/info.json` (`python run_adapter.py --list`).
+As of PostTrainBench v1.1: aime2025, arenahardwriting, bfcl, gpqamain, gsm8k, healthbench,
+humaneval. `aime2026` is skipped (upstream ships no test-data downloader for it, so it
+cannot run under `run_task.sh` either).
+
+| Benchmark ID | Type | Notes |
+|-------------|------|-------|
+| aime2025, gpqamain, gsm8k, humaneval, bfcl | inspect-ai | bfcl includes `bfcl_evaluation_code.py` via task_context |
+| arenahardwriting, healthbench | vLLM + OpenAI judge | `info.json` declares `required_api_keys: ["OPENAI_API_KEY"]`, which the adapter turns into `[environment.env]` (harbor's per-task agent-sandbox env) |
 
 ## Supported Models
 
@@ -36,14 +36,33 @@ uv sync
 
 ### 1. Generate tasks
 
+The adapter reads everything benchmark-specific from the PostTrainBench tree —
+`info.json`, `benchmark.txt`, `evaluate.py`, and the **agent prompt is rendered by
+`src/eval/general/get_prompt.py` itself**, so the Harbor instruction is byte-for-byte
+the condor prompt (v1.1 rules incl. the decontamination tool section).
+
+Prerequisite (same as `run_task.sh`): every benchmark needs its gitignored
+`src/eval/tasks/<id>/test_data.json` (the agent gets it as `../test_data.json` next to
+`../contamination_check.py`; the judges use it too):
+
+```bash
+# from the repo root; gpqamain needs MY_HF_TOKEN (gated dataset)
+uv run --no-project --with datasets --with huggingface_hub --with pyarrow \
+    python src/judges/test_data_download/download_test_data.py
+```
+
 ```bash
 cd src/harbor_adapter
 
 # Generate a single task
 python run_adapter.py --benchmark gsm8k --model qwen3-1.7b --output ./tasks
 
-# Or generate all 28 task combinations
+# Or generate all task combinations (7 benchmarks x 4 models)
 python run_adapter.py --all --output ./tasks
+
+# The PostTrainBench agent name only affects agent-specific prompt clauses
+# (default 'claude', matching harbor's claude-code agent)
+python run_adapter.py --benchmark gsm8k --model qwen3-1.7b --agent-name claude --output ./tasks
 
 # List available benchmarks and models
 python run_adapter.py --list
@@ -119,11 +138,12 @@ Each generated task follows Harbor's standard format:
 ```
 posttrainbench-gsm8k-qwen3-1.7b/
 ├── task.toml              # Task configuration (GPU, timeout, env vars, volume hand-off hook)
-├── instruction.md         # Instructions for the agent
+├── instruction.md         # Agent prompt, rendered by src/eval/general/get_prompt.py
 ├── environment/
 │   ├── Dockerfile         # Container definition (CUDA + vLLM + ML packages)
 │   ├── .dockerignore      # Excludes Dockerfile from COPY
 │   ├── evaluate.py        # Benchmark evaluation script
+│   ├── contamination_check.py, test_data.json  # -> /home/agent/ (agent self-decontamination)
 │   ├── contamination_judge.py  # Generates judge prompt for codex CLI
 │   ├── timer.sh           # Countdown timer (healthcheck-written start time)
 │   ├── ptb_collect.sh     # Post-agent hook: weights -> volume, code snapshot -> /logs/artifacts
@@ -243,7 +263,8 @@ The trained model itself stays on the run's Modal volume (`modal volume get <vol
 
 ## Known Gotchas
 
-- **Claude Code CLI version**: the image pins `@anthropic-ai/claude-code@2.1.251`.
+- **Container era**: the images mirror `containers/opus_5.def` (PostTrainBench v1.1): Claude Code 2.1.219, codex 0.144.0, gemini-cli 0.18.4, opencode 1.17.18; the Grok/Cursor CLIs from that def are not installed.
+- **Claude Code CLI version**: the image pins `@anthropic-ai/claude-code@2.1.219`.
   Older pins (2.1.76, the condor image) are rejected by the API for
   `claude-opus-4-8` and newer (`"thinking.type.enabled" is not supported`).
   Override per run with `--ak version=<x.y.z>` (harbor installs it at agent setup).
