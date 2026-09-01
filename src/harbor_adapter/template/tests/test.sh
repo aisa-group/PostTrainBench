@@ -148,10 +148,27 @@ TRACE_PARSER="$PTB/src/trace_parsing/parse_trace.py"
 JUDGE_HOME="${PTB_JUDGE_HOME:-/tmp/ptb_judge}"
 JUDGE_TIMEOUT_SEC="${PTB_JUDGE_TIMEOUT_SEC:-3000}"   # per judge; verifier budget is 5h incl. eval
 
-AGENT_NAME="claude"
-if [ -f "$TESTS/metadata.json" ]; then
+# PostTrainBench agent name (selects the trace parser in src/trace_parsing and
+# the harness clause in the api judge). Derived from harbor's agent transcript
+# file name (claude-code.txt / codex.txt / opencode.txt / gemini-cli.txt), so
+# the same task works for any harbor agent; metadata.json's agent_name (the
+# prompt-generation agent) is the fallback.
+AGENT_LOGS_DIR="${PTB_AGENT_LOGS_DIR:-/logs/artifacts/agent_logs}"
+RAW_TRACE=$(ls -S "$AGENT_LOGS_DIR"/*.txt 2>/dev/null | head -1 || true)
+AGENT_NAME=""
+if [ -n "$RAW_TRACE" ]; then
+    case "$(basename "$RAW_TRACE" .txt)" in
+        claude*)   AGENT_NAME="claude" ;;
+        codex*)    AGENT_NAME="codex" ;;
+        opencode*) AGENT_NAME="opencode" ;;
+        gemini*)   AGENT_NAME="gemini" ;;
+        cursor*)   AGENT_NAME="cursor" ;;
+    esac
+fi
+if [ -z "$AGENT_NAME" ] && [ -f "$TESTS/metadata.json" ]; then
     AGENT_NAME=$(python3 -c "import json; print(json.load(open('$TESTS/metadata.json')).get('agent_name','claude'))" 2>/dev/null || echo "claude")
 fi
+AGENT_NAME="${AGENT_NAME:-claude}"
 
 # ---- sandbox ------------------------------------------------------------
 rm -rf "$JUDGE_HOME"
@@ -169,8 +186,6 @@ cp -r "$JUDGES_DIR/judge_tools/reference_configs" "$JUDGE_HOME/reference_configs
 # ptb_collect.sh stages harbor's agent logs under /logs/artifacts/agent_logs/.
 # The agent's own transcript is <harbor-agent-name>.txt; pick the largest
 # non-empty .txt so codex/gemini/opencode agents work too.
-AGENT_LOGS_DIR="${PTB_AGENT_LOGS_DIR:-/logs/artifacts/agent_logs}"
-RAW_TRACE=$(ls -S "$AGENT_LOGS_DIR"/*.txt 2>/dev/null | head -1 || true)
 if [ -n "$RAW_TRACE" ] && [ -s "$RAW_TRACE" ]; then
     cp "$RAW_TRACE" "$JUDGE_HOME/solve_out.txt"
     cp "$RAW_TRACE" "$LOGS_DIR/solve_out.txt"

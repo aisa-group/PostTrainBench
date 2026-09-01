@@ -16,7 +16,8 @@
 #   bash run_modal_task.sh --task tasks/posttrainbench-gsm8k-qwen3-1.7b \
 #       --agent claude-code --model anthropic/claude-opus-4-8 \
 #       [--job-name NAME] [--cli-version latest|<x.y.z>] [--effort high|...] \
-#       [--agent-kwarg k=v] [--delete-volume] [-- <extra harbor run args>]
+#       [--codex-auth-json agents/codex_non_api/auth.json] [--agent-kwarg k=v] \
+#       [--delete-volume] [-- <extra harbor run args>]
 #
 # Agent launch parity with PostTrainBench v1.1 agents/claude*/solve.sh:
 #   - effort: CLAUDE_CODE_EFFORT_LEVEL=high by default (harbor: --ak reasoning_effort)
@@ -34,7 +35,7 @@
 set -euo pipefail
 
 TASK=""; AGENT="claude-code"; MODEL=""; JOB_NAME=""; DELETE_VOLUME=0
-CLI_VERSION=""; EFFORT="high"
+CLI_VERSION=""; EFFORT="high"; CODEX_AUTH_JSON=""
 AGENT_KWARGS=(); EXTRA=()
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -43,6 +44,7 @@ while [ $# -gt 0 ]; do
         --model) MODEL="$2"; shift 2 ;;
         --job-name) JOB_NAME="$2"; shift 2 ;;
         --cli-version) CLI_VERSION="$2"; shift 2 ;;
+        --codex-auth-json) CODEX_AUTH_JSON="$2"; shift 2 ;;
         --effort) EFFORT="$2"; shift 2 ;;
         --agent-kwarg|--ak) AGENT_KWARGS+=(--ak "$2"); shift 2 ;;
         --delete-volume) DELETE_VOLUME=1; shift ;;
@@ -62,8 +64,26 @@ HARBOR_BIN="$(command -v harbor)" || { echo "harbor not on PATH" >&2; exit 2; }
 HARBOR_PY="$(dirname "$(readlink -f "$HARBOR_BIN")")/python"
 MODAL=("$HARBOR_PY" -m modal)
 
-# ---- agent launch knobs (claude-code) ----
+# ---- agent launch knobs ----
 AGENT_ENV=()
+if [ "$AGENT" = "codex" ]; then
+    # PostTrainBench agents/codex*/solve.sh:
+    #   codex --search exec --json -c model_reasoning_summary=detailed --skip-git-repo-check --yolo --model M
+    # harbor's codex agent: codex exec --json --dangerously-bypass-approvals-and-sandbox
+    #   --skip-git-repo-check --model M [-c ...]; effort defaults to high.
+    # `codex` / `codex_non_api` = CLI default effort (medium): pass --effort medium;
+    # `_high` / `_xhigh` variants: --effort high|xhigh. Subscription auth
+    # (codex_non_api*): --codex-auth-json agents/codex_non_api/auth.json.
+    [ -n "$EFFORT" ] && [ "$EFFORT" != "none" ] && AGENT_KWARGS+=(--ak "reasoning_effort=$EFFORT")
+    AGENT_KWARGS+=(--ak "reasoning_summary=detailed" --ak "web_search=live")
+    [ -n "$CODEX_AUTH_JSON" ] && export CODEX_AUTH_JSON_PATH="$(readlink -f "$CODEX_AUTH_JSON")"
+    if [ "$CLI_VERSION" = "latest" ]; then
+        CLI_VERSION="$(npm view @openai/codex version 2>/dev/null)" \
+            || { echo "could not resolve latest @openai/codex via npm" >&2; exit 2; }
+        echo "cli:     @openai/codex@$CLI_VERSION (latest, resolved now)"
+    fi
+    [ -n "$CLI_VERSION" ] && AGENT_KWARGS+=(--ak "version=$CLI_VERSION")
+fi
 if [ "$AGENT" = "claude-code" ]; then
     [ -n "$EFFORT" ] && [ "$EFFORT" != "none" ] && AGENT_KWARGS+=(--ak "reasoning_effort=$EFFORT")
     AGENT_ENV+=(--ae "BASH_MAX_TIMEOUT_MS=36000000")

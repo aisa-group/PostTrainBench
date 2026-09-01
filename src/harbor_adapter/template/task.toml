@@ -5,12 +5,17 @@ author_name = "PostTrainBench Team"
 category = "ml-training"
 tags = ["post-training", "llm", "fine-tuning", "gpu"]
 
+# Resources mirror src/commit_utils/single_task.sub (request_cpus = 16,
+# request_memory = 131072 MB, request_disk = 400G, one H100 80GB).
+# Note: harbor passes cpus/memory to Modal as the sandbox request; storage_mb
+# is NOT applied on Modal (the Modal SDK does not support ephemeral-disk
+# requests for Sandboxes), so disk is whatever the H100 host provides.
 [environment]
 gpus = 1
 gpu_types = ["H100"]
-cpus = 8
-memory_mb = 65536
-storage_mb = 102400
+cpus = 16
+memory_mb = 131072
+storage_mb = 409600
 build_timeout_sec = 3600.0
 allow_internet = true
 
@@ -59,9 +64,9 @@ PTB_MODEL_DIR = "/mnt/ptb_final_model"
 [verifier.environment]
 gpus = 1
 gpu_types = ["H100"]
-cpus = 8
-memory_mb = 65536
-storage_mb = 102400
+cpus = 16
+memory_mb = 131072
+storage_mb = 409600
 build_timeout_sec = 3600.0
 allow_internet = true
 

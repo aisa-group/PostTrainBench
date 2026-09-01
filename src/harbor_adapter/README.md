@@ -250,20 +250,45 @@ api judge is read from the parsed trace (`Model:` line) or `PTB_AGENT_CONFIG`.
 A judge that produces no verdict is a warning, not a failure (the run is still
 evaluated); judges can be re-run on an exported result dir with `src/judges/run_judges.sh`.
 
+### What the judges see: condor vs Harbor
+
+Both pipelines give the judges the same prompt, tools, trace layout and `final_model` config,
+but the **task-directory copy** differs:
+
+| | condor (`run_task.sh`) | Harbor (`ptb_collect.sh`) |
+|---|---|---|
+| Source | the entire `task/` dir copied to the result dir after `containers/delete_hf_models.py` removed every directory that looks like a HF model (has `*.safetensors`, or ≥2 of `config.json` / `pytorch_model.bin` / `tokenizer_config.json`) | a size-budgeted snapshot of the workspace |
+| Size limits | none beyond the model-dir deletion — datasets, checkpoint trees without HF markers (e.g. optimizer states), eval logs, everything else is kept | ≤ 512 MiB per file, ≤ 2 GiB total, files taken smallest-first; `*.safetensors/.bin/.pt/.pth/.ckpt/.gguf/.npy/.npz/.h5/.msgpack/.onnx` never taken; `.git`, `__pycache__`, `.cache`, `.huggingface`, `wandb`, `.venv`, `venv`, `node_modules`, `.ipynb_checkpoints` pruned |
+| `final_model` | deleted from `task/` (it is a HF model dir); the judge gets `../final_model_config.json` | excluded from the snapshot; symlinked into the judge's task dir from the read-only volume, so the judge can additionally list/inspect the weights |
+| Leftover model dirs (`final_model2/`, checkpoints) | deleted entirely | their small files (configs, tokenizer JSON) survive, the weights do not |
+| Record of what was dropped | `output.log` lists the deleted model dirs | `.ptb_workspace_sizes.txt` in the snapshot lists top-level sizes at collection time |
+
+In practice the judges read source files, JSONL/data files and logs, which both variants keep;
+the Harbor budget only bites on a workspace holding > 2 GiB of non-weight data, where the
+largest files are dropped first. Rationale for the budget: Modal's file download caps single
+files at 5 GiB and harbor's transfer has a fixed 120 s gzip timeout, so an unbounded copy
+would fail exactly on the runs where it matters most.
+
 ## Timer
 
 The timer uses a sentinel-file approach: on the first `bash timer.sh` call, the current timestamp is recorded in `.timer_start`. This ensures the countdown is accurate even if the task is generated long before the agent starts.
 
-## Configuration
+## Configuration & Resource Parity
 
-| Setting | Default | Notes |
-|---------|---------|-------|
-| GPU | 1x H100 | Configured in task.toml |
-| Memory | 64 GB | |
-| Storage | 100 GB | |
-| Agent timeout | 10 hours | Adjustable via `--num-hours` |
-| Verifier timeout | 5 hours | 4 judges + 3-phase eval retry |
-| Internet | Enabled | |
+`task.toml` requests the same resources as `src/commit_utils/single_task.sub`:
+
+| Resource | condor (`single_task.sub`) | Harbor (`task.toml`, agent and verifier env) | On Modal |
+|---|---|---|---|
+| GPU | 1x `NVIDIA H100 80GB HBM3` | `gpus = 1`, `gpu_types = ["H100"]` | H100 80GB (Modal may substitute an H200 — see gotchas) |
+| CPUs | `request_cpus = 16` | `cpus = 16` | honoured (`nproc` = 16) |
+| RAM | `request_memory = 131072` (128 GB) | `memory_mb = 131072` | passed to Modal as the sandbox memory request/limit (not visible from inside gVisor) |
+| Disk | `request_disk = 400G` | `storage_mb = 409600` | **not applied** — Modal Sandboxes take no ephemeral-disk request; the root filesystem is host-backed and effectively unbounded |
+| Agent budget | `num_hours` (timeout `+5 min`) | `[agent] timeout_sec = num_hours * 3600` | — |
+| Verifier | same node, no explicit limit | `[verifier] timeout_sec = 18000` (5 h) | — |
+| Internet | unrestricted | `allow_internet = true` | — |
+
+Other settings: the healthcheck writes `/timer_start` right before the agent launches; the
+verifier runs in a separate sandbox built from `tests/`.
 
 ## Scoring
 
@@ -296,6 +321,22 @@ effort emits non-empty thinking only with the CLI flag; a `thinkingDisplay` key 
 reasoning and the Harbor traces do not. Parity needs a ~20-line custom agent
 (`harbor run --agent <module>:<Class>` subclassing harbor's `ClaudeCode` to append the flag);
 tracked as a follow-up.
+
+## Other Agents (codex, opencode, gemini)
+
+The task is agent-agnostic: the verifier picks the trace parser and the judges' harness
+clause from harbor's transcript file name (`claude-code.txt`, `codex.txt`, `opencode.txt`,
+`gemini-cli.txt`), and `ptb_collect.sh` ships whichever transcript exists. Generate the
+task with the matching PostTrainBench agent name so agent-specific prompt clauses match
+(`run_adapter.py --agent-name codex`). What harbor's built-in agents do vs the PTB `solve.sh`:
+
+| PTB agent | Harbor agent | Launch parity | Auth | Status |
+|---|---|---|---|---|
+| `codex`, `codex_non_api[_high/_xhigh]` | `codex` | harbor: `codex exec --json --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check`; wrapper adds `-c model_reasoning_effort` (`--effort`, default high; plain `codex`/`codex_non_api` = `--effort medium`), `model_reasoning_summary=detailed`, `web_search=live` (= `--search`) | `OPENAI_API_KEY`, or subscription `--codex-auth-json agents/codex_non_api/auth.json` (harbor's `CODEX_AUTH_JSON_PATH`) | wired, **not yet smoke-tested** |
+| `codex_*_reprompt` | — | PTB's resume-and-reprompt loop has no harbor equivalent | | not supported |
+| `opencode` | `opencode` | harbor: `opencode --model=<provider/model> run --format=json --thinking --dangerously-skip-permissions`; writes `opencode.json` with the provider from the model name | provider key inferred from the model name (`anthropic/…`, `openai/…`); PTB's `opencode/…`, `zai/…` providers use `OPENCODE_API_KEY` / `ZAI_API_KEY` via `opencode.json` — needs `--ak opencode_config=…` | **untested** |
+| `gemini` | `gemini-cli` | harbor: `gemini --yolo --model=… --prompt=…` (no `--output-format stream-json`; PTB's `gemini_parser` expects stream-json) | `GEMINI_API_KEY` | **untested**; trace parsing likely degrades |
+| `cursor_cli`, `grok_cli`, `kimi_claude`, `glmx` | — | | | not supported |
 
 ## Exporting to the PostTrainBench Results Layout
 
