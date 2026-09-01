@@ -60,6 +60,7 @@ done
 # The `modal` CLI must come from the same environment as `harbor` (harbor's
 # venv has the modal extra; on hosts with an HTTP proxy it also needs the
 # `python-socks` package or every Modal call fails with a connection error).
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 HARBOR_BIN="$(command -v harbor)" || { echo "harbor not on PATH" >&2; exit 2; }
 HARBOR_PY="$(dirname "$(readlink -f "$HARBOR_BIN")")/python"
 MODAL=("$HARBOR_PY" -m modal)
@@ -98,6 +99,20 @@ if [ "$AGENT" = "opencode" ] || [ "$AGENT" = "gemini-cli" ]; then
         echo "cli:     $PKG@$CLI_VERSION (latest, resolved now)"
     fi
     AGENT_KWARGS+=(--ak "version=${CLI_VERSION:-$IMAGE_PIN}")
+fi
+if [ "$AGENT" = "opencode" ]; then
+    # PostTrainBench agents/opencode/solve.sh writes an opencode.json that
+    # registers the providers it uses (incl. `zai` as a custom OpenAI-compatible
+    # provider with its baseURL, and `{env:...}` api keys). Harbor's opencode
+    # agent only declares the model, so hand it PTB's block via the
+    # `opencode_config` kwarg (deep-merged into the generated opencode.json) and
+    # pass the keys PTB's api_keys.json allows for this agent.
+    PTB_OPENCODE_JSON="$(sed -n "/cat > opencode.json << 'EOF'/,/^EOF/p" "$REPO_ROOT/agents/opencode/solve.sh" | sed '1d;$d' | python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin)))')" \
+        || { echo "could not extract opencode.json from agents/opencode/solve.sh" >&2; exit 2; }
+    AGENT_KWARGS+=(--ak "opencode_config=$PTB_OPENCODE_JSON")
+    for k in $(python3 -c 'import json,sys; print(" ".join(json.load(open(sys.argv[1]))["allowed_api_keys"]))' "$REPO_ROOT/agents/opencode/api_keys.json"); do
+        [ -n "${!k:-}" ] && AGENT_ENV+=(--ae "$k=${!k}")
+    done
 fi
 if [ "$AGENT" = "claude-code" ]; then
     [ -n "$EFFORT" ] && [ "$EFFORT" != "none" ] && AGENT_KWARGS+=(--ak "reasoning_effort=$EFFORT")
