@@ -168,7 +168,8 @@ fi
 if [ -z "$AGENT_NAME" ] && [ -f "$TESTS/metadata.json" ]; then
     AGENT_NAME=$(python3 -c "import json; print(json.load(open('$TESTS/metadata.json')).get('agent_name','claude'))" 2>/dev/null || echo "claude")
 fi
-AGENT_NAME="${AGENT_NAME:-claude}"
+# run_modal_task.sh passes the authoritative values via `harbor run --ve`.
+AGENT_NAME="${PTB_AGENT_NAME:-${AGENT_NAME:-claude}}"
 
 # ---- sandbox ------------------------------------------------------------
 rm -rf "$JUDGE_HOME"

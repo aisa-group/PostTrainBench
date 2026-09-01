@@ -95,6 +95,16 @@ if [ "$AGENT" = "claude-code" ]; then
     [ -n "$CLI_VERSION" ] && AGENT_KWARGS+=(--ak "version=$CLI_VERSION")
 fi
 
+# Tell the verifier which harness ran, for the judges' harness clause and the
+# trace parser (condor: AGENT / AGENT_CONFIG). Harbor agent -> PostTrainBench
+# agent name; model without the provider prefix (anthropic/claude-opus-4-8 -> claude-opus-4-8).
+case "$AGENT" in
+    claude-code) PTB_AGENT="claude" ;;
+    gemini-cli)  PTB_AGENT="gemini" ;;
+    *)           PTB_AGENT="$AGENT" ;;
+esac
+VERIFIER_ENV=(--ve "PTB_AGENT_NAME=$PTB_AGENT" --ve "PTB_AGENT_CONFIG=${MODEL#*/}")
+
 TASK_SHORT="$(basename "$TASK" | sed 's/^posttrainbench-//')"
 JOB_NAME="${JOB_NAME:-$(date +%Y%m%d-%H%M%S)}"
 # Modal volume names: [a-zA-Z0-9._-], max 64 chars.
@@ -113,6 +123,7 @@ harbor run \
     --model "$MODEL" \
     "${AGENT_KWARGS[@]}" \
     "${AGENT_ENV[@]}" \
+    "${VERIFIER_ENV[@]}" \
     --env modal \
     --ek "volumes={\"/mnt/ptb_final_model\":\"$VOLUME\"}" \
     -n 1 \

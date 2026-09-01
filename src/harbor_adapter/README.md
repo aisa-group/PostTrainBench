@@ -324,15 +324,17 @@ tracked as a follow-up.
 
 ## Other Agents (codex, opencode, gemini)
 
-The task is agent-agnostic: the verifier picks the trace parser and the judges' harness
-clause from harbor's transcript file name (`claude-code.txt`, `codex.txt`, `opencode.txt`,
-`gemini-cli.txt`), and `ptb_collect.sh` ships whichever transcript exists. Generate the
+The task is agent-agnostic: the verifier takes the agent name and model from `PTB_AGENT_NAME` /
+`PTB_AGENT_CONFIG` (passed by `run_modal_task.sh` via `harbor run --ve`; they select the trace
+parser and the judges' harness clause), falling back to harbor's transcript file name
+(`claude-code.txt`, `codex.txt`, `opencode.txt`, `gemini-cli.txt`); `ptb_collect.sh` ships
+whichever transcript exists. Generate the
 task with the matching PostTrainBench agent name so agent-specific prompt clauses match
 (`run_adapter.py --agent-name codex`). What harbor's built-in agents do vs the PTB `solve.sh`:
 
 | PTB agent | Harbor agent | Launch parity | Auth | Status |
 |---|---|---|---|---|
-| `codex`, `codex_non_api[_high/_xhigh]` | `codex` | harbor: `codex exec --json --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check`; wrapper adds `-c model_reasoning_effort` (`--effort`, default high; plain `codex`/`codex_non_api` = `--effort medium`), `model_reasoning_summary=detailed`, `web_search=live` (= `--search`) | `OPENAI_API_KEY`, or subscription `--codex-auth-json agents/codex_non_api/auth.json` (harbor's `CODEX_AUTH_JSON_PATH`) | wired, **not yet smoke-tested** |
+| `codex`, `codex_non_api[_high/_xhigh]` | `codex` | harbor: `codex exec --json --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check`; wrapper adds `-c model_reasoning_effort` (`--effort`, default high; plain `codex`/`codex_non_api` = `--effort medium`), `model_reasoning_summary=detailed`, `web_search=live` (= `--search`) | `OPENAI_API_KEY`, or subscription `--codex-auth-json agents/codex_non_api/auth.json` (harbor's `CODEX_AUTH_JSON_PATH`) | **smoke-tested** (gpt-5.4, API key): transcript parsed, 4 judges, eval — 31 min |
 | `codex_*_reprompt` | — | PTB's resume-and-reprompt loop has no harbor equivalent | | not supported |
 | `opencode` | `opencode` | harbor: `opencode --model=<provider/model> run --format=json --thinking --dangerously-skip-permissions`; writes `opencode.json` with the provider from the model name | provider key inferred from the model name (`anthropic/…`, `openai/…`); PTB's `opencode/…`, `zai/…` providers use `OPENCODE_API_KEY` / `ZAI_API_KEY` via `opencode.json` — needs `--ak opencode_config=…` | **untested** |
 | `gemini` | `gemini-cli` | harbor: `gemini --yolo --model=… --prompt=…` (no `--output-format stream-json`; PTB's `gemini_parser` expects stream-json) | `GEMINI_API_KEY` | **untested**; trace parsing likely degrades |
