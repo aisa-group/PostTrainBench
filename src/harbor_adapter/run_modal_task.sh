@@ -84,6 +84,21 @@ if [ "$AGENT" = "codex" ]; then
     fi
     [ -n "$CLI_VERSION" ] && AGENT_KWARGS+=(--ak "version=$CLI_VERSION")
 fi
+# opencode / gemini-cli: harbor's agents always `npm i -g <pkg>@latest` unless a
+# version is given (they never reuse the image's binary), so pin the image
+# versions (containers/opus_5.def) by default to keep the pin-by-default policy.
+if [ "$AGENT" = "opencode" ] || [ "$AGENT" = "gemini-cli" ]; then
+    case "$AGENT" in
+        opencode)   PKG="opencode-ai";        IMAGE_PIN="1.17.18" ;;
+        gemini-cli) PKG="@google/gemini-cli"; IMAGE_PIN="0.18.4" ;;
+    esac
+    if [ "$CLI_VERSION" = "latest" ]; then
+        CLI_VERSION="$(npm view "$PKG" version 2>/dev/null)" \
+            || { echo "could not resolve latest $PKG via npm" >&2; exit 2; }
+        echo "cli:     $PKG@$CLI_VERSION (latest, resolved now)"
+    fi
+    AGENT_KWARGS+=(--ak "version=${CLI_VERSION:-$IMAGE_PIN}")
+fi
 if [ "$AGENT" = "claude-code" ]; then
     [ -n "$EFFORT" ] && [ "$EFFORT" != "none" ] && AGENT_KWARGS+=(--ak "reasoning_effort=$EFFORT")
     AGENT_ENV+=(--ae "BASH_MAX_TIMEOUT_MS=36000000")
