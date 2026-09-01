@@ -15,8 +15,18 @@
 # Usage:
 #   bash run_modal_task.sh --task tasks/posttrainbench-gsm8k-qwen3-1.7b \
 #       --agent claude-code --model anthropic/claude-opus-4-8 \
-#       [--job-name NAME] [--agent-kwarg version=2.1.251] [--delete-volume] \
-#       [-- <extra harbor run args>]
+#       [--job-name NAME] [--cli-version latest|<x.y.z>] [--effort high|...] \
+#       [--agent-kwarg k=v] [--delete-volume] [-- <extra harbor run args>]
+#
+# Agent launch parity with PostTrainBench v1.1 agents/claude*/solve.sh:
+#   - effort: CLAUDE_CODE_EFFORT_LEVEL=high by default (harbor: --ak reasoning_effort)
+#   - BASH_MAX_TIMEOUT_MS=36000000 (harbor: --ae)
+#   - CLI version: the image pin by default (opus_5.def era); condor's
+#     update_agent_cli.sh upgrades to @latest at run start instead — pass
+#     --cli-version latest (resolved via `npm view` now, so it is recorded) or
+#     an explicit version; harbor installs it in the sandbox at agent setup.
+#   - NOT replicated: `--thinking-display summarized` (harbor's claude-code
+#     agent has a fixed command line); see README "Known Gotchas".
 #
 # Auth: ANTHROPIC_API_KEY for claude-code, or a Claude Max subscription via
 #   export CLAUDE_CODE_OAUTH_TOKEN="$(cat ../../agents/claude_non_api/oauth_token)" CLAUDE_FORCE_OAUTH=1
@@ -24,6 +34,7 @@
 set -euo pipefail
 
 TASK=""; AGENT="claude-code"; MODEL=""; JOB_NAME=""; DELETE_VOLUME=0
+CLI_VERSION=""; EFFORT="high"
 AGENT_KWARGS=(); EXTRA=()
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -31,6 +42,8 @@ while [ $# -gt 0 ]; do
         --agent) AGENT="$2"; shift 2 ;;
         --model) MODEL="$2"; shift 2 ;;
         --job-name) JOB_NAME="$2"; shift 2 ;;
+        --cli-version) CLI_VERSION="$2"; shift 2 ;;
+        --effort) EFFORT="$2"; shift 2 ;;
         --agent-kwarg|--ak) AGENT_KWARGS+=(--ak "$2"); shift 2 ;;
         --delete-volume) DELETE_VOLUME=1; shift ;;
         --) shift; EXTRA=("$@"); break ;;
@@ -49,6 +62,19 @@ HARBOR_BIN="$(command -v harbor)" || { echo "harbor not on PATH" >&2; exit 2; }
 HARBOR_PY="$(dirname "$(readlink -f "$HARBOR_BIN")")/python"
 MODAL=("$HARBOR_PY" -m modal)
 
+# ---- agent launch knobs (claude-code) ----
+AGENT_ENV=()
+if [ "$AGENT" = "claude-code" ]; then
+    [ -n "$EFFORT" ] && [ "$EFFORT" != "none" ] && AGENT_KWARGS+=(--ak "reasoning_effort=$EFFORT")
+    AGENT_ENV+=(--ae "BASH_MAX_TIMEOUT_MS=36000000")
+    if [ "$CLI_VERSION" = "latest" ]; then
+        CLI_VERSION="$(npm view @anthropic-ai/claude-code version 2>/dev/null)" \
+            || { echo "could not resolve latest @anthropic-ai/claude-code via npm" >&2; exit 2; }
+        echo "cli:     @anthropic-ai/claude-code@$CLI_VERSION (latest, resolved now)"
+    fi
+    [ -n "$CLI_VERSION" ] && AGENT_KWARGS+=(--ak "version=$CLI_VERSION")
+fi
+
 TASK_SHORT="$(basename "$TASK" | sed 's/^posttrainbench-//')"
 JOB_NAME="${JOB_NAME:-$(date +%Y%m%d-%H%M%S)}"
 # Modal volume names: [a-zA-Z0-9._-], max 64 chars.
@@ -66,6 +92,7 @@ harbor run \
     --agent "$AGENT" \
     --model "$MODEL" \
     "${AGENT_KWARGS[@]}" \
+    "${AGENT_ENV[@]}" \
     --env modal \
     --ek "volumes={\"/mnt/ptb_final_model\":\"$VOLUME\"}" \
     -n 1 \

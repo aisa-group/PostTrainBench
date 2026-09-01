@@ -276,6 +276,27 @@ The verifier extracts the accuracy metric from `metrics.json` as the reward (0-1
 
 The trained model itself stays on the run's Modal volume (`modal volume get <volume> / ./final_model`); the host-side `artifacts/logs/artifacts/workspace/` holds the agent's code snapshot (plus `.ptb_workspace_sizes.txt`, what was left in the workspace).
 
+## Agent Launch Parity (claude-code)
+
+`run_modal_task.sh` reproduces what PostTrainBench v1.1's `agents/claude*/solve.sh` set:
+
+| condor (`solve.sh`) | Harbor (`run_modal_task.sh`) |
+|---|---|
+| `CLAUDE_CODE_EFFORT_LEVEL=high` | `--ak reasoning_effort=high` (default; `--effort <level>` / `--effort none`) |
+| `BASH_MAX_TIMEOUT_MS=36000000` | `--ae BASH_MAX_TIMEOUT_MS=36000000` (always) |
+| `update_agent_cli.sh`: CLI upgraded to `@latest` at run start, `cli_version.txt` | image pin by default (`opus_5.def` era, 2.1.219); `--cli-version latest` resolves the current release via `npm view` and passes `--ak version=`; `--cli-version x.y.z` pins explicitly. The version that ran is in `result.json` `agent_info` (exported as `cli_version.txt`) |
+| prompt via stdin (`printf '%s' "$PROMPT" \| claude --print …`) | same (harbor's agent) |
+| `--thinking-display summarized` | **not replicated** — see below |
+
+**Known difference — `--thinking-display summarized`.** Harbor's built-in claude-code agent has a
+fixed command line and no kwarg for this flag. It matters for the judges: without it the
+stream-json trace contains `thinking` blocks with **empty** text (verified: opus-4-8 at high
+effort emits non-empty thinking only with the CLI flag; a `thinkingDisplay` key in
+`--settings` does not help). The condor v1.1 traces therefore carry the agent's summarised
+reasoning and the Harbor traces do not. Parity needs a ~20-line custom agent
+(`harbor run --agent <module>:<Class>` subclassing harbor's `ClaudeCode` to append the flag);
+tracked as a follow-up.
+
 ## Exporting to the PostTrainBench Results Layout
 
 Harbor's reward is the pre-fallback accuracy. Baseline fallback for judge-flagged runs,
