@@ -11,9 +11,9 @@ fi
 REPO_ROOT="$(pwd)"
 CONTAINER_NAME="${1:-$POST_TRAIN_BENCH_CONTAINER_NAME}"
 apptainer shell \
+    --containall \
     --nv \
     --env HF_HOME="${HF_HOME}" \
-    --env OPENAI_API_KEY="${OPENAI_API_KEY}" \
     --writable-tmpfs \
     --bind "${REPO_ROOT}:${REPO_ROOT}" \
     --pwd "${REPO_ROOT}" \

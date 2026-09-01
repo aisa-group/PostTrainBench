@@ -1,0 +1,546 @@
+"""Pretty-print Codex CLI stream JSON files.
+
+Auto-detects format: if one of the first 200 lines starts with
+'{"type":"thread.started"', the structured JSON parser is used;
+otherwise the file is copied verbatim.
+"""
+
+from __future__ import annotations
+
+import json
+import shlex
+import shutil
+from pathlib import Path
+from typing import Any
+
+from _common import TIMESTAMP_PREFIX_RE, pretty_format_json
+
+DETECT_LINES = 200
+DETECT_PREFIX = '{"type":"thread.started"'
+
+
+def is_structured_json(input_path: Path) -> bool:
+    """Check if the file is structured Codex JSON by scanning the first DETECT_LINES lines."""
+    with input_path.open("r", encoding="utf-8") as f:
+        for i, line in enumerate(f):
+            if i >= DETECT_LINES:
+                break
+            stripped = line.lstrip()
+            ts_match = TIMESTAMP_PREFIX_RE.match(stripped)
+            if ts_match:
+                stripped = stripped[ts_match.end():]
+            if stripped.startswith(DETECT_PREFIX):
+                return True
+    return False
+
+
+def indent(text: str, level: int) -> str:
+    pad = "  " * level
+    return "\n".join(pad + line if line else pad for line in text.splitlines())
+
+
+def format_unparsable_line(index: int, line: str, error_msg: str = "") -> str:
+    return line
+
+
+def format_command(command: list[str] | str) -> str:
+    if isinstance(command, list):
+        return " ".join(shlex.quote(str(token)) for token in command)
+    return str(command)
+
+
+CODEX_ITEM_EVENT_TYPES = {"item.completed", "item.started", "item.updated"}
+
+
+def format_event(index: int, data: dict[str, Any], wall_ts: str | None = None) -> str:
+    # Codex CLI uses two event formats:
+    #   1. Old format: {"id": "...", "msg": {"type": "agent_message", ...}}
+    #   2. New (Codex) format: {"type": "item.completed", "item": {"type": "command_execution", ...}}
+    event_type = data.get("type", "unknown")
+
+    if event_type in CODEX_ITEM_EVENT_TYPES:
+        item = data.get("item", {})
+        item_type = item.get("type", "unknown")
+        item_id = item.get("id", "")
+        header_bits = [f"type: {event_type} ({item_type})"]
+        if item_id:
+            header_bits.append(f"id: {item_id}")
+        header_extra = " | ".join(header_bits)
+        lines: list[str] = [f"=== Event {index} | {header_extra} ==="]
+        lines.extend(format_codex_item_event(data))
+        return "\n".join(lines)
+
+    if event_type == "thread.started":
+        lines = [f"=== Event {index} | type: {event_type} ==="]
+        lines.extend(format_codex_thread_started(data))
+        return "\n".join(lines)
+
+    if event_type in ("turn.started", "turn.completed"):
+        lines = [f"=== Event {index} | type: {event_type} ==="]
+        lines.extend(format_codex_turn_event(data))
+        return "\n".join(lines)
+
+    msg = data.get("msg", data)
+    event_id = data.get("id", "")
+    msg_type = msg.get("type", "unknown")
+
+    header_bits = [f"type: {msg_type}"]
+    if event_id:
+        header_bits.append(f"id: {event_id}")
+    if wall_ts:
+        header_bits.append(f"ts: {wall_ts}")
+
+    header_extra = " | ".join(header_bits)
+    lines = [f"=== Event {index} | {header_extra} ==="]
+
+    handler = EVENT_HANDLERS.get(msg_type, format_unknown_event)
+    lines.extend(handler(msg))
+
+    return "\n".join(lines)
+
+
+def format_session_configured(msg: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    if session_id := msg.get("session_id"):
+        lines.append(indent(f"Session: {session_id}", 1))
+    if model := msg.get("model"):
+        lines.append(indent(f"Model: {model}", 1))
+    if provider := msg.get("model_provider_id"):
+        lines.append(indent(f"Provider: {provider}", 1))
+    if cwd := msg.get("cwd"):
+        lines.append(indent(f"Working directory: {cwd}", 1))
+    if approval := msg.get("approval_policy"):
+        lines.append(indent(f"Approval policy: {approval}", 1))
+    if sandbox := msg.get("sandbox_policy"):
+        lines.append(indent(f"Sandbox policy: {sandbox}", 1))
+    return lines
+
+
+def format_task_started(msg: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    if ctx_window := msg.get("model_context_window"):
+        lines.append(indent(f"Context window: {ctx_window}", 1))
+    if collab_mode := msg.get("collaboration_mode_kind"):
+        lines.append(indent(f"Collaboration mode: {collab_mode}", 1))
+    return lines
+
+
+def format_task_complete(msg: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    if last_msg := msg.get("last_agent_message"):
+        lines.append(indent("Last message:", 1))
+        lines.append(indent(last_msg.rstrip(), 2))
+    return lines
+
+
+def format_agent_message(msg: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    if message := msg.get("message"):
+        lines.append(indent("Message:", 1))
+        lines.append(indent(message.rstrip(), 2))
+    return lines
+
+
+def format_agent_message_delta(msg: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    if delta := msg.get("delta"):
+        lines.append(indent(f"Delta: {delta}", 1))
+    return lines
+
+
+def format_user_message(msg: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    if message := msg.get("message"):
+        lines.append(indent("Message:", 1))
+        lines.append(indent(message.rstrip(), 2))
+    if images := msg.get("images"):
+        lines.append(indent(f"Images: {images}", 1))
+    return lines
+
+
+def format_exec_command_begin(msg: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    if call_id := msg.get("call_id"):
+        lines.append(indent(f"Call ID: {call_id}", 1))
+    if command := msg.get("command"):
+        lines.append(indent(f"Command: {format_command(command)}", 1))
+    if cwd := msg.get("cwd"):
+        lines.append(indent(f"Working directory: {cwd}", 1))
+    if source := msg.get("source"):
+        lines.append(indent(f"Source: {source}", 1))
+    return lines
+
+
+def format_exec_command_output_delta(msg: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    if call_id := msg.get("call_id"):
+        lines.append(indent(f"Call ID: {call_id}", 1))
+    if chunk := msg.get("chunk"):
+        lines.append(indent("Output:", 1))
+        lines.append(indent(chunk.rstrip(), 2))
+    return lines
+
+
+def format_exec_command_end(msg: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    if call_id := msg.get("call_id"):
+        lines.append(indent(f"Call ID: {call_id}", 1))
+    if command := msg.get("command"):
+        lines.append(indent(f"Command: {format_command(command)}", 1))
+    if (exit_code := msg.get("exit_code")) is not None:
+        lines.append(indent(f"Exit code: {exit_code}", 1))
+    if stdout := msg.get("stdout"):
+        lines.append(indent("Stdout:", 1))
+        lines.append(indent(stdout.rstrip(), 2))
+    if stderr := msg.get("stderr"):
+        lines.append(indent("Stderr:", 1))
+        lines.append(indent(stderr.rstrip(), 2))
+    return lines
+
+
+def format_agent_reasoning(msg: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    if text := msg.get("text"):
+        lines.append(indent("Reasoning:", 1))
+        lines.append(indent(text.rstrip(), 2))
+    if title := msg.get("title"):
+        lines.append(indent(f"Title: {title}", 1))
+    return lines
+
+
+def format_agent_reasoning_delta(msg: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    if delta := msg.get("delta"):
+        lines.append(indent(f"Delta: {delta}", 1))
+    return lines
+
+
+def format_token_count(msg: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    if session := msg.get("session"):
+        bits = []
+        for key in ("input_tokens", "output_tokens", "total_tokens", "reasoning_output_tokens"):
+            if key in session:
+                bits.append(f"{key}={session[key]}")
+        if bits:
+            lines.append(indent(f"Session: {', '.join(bits)}", 1))
+    if turn := msg.get("turn"):
+        bits = []
+        for key in ("input_tokens", "output_tokens", "total_tokens", "reasoning_output_tokens"):
+            if key in turn:
+                bits.append(f"{key}={turn[key]}")
+        if bits:
+            lines.append(indent(f"Turn: {', '.join(bits)}", 1))
+    return lines
+
+
+def format_error(msg: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    if message := msg.get("message"):
+        lines.append(indent(f"Error: {message}", 1))
+    if code := msg.get("code"):
+        lines.append(indent(f"Code: {code}", 1))
+    return lines
+
+
+def format_warning(msg: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    if message := msg.get("message"):
+        lines.append(indent(f"Warning: {message}", 1))
+    return lines
+
+
+def format_mcp_tool_call_begin(msg: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    if server := msg.get("server_name"):
+        lines.append(indent(f"Server: {server}", 1))
+    if tool := msg.get("tool_name"):
+        lines.append(indent(f"Tool: {tool}", 1))
+    if args := msg.get("arguments"):
+        lines.append(indent("Arguments:", 1))
+        lines.append(indent(pretty_format_json(args, 0), 2))
+    return lines
+
+
+def format_mcp_tool_call_end(msg: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    if server := msg.get("server_name"):
+        lines.append(indent(f"Server: {server}", 1))
+    if tool := msg.get("tool_name"):
+        lines.append(indent(f"Tool: {tool}", 1))
+    if result := msg.get("result"):
+        lines.append(indent("Result:", 1))
+        lines.append(indent(pretty_format_json(result, 0), 2))
+    return lines
+
+
+def format_patch_apply_begin(msg: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    if call_id := msg.get("call_id"):
+        lines.append(indent(f"Call ID: {call_id}", 1))
+    if patch := msg.get("patch"):
+        lines.append(indent("Patch:", 1))
+        lines.append(indent(patch.rstrip(), 2))
+    return lines
+
+
+def format_patch_apply_end(msg: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    if call_id := msg.get("call_id"):
+        lines.append(indent(f"Call ID: {call_id}", 1))
+    if success := msg.get("success"):
+        lines.append(indent(f"Success: {success}", 1))
+    if error := msg.get("error"):
+        lines.append(indent(f"Error: {error}", 1))
+    return lines
+
+
+def format_turn_aborted(msg: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    if reason := msg.get("reason"):
+        lines.append(indent(f"Reason: {reason}", 1))
+    return lines
+
+
+# --- Codex CLI item-based event formatters ---
+
+
+def format_codex_reasoning(item: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    if item_id := item.get("id"):
+        lines.append(indent(f"Item ID: {item_id}", 1))
+    if text := item.get("text"):
+        lines.append(indent("Reasoning:", 1))
+        lines.append(indent(text.rstrip(), 2))
+    return lines
+
+
+def format_codex_agent_message(item: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    if item_id := item.get("id"):
+        lines.append(indent(f"Item ID: {item_id}", 1))
+    if text := item.get("text"):
+        lines.append(indent("Message:", 1))
+        lines.append(indent(text.rstrip(), 2))
+    return lines
+
+
+def format_codex_command_execution(item: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    if item_id := item.get("id"):
+        lines.append(indent(f"Item ID: {item_id}", 1))
+    if command := item.get("command"):
+        lines.append(indent(f"Command: {command}", 1))
+    item_status = item.get("status", "")
+    if item_status:
+        lines.append(indent(f"Status: {item_status}", 1))
+    if (exit_code := item.get("exit_code")) is not None:
+        lines.append(indent(f"Exit code: {exit_code}", 1))
+    if output := item.get("aggregated_output"):
+        lines.append(indent("Output:", 1))
+        lines.append(indent(output.rstrip(), 2))
+    return lines
+
+
+def format_codex_file_change(item: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    if item_id := item.get("id"):
+        lines.append(indent(f"Item ID: {item_id}", 1))
+    filtered = {k: v for k, v in item.items() if k not in ("id", "type")}
+    if filtered:
+        lines.append(indent(pretty_format_json(filtered, 0), 1))
+    return lines
+
+
+def format_codex_todo_list(item: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    if item_id := item.get("id"):
+        lines.append(indent(f"Item ID: {item_id}", 1))
+    if items := item.get("items"):
+        for entry in items:
+            check = "x" if entry.get("completed") else " "
+            lines.append(indent(f"[{check}] {entry.get('text', '')}", 1))
+    return lines
+
+
+def format_codex_web_search(item: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    if item_id := item.get("id"):
+        lines.append(indent(f"Item ID: {item_id}", 1))
+    filtered = {k: v for k, v in item.items() if k not in ("id", "type")}
+    if filtered:
+        lines.append(indent(pretty_format_json(filtered, 0), 1))
+    return lines
+
+
+CODEX_ITEM_HANDLERS: dict[str, Any] = {
+    "reasoning": format_codex_reasoning,
+    "agent_message": format_codex_agent_message,
+    "file_change": format_codex_file_change,
+    "todo_list": format_codex_todo_list,
+    "web_search": format_codex_web_search,
+}
+
+
+def format_codex_item_event(data: dict[str, Any]) -> list[str]:
+    """Format a Codex item.completed / item.started / item.updated event."""
+    item = data.get("item", {})
+    item_type = item.get("type", "unknown")
+
+    if item_type == "command_execution":
+        return format_codex_command_execution(item)
+
+    handler = CODEX_ITEM_HANDLERS.get(item_type)
+    if handler:
+        return handler(item)
+
+    filtered = {k: v for k, v in item.items() if k != "type"}
+    if filtered:
+        return [indent(pretty_format_json(filtered, 0), 1)]
+    return []
+
+
+def format_codex_thread_started(msg: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    if thread_id := msg.get("thread_id"):
+        lines.append(indent(f"Thread: {thread_id}", 1))
+    return lines
+
+
+def format_codex_turn_event(msg: dict[str, Any]) -> list[str]:
+    """Format turn.started / turn.completed events."""
+    lines: list[str] = []
+    filtered = {k: v for k, v in msg.items() if k != "type"}
+    if filtered:
+        lines.append(indent(pretty_format_json(filtered, 0), 1))
+    return lines
+
+
+def format_unknown_event(msg: dict[str, Any]) -> list[str]:
+    filtered = {k: v for k, v in msg.items() if k != "type"}
+    if filtered:
+        return [indent(pretty_format_json(filtered, 0), 1)]
+    return []
+
+
+EVENT_HANDLERS: dict[str, Any] = {
+    "session_configured": format_session_configured,
+    "task_started": format_task_started,
+    "turn_started": format_task_started,
+    "task_complete": format_task_complete,
+    "turn_complete": format_task_complete,
+    "agent_message": format_agent_message,
+    "agent_message_delta": format_agent_message_delta,
+    "user_message": format_user_message,
+    "exec_command_begin": format_exec_command_begin,
+    "exec_command_output_delta": format_exec_command_output_delta,
+    "exec_command_end": format_exec_command_end,
+    "agent_reasoning": format_agent_reasoning,
+    "agent_reasoning_delta": format_agent_reasoning_delta,
+    "agent_reasoning_raw_content": format_agent_reasoning,
+    "agent_reasoning_raw_content_delta": format_agent_reasoning_delta,
+    "token_count": format_token_count,
+    "error": format_error,
+    "warning": format_warning,
+    "mcp_tool_call_begin": format_mcp_tool_call_begin,
+    "mcp_tool_call_end": format_mcp_tool_call_end,
+    "patch_apply_begin": format_patch_apply_begin,
+    "patch_apply_end": format_patch_apply_end,
+    "turn_aborted": format_turn_aborted,
+}
+
+
+def is_delta_event(event: dict[str, Any]) -> tuple[bool, str | None]:
+    """Check if this event is a streaming delta. Returns (is_delta, delta_type)."""
+    msg = event.get("msg", event)
+    event_type = msg.get("type", "")
+    if event_type in ("agent_message_delta", "agent_reasoning_delta", "agent_reasoning_raw_content_delta"):
+        return True, event_type
+    return False, None
+
+
+def format_consolidated_deltas(index: int, deltas: list[dict[str, Any]], delta_type: str) -> str:
+    """Format a sequence of delta events as a single consolidated event."""
+    if not deltas:
+        return ""
+
+    combined_content = ""
+    for d in deltas:
+        msg = d.get("msg", d)
+        if chunk := msg.get("delta"):
+            combined_content += chunk
+        elif chunk := msg.get("text"):
+            combined_content += chunk
+
+    type_label = delta_type.replace("_delta", "").replace("_", " ")
+    header = f"=== Event {index} | type: {delta_type} (consolidated from {len(deltas)} deltas) ==="
+    lines = [header]
+
+    if combined_content:
+        lines.append(indent(f"{type_label.title()}:", 1))
+        lines.append(indent(combined_content.rstrip(), 2))
+
+    return "\n".join(lines)
+
+
+def parse(input_path: Path, output_path: Path) -> None:
+    if not is_structured_json(input_path):
+        shutil.copyfile(input_path, output_path)
+        return
+
+    formatted_events: list[str] = []
+    pending_deltas: list[dict[str, Any]] = []
+    current_delta_type: str | None = None
+    event_counter = 0
+
+    def flush_deltas() -> None:
+        nonlocal pending_deltas, current_delta_type, event_counter
+        if pending_deltas and current_delta_type:
+            event_counter += 1
+            formatted_events.append(
+                format_consolidated_deltas(event_counter, pending_deltas, current_delta_type)
+            )
+            pending_deltas = []
+            current_delta_type = None
+
+    with input_path.open("r", encoding="utf-8") as stream:
+        for _line_number, raw_line in enumerate(stream, 1):
+            stripped = raw_line.strip()
+            if not stripped:
+                continue
+
+            wall_ts = None
+            ts_match = TIMESTAMP_PREFIX_RE.match(stripped)
+            if ts_match:
+                wall_ts = ts_match.group(1)
+                stripped = stripped[ts_match.end():]
+
+            try:
+                event = json.loads(stripped)
+            except json.JSONDecodeError as exc:
+                flush_deltas()
+                formatted_events.append(format_unparsable_line(0, stripped, exc.msg))
+                continue
+
+            if not isinstance(event, dict):
+                flush_deltas()
+                formatted_events.append(
+                    format_unparsable_line(0, stripped, "Parsed JSON is not an object")
+                )
+                continue
+
+            is_delta, delta_type = is_delta_event(event)
+            if is_delta:
+                if current_delta_type is not None and delta_type != current_delta_type:
+                    flush_deltas()
+                pending_deltas.append(event)
+                current_delta_type = delta_type
+            else:
+                flush_deltas()
+                event_counter += 1
+                formatted_events.append(format_event(event_counter, event, wall_ts))
+
+    flush_deltas()
+
+    output_text = "\n\n".join(formatted_events) + "\n"
+    output_path.write_text(output_text, encoding="utf-8")

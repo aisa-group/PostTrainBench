@@ -37,9 +37,17 @@ cat > opencode.json << 'EOF'
           "name": "GLM-4.7"
         }
       }
+    },
+    "meta": {
+      "options": {
+        "apiKey": "{env:MODEL_API_KEY}"
+      }
     }
   }
 }
 EOF
 
-opencode run --model "$AGENT_CONFIG" --format json "$PROMPT"
+# Auto-update the CLI harness to the latest release and record its version.
+bash /home/ben/update_agent_cli.sh opencode
+
+printf '%s' "$PROMPT" | opencode run --model "$AGENT_CONFIG" --format json

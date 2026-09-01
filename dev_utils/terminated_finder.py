@@ -11,19 +11,23 @@ def get_results_dir():
     return os.environ.get("POST_TRAIN_BENCH_RESULTS_DIR", "results")
 
 
+KILLED_RE = re.compile(rb"run_task\.sh: line \d+: \d+ Killed")
+
+
 def classify_error(error_log_path: Path) -> str | None:
     """Classify the error in error.log. Returns 'terminated', 'killed', or None."""
     if not error_log_path.exists():
         return None
     try:
-        content = error_log_path.read_text()
-        if content.startswith("Terminated"):
-            return "terminated"
-        if re.search(r"\bKilled\b", content):
-            return "killed"
-        return None
+        with open(error_log_path, "rb") as f:
+            head = f.read(4096)
     except Exception:
         return None
+    if head.startswith(b"Terminated"):
+        return "terminated"
+    if KILLED_RE.search(head):
+        return "killed"
+    return None
 
 
 def get_latest_runs(method_path: Path):

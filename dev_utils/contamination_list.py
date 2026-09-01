@@ -1,37 +1,26 @@
 #!/usr/bin/env python3
+import json
 import os
 
-def load_contamination(contamination_path: str):
-    """
-    Return True if contamination is detected, otherwise False (or False on error).
-    """
-    if not os.path.exists(contamination_path):
-        return False
-    with open(contamination_path, "r") as f:
-        content = f.read().strip()
-        
-    if content == "contamination detected":
-        return True
-    return False
 
+def load_judgement(run_path: str) -> dict | None:
+    """Load the GPT-5.4 contamination judgement for a run dir.
 
-def load_disallowed_model(disallowed_path: str):
+    Prefers judgement_gpt5_4_rerun.json (rerun pipeline) over
+    judgement_gpt5_4.json (initial run). Returns the parsed dict, or None when
+    neither file exists (run has no judge output yet).
     """
-    Return True if disallowed use is detected, otherwise False (or False on error).
-    """
-    if not os.path.exists(disallowed_path):
-        return False
-    with open(disallowed_path, "r") as f:
-        content = f.read().strip()
-
-    if content == "disallowed use detected":
-        return True
-    return False
+    for name in ("judgement_gpt5_4_rerun.json", "judgement_gpt5_4.json"):
+        path = os.path.join(run_path, name)
+        if os.path.exists(path):
+            with open(path, "r") as f:
+                return json.load(f)
+    return None
 
 
 def get_latest_runs(method_path: str):
     """
-    Scans a method directory and returns a list of paths corresponding 
+    Scans a method directory and returns a list of paths corresponding
     to the latest run_id for every (benchmark, model) pair.
     """
     # key: (benchmark, model) -> value: {"run_id": int, "path": str}
@@ -51,7 +40,7 @@ def get_latest_runs(method_path: str):
                 "run_id": run_id,
                 "path": entry_path,
             }
-            
+
     return [info["path"] for info in latest_runs.values()]
 
 
@@ -61,7 +50,7 @@ def get_results_dir():
 
 def main():
     results_dir = get_results_dir()
-    
+
     contaminated_list = []
     disallowed_list = []
 
@@ -72,22 +61,20 @@ def main():
         method_path = os.path.join(results_dir, method_name)
         if not os.path.isdir(method_path):
             continue
-        
+
         # Get only the latest runs for this method to avoid reporting old overwritten runs
         run_paths = get_latest_runs(method_path)
 
         for run_path in run_paths:
-            # Check Contamination
-            contam_path = os.path.join(run_path, "contamination_judgement.txt")
-            if load_contamination(contam_path):
-                if run_path not in ignored_runs:
-                    contaminated_list.append(run_path)
+            judgement = load_judgement(run_path)
+            if judgement is None:
+                continue
 
-            # Check Disallowed Model
-            disallow_path = os.path.join(run_path, "disallowed_model_judgement.txt")
-            if load_disallowed_model(disallow_path):
-                if run_path not in ignored_runs:
-                    disallowed_list.append(run_path)
+            if judgement.get("contamination") and run_path not in ignored_runs:
+                contaminated_list.append(run_path)
+
+            if judgement.get("disallowed_model") and run_path not in ignored_runs:
+                disallowed_list.append(run_path)
 
     # 2. Output the lists
     print(f"=== CONTAMINATION DETECTED ({len(contaminated_list)}) ===")

@@ -14,5 +14,8 @@ export ANTHROPIC_BASE_URL="https://api.z.ai/api/anthropic"
 export ANTHROPIC_MODEL="${AGENT_CONFIG}"
 export ANTHROPIC_SMALL_FAST_MODEL="${AGENT_CONFIG}"
 
-claude --print --verbose --model "$AGENT_CONFIG" --output-format stream-json \
-    --dangerously-skip-permissions "$PROMPT"
+# Auto-update the CLI harness to the latest release and record its version.
+bash /home/ben/update_agent_cli.sh claude
+
+printf '%s' "$PROMPT" | claude --print --verbose --model "$AGENT_CONFIG" \
+    --output-format stream-json --dangerously-skip-permissions

@@ -8,13 +8,16 @@ import os
 # These are checked case-insensitively against solve_out.txt.
 LIMIT_PATTERNS = [
     "You've hit your limit",         # Claude Code Pro subscription limit
+    "You've hit your session limit", # Claude Code Max subscription per-session limit
     "spending_limit",                 # Anthropic/OpenAI spending limit
     "billing_hard_limit",            # OpenAI billing hard limit
-    "insufficient_quota",            # OpenAI quota exceeded
+    "insufficient_quota",            # OpenAI quota exceeded (structured error code)
+    "Quota exceeded. Check your plan",  # OpenAI/Codex quota exceeded (turn.failed message)
     "budget_exceeded",               # General budget error
     "plan does not yet include",     # Z.AI subscription plan restriction
     "token_expired",                 # OpenAI/Codex expired auth token
     "Failed to refresh token",       # Codex CLI refresh token failure
+    "Reconnecting... 5/5",           # Codex CLI exhausted stream-reconnect retries
 ]
 
 
