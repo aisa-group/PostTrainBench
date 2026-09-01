@@ -253,6 +253,9 @@ for JUDGE_NAME in "${ALL_JUDGES[@]}"; do
         echo "WARNING: prompt generation failed for $JUDGE_NAME, skipping"; continue; }
 
     rm -f "$JUDGE_HOME/task/judgement.json"
+    # stdin MUST be closed: `codex exec` appends piped stdin to the prompt and
+    # reads it to EOF, and under harbor's exec the verifier's stdin is an open
+    # pipe that never closes — codex then hangs before its first API call.
     set +e
     (
         cd "$JUDGE_HOME/task" && \
@@ -260,7 +263,7 @@ for JUDGE_NAME in "${ALL_JUDGES[@]}"; do
         "$CODEX_BIN" --search -a never exec --json \
             -c model_reasoning_summary=detailed \
             -c model_reasoning_effort="$JUDGE_REASONING_EFFORT" \
-            --skip-git-repo-check --yolo --model "$JUDGE_MODEL" "$JUDGE_PROMPT" 2>&1
+            --skip-git-repo-check --yolo --model "$JUDGE_MODEL" "$JUDGE_PROMPT" 2>&1 < /dev/null
     ) | tee "$LOGS_DIR/judge_output_$JUDGE_OUTPUT_ID.json" > /dev/null
     JUDGE_EXIT=${PIPESTATUS[0]}
     set -e

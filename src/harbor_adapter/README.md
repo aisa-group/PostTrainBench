@@ -276,6 +276,33 @@ The verifier extracts the accuracy metric from `metrics.json` as the reward (0-1
 
 The trained model itself stays on the run's Modal volume (`modal volume get <volume> / ./final_model`); the host-side `artifacts/logs/artifacts/workspace/` holds the agent's code snapshot (plus `.ptb_workspace_sizes.txt`, what was left in the workspace).
 
+## Exporting to the PostTrainBench Results Layout
+
+Harbor's reward is the pre-fallback accuracy. Baseline fallback for judge-flagged runs,
+aggregation, flagged-run review and judge reruns all live in the condor-side tooling, so
+export Harbor trials into the same results layout and use those tools unchanged:
+
+```bash
+python harbor_to_results.py jobs/gsm8k-1h-2                       # one job (all trials)
+python harbor_to_results.py jobs/* --experiment-name _harbor      # everything, suffixed method dirs
+python harbor_to_results.py jobs/gsm8k-1h-2 --with-model          # also fetch final_model from the volume
+
+# then, from the repo root:
+python scripts/collect.py --data-dir $POST_TRAIN_BENCH_RESULTS_DIR   # final_<method>.csv with baseline fallback
+python scripts/find_flagged_runs.py
+bash src/judges/run_judges.sh <results>/<method>/<run>               # re-judge a run
+```
+
+Layout: `<results>/<agent>_<agent_model>_<N>h[<experiment>]/<benchmark>_<Org>_<Model>_<run_id>/`
+(e.g. `claude-code_anthropic_claude-opus-4-8_1h/gsm8k_Qwen_Qwen3-1.7B-Base_1788169511`; `run_id` is
+the trial start time in Unix seconds). Each run dir carries `metrics.json`, the four
+`judgement_<id>.json` verdicts and `judge_output_<id>.{json,txt}`, `solve_out.txt` /
+`solve_parsed.txt` (re-parsed on the host so `*_sanitized` companions redact the keys in your
+`.env`), `prompt.txt`, `time_taken.txt`, `cli_version.txt`, `final_eval_<n>.txt`,
+`system_monitor.log`, `output.log`, `error.log`, `task/` (code snapshot) and `harbor/`
+(`result.json` + `config.json`). Requires the task dir the trial was generated from
+(for `prompt.txt` and metadata); otherwise it falls back to parsing the task name.
+
 ## Known Gotchas
 
 - **Container era**: the images mirror `containers/opus_5.def` (PostTrainBench v1.1): Claude Code 2.1.219, codex 0.144.0, gemini-cli 0.18.4, opencode 1.17.18; the Grok/Cursor CLIs from that def are not installed.
@@ -285,3 +312,7 @@ The trained model itself stays on the run's Modal volume (`modal volume get <vol
   Override per run with `--ak version=<x.y.z>` (harbor installs it at agent setup).
 - **Judge models** come from `src/judges/*/judge.conf` (gpt-5.4; gpt-5.6-terra for the general judge). `gpt-5.1-codex`/`gpt-5.2-codex` no longer exist on the Responses API.
 - **GPU type**: Modal may hand out an H200 despite `gpu_types = ["H100"]`.
+- **codex must not inherit stdin in the verifier**: `codex exec` appends piped stdin to the
+  prompt and reads it to EOF; under harbor's exec the verifier's stdin is a pipe that never
+  closes, so codex hangs before its first API call (exit 124 after the judge timeout).
+  `test.sh` runs every judge with `< /dev/null`. Condor is unaffected (apptainer closes stdin).
