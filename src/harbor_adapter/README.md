@@ -279,7 +279,7 @@ The timer uses a sentinel-file approach: on the first `bash timer.sh` call, the 
 
 | Resource | condor (`single_task.sub`) | Harbor (`task.toml`, agent and verifier env) | On Modal |
 |---|---|---|---|
-| GPU | 1x `NVIDIA H100 80GB HBM3` | `gpus = 1`, `gpu_types = ["H100"]` | H100 80GB (Modal may substitute an H200 — see gotchas) |
+| GPU | 1x `NVIDIA H100 80GB HBM3` | `gpus = 1`, `gpu_types = ["H100!"]` | H100 80GB; the `!` opts out of Modal's automatic H100→H200 upgrade (harbor passes the type verbatim as `H100!:1`) |
 | CPUs | `request_cpus = 16` | `cpus = 16` | honoured (`nproc` = 16) |
 | RAM | `request_memory = 131072` (128 GB) | `memory_mb = 131072` | passed to Modal as the sandbox memory request/limit (not visible from inside gVisor) |
 | Disk | `request_disk = 400G` | `storage_mb = 409600` | **not applied** — Modal Sandboxes take no ephemeral-disk request; the root filesystem is host-backed and effectively unbounded |
@@ -375,7 +375,7 @@ the trial start time in Unix seconds). Each run dir carries `metrics.json`, the 
   `claude-opus-4-8` and newer (`"thinking.type.enabled" is not supported`).
   Override per run with `--ak version=<x.y.z>` (harbor installs it at agent setup).
 - **Judge models** come from `src/judges/*/judge.conf` (gpt-5.4; gpt-5.6-terra for the general judge). `gpt-5.1-codex`/`gpt-5.2-codex` no longer exist on the Responses API.
-- **GPU type**: Modal may hand out an H200 despite `gpu_types = ["H100"]`.
+- **GPU type**: a plain `gpu_types = ["H100"]` lets Modal upgrade the sandbox to an H200 (observed in early runs); the template uses `"H100!"` (Modal's opt-out) so runs stay on the same hardware as condor.
 - **codex must not inherit stdin in the verifier**: `codex exec` appends piped stdin to the
   prompt and reads it to EOF; under harbor's exec the verifier's stdin is a pipe that never
   closes, so codex hangs before its first API call (exit 124 after the judge timeout).

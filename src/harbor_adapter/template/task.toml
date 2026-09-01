@@ -7,12 +7,14 @@ tags = ["post-training", "llm", "fine-tuning", "gpu"]
 
 # Resources mirror src/commit_utils/single_task.sub (request_cpus = 16,
 # request_memory = 131072 MB, request_disk = 400G, one H100 80GB).
+# "H100!" is Modal's opt-out from the automatic H100 -> H200 upgrade (harbor
+# passes gpu_types[0] verbatim as the Modal gpu spec, "H100!:1").
 # Note: harbor passes cpus/memory to Modal as the sandbox request; storage_mb
 # is NOT applied on Modal (the Modal SDK does not support ephemeral-disk
 # requests for Sandboxes), so disk is whatever the H100 host provides.
 [environment]
 gpus = 1
-gpu_types = ["H100"]
+gpu_types = ["H100!"]
 cpus = 16
 memory_mb = 131072
 storage_mb = 409600
@@ -63,7 +65,7 @@ PTB_MODEL_DIR = "/mnt/ptb_final_model"
 # behave the same (model loading, batch sizes, etc.).
 [verifier.environment]
 gpus = 1
-gpu_types = ["H100"]
+gpu_types = ["H100!"]
 cpus = 16
 memory_mb = 131072
 storage_mb = 409600
