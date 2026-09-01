@@ -26,8 +26,10 @@
 #     update_agent_cli.sh upgrades to @latest at run start instead — pass
 #     --cli-version latest (resolved via `npm view` now, so it is recorded) or
 #     an explicit version; harbor installs it in the sandbox at agent setup.
-#   - NOT replicated: `--thinking-display summarized` (harbor's claude-code
-#     agent has a fixed command line); see README "Known Gotchas".
+#   - `--thinking-display summarized` (harbor: --ak thinking_display, upstream
+#     harbor-framework/harbor#3030; needs harbor > 0.22.0). Without it the
+#     stream-json trace carries EMPTY thinking blocks. `--thinking-display
+#     none` omits the flag (pre-#3030 harbor keeps working).
 #
 # Auth: ANTHROPIC_API_KEY for claude-code, or a Claude Max subscription via
 #   export CLAUDE_CODE_OAUTH_TOKEN="$(cat ../../agents/claude_non_api/oauth_token)" CLAUDE_FORCE_OAUTH=1
@@ -46,10 +48,11 @@ while [ $# -gt 0 ]; do
         --cli-version) CLI_VERSION="$2"; shift 2 ;;
         --codex-auth-json) CODEX_AUTH_JSON="$2"; shift 2 ;;
         --effort) EFFORT="$2"; shift 2 ;;
+        --thinking-display) THINKING_DISPLAY="$2"; shift 2 ;;
         --agent-kwarg|--ak) AGENT_KWARGS+=(--ak "$2"); shift 2 ;;
         --delete-volume) DELETE_VOLUME=1; shift ;;
         --) shift; EXTRA=("$@"); break ;;
-        -h|--help) sed -n '2,24p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,36p' "$0"; exit 0 ;;
         *) echo "unknown arg: $1" >&2; exit 2 ;;
     esac
 done
@@ -115,6 +118,11 @@ if [ "$AGENT" = "opencode" ]; then
     done
 fi
 if [ "$AGENT" = "claude-code" ]; then
+    case "$THINKING_DISPLAY" in
+        summarized|omitted) AGENT_KWARGS+=(--ak "thinking_display=$THINKING_DISPLAY") ;;
+        none) ;;   # trace will carry empty thinking blocks
+        *) echo "--thinking-display must be summarized, omitted or none" >&2; exit 2 ;;
+    esac
     [ -n "$EFFORT" ] && [ "$EFFORT" != "none" ] && AGENT_KWARGS+=(--ak "reasoning_effort=$EFFORT")
     AGENT_ENV+=(--ae "BASH_MAX_TIMEOUT_MS=36000000")
     if [ "$CLI_VERSION" = "latest" ]; then

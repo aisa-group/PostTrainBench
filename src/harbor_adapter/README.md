@@ -311,34 +311,24 @@ The trained model itself stays on the run's Modal volume (`modal volume get <vol
 | `BASH_MAX_TIMEOUT_MS=36000000` | `--ae BASH_MAX_TIMEOUT_MS=36000000` (always) |
 | `update_agent_cli.sh`: CLI upgraded to `@latest` at run start, `cli_version.txt` | image pin by default (`opus_5.def` era, 2.1.219); `--cli-version latest` resolves the current release via `npm view` and passes `--ak version=`; `--cli-version x.y.z` pins explicitly. The version that ran is in `result.json` `agent_info` (exported as `cli_version.txt`) |
 | prompt via stdin (`printf '%s' "$PROMPT" \| claude --print …`) | same (harbor's agent) |
-| `--thinking-display summarized` | **not replicated** — see below |
+| `--thinking-display summarized` | `--ak thinking_display=summarized` (wrapper default; `--thinking-display summarized\|omitted\|none`) — see below |
 
-**Known difference — `--thinking-display summarized`.** Harbor's built-in claude-code agent has a
-fixed command line and no kwarg for this flag. It matters for the judges: without it the
-stream-json trace contains `thinking` blocks with **empty** text (verified: opus-4-8 at high
-effort emits non-empty thinking only with the CLI flag; a `thinkingDisplay` key in
-`--settings` does not help). The condor v1.1 traces therefore carry the agent's summarised
-reasoning and the Harbor traces do not. Parity needs a ~20-line custom agent
-(`harbor run --agent <module>:<Class>` subclassing harbor's `ClaudeCode` to append the flag);
-tracked as a follow-up.
+**`--thinking-display summarized` needs harbor > 0.22.0.** Without this flag Claude Code's
+`--print` mode emits `thinking` blocks with **empty** text in the stream-json trace (verified on
+CLI 2.1.252: the summaries appear only with the explicit flag; the `thinkingDisplay` /
+`showThinkingSummaries` settings keys and `CLAUDE_CODE_THINKING_DISPLAY_UPDATES=1` do not help in
+non-interactive mode), so the judges would see none of the agent's reasoning while the condor
+v1.1 traces carry it. Harbor's claude-code agent gained a `thinking_display` kwarg upstream
+([harbor#3030](https://github.com/harbor-framework/harbor/pull/3030), merged 2026-09-01, first
+release after 0.22.0); `run_modal_task.sh` passes `--ak thinking_display=summarized` by default.
+On an older harbor the kwarg is rejected — pass `--thinking-display none` there (the trace then
+has empty thinking blocks, as before). Until the next PyPI release, install harbor from the
+merge commit:
 
-## Other Agents (codex, opencode, gemini)
-
-The task is agent-agnostic: the verifier takes the agent name and model from `PTB_AGENT_NAME` /
-`PTB_AGENT_CONFIG` (passed by `run_modal_task.sh` via `harbor run --ve`; they select the trace
-parser and the judges' harness clause), falling back to harbor's transcript file name
-(`claude-code.txt`, `codex.txt`, `opencode.txt`, `gemini-cli.txt`); `ptb_collect.sh` ships
-whichever transcript exists. Generate the
-task with the matching PostTrainBench agent name so agent-specific prompt clauses match
-(`run_adapter.py --agent-name codex`). What harbor's built-in agents do vs the PTB `solve.sh`:
-
-| PTB agent | Harbor agent | Launch parity | Auth | Status |
-|---|---|---|---|---|
-| `codex`, `codex_non_api[_high/_xhigh]` | `codex` | harbor: `codex exec --json --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check`; wrapper adds `-c model_reasoning_effort` (`--effort`, default high; plain `codex`/`codex_non_api` = `--effort medium`), `model_reasoning_summary=detailed`, `web_search=live` (= `--search`) | `OPENAI_API_KEY`, or subscription `--codex-auth-json agents/codex_non_api/auth.json` (harbor's `CODEX_AUTH_JSON_PATH`) | **tested end to end** (gpt-5.4, API key): transcript parsed, 4 judges, eval — 31 min |
-| `codex_*_reprompt` | — | PTB's resume-and-reprompt loop has no harbor equivalent | | not supported |
-| `opencode` | `opencode` | harbor: `opencode --model=<provider/model> run --format=json --thinking --dangerously-skip-permissions`. The wrapper hands harbor PTB's own `opencode.json` provider block (read from `agents/opencode/solve.sh`) via the `opencode_config` kwarg — needed because harbor only declares the model and e.g. PTB's `zai` is a custom OpenAI-compatible provider with its baseURL — and passes the keys allowed by `agents/opencode/api_keys.json` (`OPENCODE_API_KEY`, `ZAI_API_KEY`, `MODEL_API_KEY`). harbor always npm-installs opencode (no image reuse), so the wrapper pins `opencode-ai@1.17.18` (`opus_5.def`) unless `--cli-version` says otherwise | per PTB's `opencode.json` (`{env:…}`) | **tested end to end** (`zai/glm-5`): transcript parsed, 4 judges, eval. `opencode/…` (OpenCode Zen) needs workspace credit |
-| `gemini` | `gemini-cli` | harbor: `gemini --yolo --model=… --prompt=…` (no `--output-format stream-json`; PTB's `gemini_parser` expects stream-json) | `GEMINI_API_KEY` | **untested**; trace parsing likely degrades |
-| `cursor_cli`, `grok_cli`, `kimi_claude`, `glmx` | — | | | not supported |
+```bash
+uv tool install --force 'harbor[modal] @ git+https://github.com/harbor-framework/harbor.git@6af8d6e3'
+uv pip install --python "$(dirname "$(readlink -f "$(command -v harbor)")")/python" python-socks   # proxy hosts
+```
 
 ## Exporting to the PostTrainBench Results Layout
 
