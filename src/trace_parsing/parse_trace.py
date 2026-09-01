@@ -54,6 +54,20 @@ def main() -> None:
         required=True,
         help="Agent or judge name; used to pick the right parser via substring match.",
     )
+    parser.add_argument(
+        "--raw-only",
+        action="store_true",
+        help=(
+            "Skip structured parsing and copy the trace verbatim, as if no parser "
+            "matched. For an agent that is a repository rather than a CLI: the "
+            "dispatch above is a substring match, so an agent directory named "
+            "'claude_autor' selects the claude parser, which then finds no "
+            "stream-json envelope in a log format it has never seen and writes a "
+            "stub plus one 'NOT PARSABLE' line per input line to stderr. The "
+            "sanitizer still runs -- that is the reason this is a flag here rather "
+            "than an if around the call site."
+        ),
+    )
     parser.add_argument("input", type=Path, help="Path to the trace input file.")
     parser.add_argument(
         "-o",
@@ -67,7 +81,7 @@ def main() -> None:
     if not args.input.exists():
         raise SystemExit(f"Input file not found: {args.input}")
 
-    parse_fn = select_parser(args.agent)
+    parse_fn = None if args.raw_only else select_parser(args.agent)
     if parse_fn is None:
         print(
             f"No structured parser for agent '{args.agent}'; copying raw trace to {args.output}"
