@@ -13,7 +13,9 @@ RESULT_PREFIX_SAFE=$(echo "${MODEL_NAME}" | tr '/:' '_')
 RESULT_DIR="${POST_TRAIN_BENCH_RESULTS_DIR}/baseline/${EVAL_NAME}_${RESULT_PREFIX_SAFE}_${CLUSTER_ID}"
 
 RANDOM_UUID=$(uuidgen)
-TMP_SUBDIR="/tmp/posttrain_baseline_${EVAL_NAME}_${RESULT_PREFIX_SAFE}_${RANDOM_UUID}"
+# See run_task.sh: node-local /tmp is not guaranteed to be the big scratch that
+# the HTCondor submit file reserves. Unset means the upstream /tmp.
+TMP_SUBDIR="${POST_TRAIN_BENCH_TMP_ROOT:-/tmp}/posttrain_baseline_${EVAL_NAME}_${RESULT_PREFIX_SAFE}_${RANDOM_UUID}"
 HF_MERGED="${TMP_SUBDIR}/merged_huggingface"
 TMP_HF_CACHE="/tmp/hf_cache_baseline"
 
@@ -64,10 +66,50 @@ with_record_the_time() {
     return $exit_code
 }
 
+# --env HF_HOME is not enough on its own. huggingface_hub resolves its cache as
+# HF_HUB_CACHE, else HUGGINGFACE_HUB_CACHE, else "$HF_HOME/hub" -- HF_HOME is the
+# lowest-priority of the three. These apptainer execs do not pass --cleanenv, so a
+# host that exports HUGGINGFACE_HUB_CACHE (this cluster does, globally, pointing at
+# the real shared cache) has that value win inside the container, and the overlay
+# mounted at TMP_HF_CACHE is never read. The host path is not bound in, so the hub
+# then materialises it on the container root -- which --writable-tmpfs caps at
+# `sessiondir max size` (64 MiB here) -- and the 3.4 GB download dies as
+# "OSError: [Errno 28] No space left on device" inside file_download.py, four
+# frames below anything that mentions a cache. Naming all three leaves nothing for
+# the ambient environment to decide.
+HF_CACHE_ENV=(
+    --env HF_HOME="${TMP_HF_CACHE}"
+    --env HF_HUB_CACHE="${TMP_HF_CACHE}/hub"
+    --env HUGGINGFACE_HUB_CACHE="${TMP_HF_CACHE}/hub"
+)
+
+# The hub is not the only cache this host redirects. It points seven variables at
+# one root -- UV_CACHE_DIR, PIP_CACHE_DIR, TRITON_CACHE_DIR, XDG_CACHE_HOME,
+# HF_HOME, HUGGINGFACE_HUB_CACHE, TORCH_HOME -- and XDG_CACHE_HOME is the one that
+# matters most, because it is where anything without a variable of its own lands:
+# vLLM's VLLM_CACHE_ROOT defaults to "$XDG_CACHE_HOME/vllm", which is how
+# vllm/modelinfos/ ends up there. None of that root is bound in, so each write goes
+# to the 64 MiB container root and fails -- first as "Error saving model info cache"
+# (survivable), then inside triton's kernel cache as
+# torch._inductor.exc.InductorError: OSError: [Errno 28], which kills EngineCore
+# and takes the vLLM server with it.
+#
+# One bind covers all seven, and the next library's variable too, which naming them
+# individually would not. Binding it through rather than redirecting it also keeps
+# the compiled triton kernels across runs; the alternative costs a recompile per
+# evaluation, and there are up to nine per job. The HF cache is deliberately not
+# reached this way -- the three variables above still point at the overlay, so the
+# scorer cannot write into the shared hub.
+CACHE_BIND=()
+if [ -n "${XDG_CACHE_HOME:-}" ] && [ -d "${XDG_CACHE_HOME}" ]; then
+    CACHE_BIND=(--bind "${XDG_CACHE_HOME}:${XDG_CACHE_HOME}")
+fi
+
 check_cuda() {
     apptainer exec \
         --nv \
-        --env HF_HOME="${TMP_HF_CACHE}" \
+        "${HF_CACHE_ENV[@]}" \
+        "${CACHE_BIND[@]}" \
         --writable-tmpfs \
         --bind "${REPO_ROOT}:${REPO_ROOT}" \
         --bind "${HF_MERGED}:${TMP_HF_CACHE}" \
@@ -78,8 +120,9 @@ check_cuda() {
 run_eval() {
     apptainer exec \
         --nv \
-        --env HF_HOME="${TMP_HF_CACHE}" \
-        --env OPENAI_API_KEY="${OPENAI_API_KEY}" \
+        "${HF_CACHE_ENV[@]}" \
+        "${CACHE_BIND[@]}" \
+        --env OPENAI_API_KEY="${OPENAI_API_KEY:-}" \
         --env VLLM_API_KEY="inspectai" \
         --env VLLM_LOGGING_LEVEL="DEBUG" \
         --writable-tmpfs \
