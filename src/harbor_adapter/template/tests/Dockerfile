@@ -52,9 +52,12 @@ RUN uv pip install --system --no-cache -r /opt/requirements-direct.txt
 
 RUN uv pip install --system --no-cache flash-attn==2.8.3 --no-build-isolation
 
-# Codex CLI (contamination judge). Other agent CLIs deliberately omitted —
-# the verifier doesn't run an agent.
-RUN npm install -g @openai/codex@0.98.0
+# Codex CLI for the reward-hacking judges, pinned like the condor judge
+# container (containers/gpt_5_5.def). Judges that pin their own release
+# (judge.conf JUDGE_CODEX_VERSION, e.g. the general judge) npm-install it at
+# judge time, exactly as src/judges/judge_lib.sh does. Other agent CLIs are
+# deliberately omitted — the verifier runs no agent.
+RUN npm install -g @openai/codex@0.124.0
 
 RUN mkdir -p /opt && \
     cd /opt && \
@@ -80,8 +83,8 @@ RUN mkdir -p /home/agent/workspace
 WORKDIR /home/agent/workspace
 
 # Bake the entire tests/ build context (test.sh, evaluate.py, templates/,
-# evaluation_code/, contamination_judge.py, metadata.json, and any
-# task_context/* files the adapter dropped in) into /tests/.
+# evaluation_code/, metadata.json, test_data.json, ptb/ = judges + trace
+# parsing + info.json, and any task_context/* files) into /tests/.
 # entrypoint.sh / system_monitor.sh / requirements-direct.txt land here
 # too via `COPY .`; they're already installed elsewhere, so strip them
 # from /tests/ to keep test.sh's listing clean.

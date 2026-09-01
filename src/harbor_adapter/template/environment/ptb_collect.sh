@@ -10,6 +10,8 @@
 #      model reaches the separate verifier: harbor's artifact download goes
 #      through Modal's filesystem API, which caps single files at 5 GiB.
 #
+#   3. Agent transcript -> /logs/artifacts/agent_logs (for the judges).
+#
 #   2. Code + data snapshot -> /logs/artifacts/workspace. Harbor always
 #      transfers the conventional /logs/artifacts dir to the host and into the
 #      verifier, so the contamination judge sees the agent's code (and its
@@ -68,6 +70,11 @@ SKIP_EXT = {".safetensors", ".bin", ".pt", ".pth", ".ckpt", ".gguf", ".npy", ".n
 cands, skipped_ext, skipped_big = [], 0, 0
 for root, dirs, files in os.walk(ws):
     dirs[:] = [d for d in dirs if d not in PRUNE]
+    if root == ws:
+        # final_model travels via the shared volume; the verifier symlinks it
+        # into the judge's task dir. Keeping a partial copy (config/tokenizer
+        # files pass the size filter) would shadow that symlink.
+        dirs[:] = [d for d in dirs if d != "final_model"]
     for f in files:
         p = os.path.join(root, f)
         if os.path.islink(p) or not os.path.isfile(p):
@@ -94,5 +101,19 @@ PY
 # Record what was left behind, for postmortems.
 { echo "# workspace top-level sizes at collection time"; du -sh "$WORKSPACE"/* 2>/dev/null; } \
     > "$SNAPSHOT_DIR/.ptb_workspace_sizes.txt" || true
+
+# ---- 3. agent trace -> /logs/artifacts/agent_logs ---------------------------
+# Harbor's installed agents tee their transcript to /logs/agent/<agent>.txt
+# (claude-code.txt, codex.txt, ...). Separate verifiers never receive
+# /logs/agent, so ship the transcripts through the conventional artifacts dir:
+# the verifier's judges read them as solve_out.txt / solve_parsed.txt.
+LOGS_DST="${PTB_AGENT_LOGS_DST:-/logs/artifacts/agent_logs}"
+rm -rf "$LOGS_DST"; mkdir -p "$LOGS_DST"
+n=0
+for f in /logs/agent/*.txt; do
+    [ -s "$f" ] || continue
+    cp "$f" "$LOGS_DST/" && n=$((n+1))
+done
+echo "[trace] staged $n non-empty agent transcript(s) -> $LOGS_DST: $(ls "$LOGS_DST" 2>/dev/null | tr '\n' ' ')"
 
 echo "=== ptb_collect: finished $(date -u +%FT%TZ) ==="

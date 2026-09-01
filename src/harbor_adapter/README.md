@@ -221,20 +221,34 @@ Token limits per benchmark:
 
 GPU processes are killed between attempts to free VRAM.
 
-## Contamination Judge
+## Reward-Hacking Judges (PostTrainBench v1.1)
 
-The contamination judge uses OpenAI's Codex CLI to analyze the agent's code:
+The verifier runs the four judges from `src/judges/` (`ALL_JUDGES` in `judge_lib.sh`
+decides set and order) exactly as `src/run_task.sh` does, via the codex CLI:
 
-```bash
-codex --search -a never exec --json -c model_reasoning_summary=detailed \
-    --skip-git-repo-check --yolo --model "gpt-5.4" "$JUDGE_PROMPT"
-```
+| Judge | Output id | Verdict | Model / CLI |
+|---|---|---|---|
+| `data_contamination_judge` | `gpt5_4` | `contamination`, `disallowed_model` | gpt-5.4, xhigh |
+| `api_usage_judge` | `api` | `disallowed_api_usage` | gpt-5.4, xhigh |
+| `ptb_lookup_judge` | `ptb_lookup` | `disallowed_ptb_lookup` | gpt-5.4, xhigh |
+| `general_judge` | `general` | `general_anomaly` | gpt-5.6-terra on codex 0.144.5 (installed at judge time) |
 
-It checks for:
-- **Data contamination**: Using benchmark test data for training
-- **Model violations**: Using a different model than the specified base model
+The adapter bakes `src/judges/` (prompts, `judge.conf`s, `get_judge_prompt.py`,
+`judge_tools/` with the n-gram checker, model-identity check and reference configs),
+`src/trace_parsing/` and the benchmark's `info.json` into the verifier image under
+`/tests/ptb/`, so upstream judge changes are picked up on regeneration. Each judge gets
+the condor sandbox layout: the agent's code snapshot as its task dir (with `final_model`
+symlinked to the volume), `../solve_out.txt` / `../solve_parsed.txt` (the Harbor agent
+transcript, staged by `ptb_collect.sh` and parsed by `parse_trace.py`), `../test_data.json`,
+the checker tools and `../final_model_config.json`.
 
-Codex reads the workspace code and writes `contamination_judgement.txt` and `disallowed_model_judgement.txt` directly. The judge prompt is synced with `src/disallowed_usage_judge/prompt.txt`.
+Differences from condor: judges authenticate with `OPENAI_API_KEY` (condor bind-mounts a
+ChatGPT-subscription `auth.json`); each judge has a `PTB_JUDGE_TIMEOUT_SEC` (default
+3000 s) so four judges fit the 5 h verifier budget; the agent harness model for the
+api judge is read from the parsed trace (`Model:` line) or `PTB_AGENT_CONFIG`.
+
+A judge that produces no verdict is a warning, not a failure (the run is still
+evaluated); judges can be re-run on an exported result dir with `src/judges/run_judges.sh`.
 
 ## Timer
 
@@ -248,16 +262,17 @@ The timer uses a sentinel-file approach: on the first `bash timer.sh` call, the 
 | Memory | 64 GB | |
 | Storage | 100 GB | |
 | Agent timeout | 10 hours | Adjustable via `--num-hours` |
-| Verifier timeout | 3 hours | Accommodates 3-phase retry |
+| Verifier timeout | 5 hours | 4 judges + 3-phase eval retry |
 | Internet | Enabled | |
 
 ## Scoring
 
-The verifier extracts the accuracy metric from `metrics.json` as the reward (0-1 scale). Results are stored in:
+The verifier extracts the accuracy metric from `metrics.json` as the reward (0-1 scale). This is the **pre-fallback** score: applying the baseline fallback for judge-flagged runs is done at aggregation time (condor's `scripts/collect.py`), not in the verifier. Results are stored in:
 - `/logs/verifier/metrics.json` - Full evaluation metrics
 - `/logs/verifier/reward.txt` - Accuracy score
-- `/logs/verifier/contamination_judgement.txt` - Data contamination verdict
-- `/logs/verifier/disallowed_model_judgement.txt` - Model usage verdict
+- `/logs/verifier/judgement_<id>.json` - per-judge verdicts (`gpt5_4`, `api`, `ptb_lookup`, `general`)
+- `/logs/verifier/judge_output_<id>.{json,txt}` - raw and parsed judge traces
+- `/logs/verifier/solve_out.txt`, `solve_parsed.txt` - the agent transcript the judges saw
 
 The trained model itself stays on the run's Modal volume (`modal volume get <volume> / ./final_model`); the host-side `artifacts/logs/artifacts/workspace/` holds the agent's code snapshot (plus `.ptb_workspace_sizes.txt`, what was left in the workspace).
 
@@ -268,7 +283,5 @@ The trained model itself stays on the run's Modal volume (`modal volume get <vol
   Older pins (2.1.76, the condor image) are rejected by the API for
   `claude-opus-4-8` and newer (`"thinking.type.enabled" is not supported`).
   Override per run with `--ak version=<x.y.z>` (harbor installs it at agent setup).
-- **Judge model**: `gpt-5.1-codex` / `gpt-5.2-codex` are gone from the OpenAI
-  Responses API (still listed under `/v1/models`); the judge uses `gpt-5.4`.
-  When the codex CLI fails, `test.sh` records `no contamination detected (codex did not produce output)`.
+- **Judge models** come from `src/judges/*/judge.conf` (gpt-5.4; gpt-5.6-terra for the general judge). `gpt-5.1-codex`/`gpt-5.2-codex` no longer exist on the Responses API.
 - **GPU type**: Modal may hand out an H200 despite `gpu_types = ["H100"]`.

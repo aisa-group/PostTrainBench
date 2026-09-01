@@ -12,7 +12,9 @@ Harbor tasks stay in lockstep with the condor pipeline (src/run_task.sh):
   - src/eval/general/get_prompt.py      the agent prompt (rendered by calling
                                         it, so the Harbor instruction is
                                         byte-for-byte the condor prompt)
-  - src/judges/judge_tools/             contamination checker given to the agent
+  - src/judges/                         the reward-hacking judges (prompts,
+                                        configs, tools) baked into the verifier
+  - src/trace_parsing/                  trace parser used by the verifier
 """
 
 import json
@@ -312,11 +314,7 @@ fi
                     shutil.copy(item, dst)
 
         if for_tests:
-            # v1.0 judge prompt builder; replaced by src/judges in the
-            # verifier rework. Verifier-only: the agent must not see it.
-            judge_src = TEMPLATE_DIR / "environment" / "contamination_judge.py"
-            if judge_src.exists():
-                shutil.copy(judge_src, target_dir / "contamination_judge.py")
+            self._copy_judge_tree(target_dir, benchmark_id)
 
         metadata = {
             "benchmark_id": benchmark_id,
@@ -329,6 +327,47 @@ fi
         }
         (target_dir / "metadata.json").write_text(json.dumps(metadata, indent=2))
 
+    def _copy_judge_tree(self, tests_dir: Path, benchmark_id: str) -> None:
+        """Verifier-only inputs for the v1.1 reward-hacking judges.
+
+        tests/ptb/ reproduces the slice of the PostTrainBench repo layout the
+        judge tooling resolves paths against (get_judge_prompt.py uses
+        REPO_ROOT = src/judges/../..; sanitize_trace.py wants REPO_ROOT/.env):
+
+          ptb/src/judges/            get_judge_prompt.py, judge_lib.sh (judge set,
+                                     order, defaults), <judge>/{judge.conf,prompt.md},
+                                     judge_tools/ (checkers + reference_configs/)
+          ptb/src/trace_parsing/     parse_trace.py + parsers + sanitize_trace.py
+          ptb/src/eval/tasks/<id>/info.json
+          ptb/.env                   empty: no host secrets in the image
+          test_data.json             n-gram checker reference
+        """
+        judges_src = self.posttrainbench_root / "src" / "judges"
+        judges_dst = tests_dir / "ptb" / "src" / "judges"
+        judges_dst.mkdir(parents=True, exist_ok=True)
+        for name in ("get_judge_prompt.py", "judge_lib.sh"):
+            shutil.copy(judges_src / name, judges_dst / name)
+        shutil.copytree(judges_src / "judge_tools", judges_dst / "judge_tools", dirs_exist_ok=True)
+        for conf in sorted(judges_src.glob("*/judge.conf")):
+            judge_dir = conf.parent
+            shutil.copytree(judge_dir, judges_dst / judge_dir.name, dirs_exist_ok=True)
+
+        tp_src = self.posttrainbench_root / "src" / "trace_parsing"
+        tp_dst = tests_dir / "ptb" / "src" / "trace_parsing"
+        tp_dst.mkdir(parents=True, exist_ok=True)
+        for py in tp_src.glob("*.py"):
+            shutil.copy(py, tp_dst / py.name)
+
+        info_dst = tests_dir / "ptb" / "src" / "eval" / "tasks" / benchmark_id
+        info_dst.mkdir(parents=True, exist_ok=True)
+        shutil.copy(self._task_src(benchmark_id) / "info.json", info_dst / "info.json")
+
+        (tests_dir / "ptb" / ".env").write_text(
+            "# Intentionally empty: sanitize_trace.py reads *_API_KEY values from here.\n"
+        )
+
+        shutil.copy(self._test_data_path(benchmark_id), tests_dir / "test_data.json")
+
     # ---------------------------------------------------------------- tests
 
     def generate_tests(
@@ -340,7 +379,8 @@ fi
     ) -> None:
         """tests/: the verifier image build context (harbor separate-verifier
         mode builds it into a container the agent never touches). Must
-        self-contain test.sh and everything it reads, under /tests/."""
+        self-contain test.sh and everything it reads, under /tests/ —
+        including the judge tree (see _copy_judge_tree)."""
         tests_dir = task_dir / "tests"
         tests_dir.mkdir(parents=True, exist_ok=True)
 

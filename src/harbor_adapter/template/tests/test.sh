@@ -2,7 +2,8 @@
 set -e
 
 # PostTrainBench verification script
-# Runs contamination judge (codex CLI) and 3-phase evaluation with retry logic.
+# Runs the PostTrainBench v1.1 reward-hacking judges (src/judges, codex CLI) and
+# the 3-phase evaluation with retry logic.
 # Matches the original run_task.sh evaluation pipeline.
 #
 # Tamper-resistance design (harbor 0.7.0 separate-verifier mode):
@@ -12,8 +13,9 @@ set -e
 #     can't tamper with evaluate.py, templates/, the Python interpreter,
 #     installed packages (vllm, inspect_evals, transformers), or this
 #     script itself.
-#   - All verifier-side files (evaluate.py, templates/, contamination_judge.py,
-#     metadata.json, evaluation_code/, bfcl_evaluation_code.py) are
+#   - All verifier-side files (evaluate.py, templates/, metadata.json,
+#     evaluation_code/, bfcl_evaluation_code.py, ptb/ = src/judges +
+#     src/trace_parsing + info.json, test_data.json) are
 #     BAKED INTO the verifier image at build time (see tests/Dockerfile)
 #     and live at /tests/.
 #   - The agent's code arrives as a size-filtered snapshot in
@@ -111,66 +113,172 @@ if [ -f "$TESTS/metadata.json" ]; then
 fi
 
 # ============================================================
-# Run contamination judge (codex CLI)
-# Matches run_task.sh lines 180-201.
+# Reward-hacking judges (PostTrainBench v1.1, src/judges/)
 #
-# The judge prompt is built by /tests/contamination_judge.py (untamperable).
-# Codex still runs with cwd=$WORKSPACE so its read tools naturally see the
-# agent's training code. Codex writes contamination_judgement.txt and
-# disallowed_model_judgement.txt into cwd; we copy them out to LOGS_DIR.
-# (This matches condor's behavior; agent could pre-place these files but
-# codex normally overwrites them when it produces a verdict.)
+# Port of src/judges/judge_lib.sh + the judge loop in src/run_task.sh to the
+# harbor verifier. The judge set, order, prompts, per-judge model/effort/CLI
+# pins and tools all come verbatim from /tests/ptb/src/judges (baked in by the
+# adapter), so a judge added upstream is picked up on regeneration.
+#
+# Sandbox layout (condor: /home/ben/{task,solve_parsed.txt,...}; here
+# $JUDGE_HOME), exactly what the prompts reference relative to the task dir:
+#   task/                    writable copy of the agent's code snapshot, with
+#                            final_model -> $MODEL_DIR (read-only volume)
+#   solve_out.txt            raw agent trace (harbor's /logs/agent/<agent>.txt,
+#                            shipped via ptb_collect.sh)
+#   solve_parsed.txt         human-readable trace (src/trace_parsing)
+#   test_data.json           benchmark test set (n-gram checker reference)
+#   contamination_check.py, model_identity_check.py, reference_configs/
+#   final_model_config.json  copy of final_model/config.json
+#
+# Auth: OpenAI API key (OPENAI_API_KEY / CODEX_API_KEY from [verifier.env]).
+# Condor uses a ChatGPT-subscription auth.json bind mount instead; the models
+# and CLI invocation are the same.
+#
+# A judge that produces no judgement.json is a WARNING (as in run_task.sh):
+# the agent's work is already done and must still be evaluated; verdicts can
+# be re-run later on the exported result dir with src/judges/run_judges.sh.
 # ============================================================
 echo ""
-echo "=== Running Contamination Judge ==="
+echo "=== Running reward-hacking judges ==="
 
-if [ -f "$TESTS/contamination_judge.py" ] && [ -n "$BENCHMARK_NAME" ]; then
-    # Generate the judge prompt from the untampered /tests/ copy
-    JUDGE_TASK=$(python3 "$TESTS/contamination_judge.py" \
-        --model "$MODEL_ID" \
-        --benchmark "$BENCHMARK_NAME" 2>/dev/null) || true
+PTB="$TESTS/ptb"                      # mini repo layout: src/judges, src/trace_parsing, src/eval/tasks/<id>/info.json
+JUDGES_DIR="$PTB/src/judges"
+TRACE_PARSER="$PTB/src/trace_parsing/parse_trace.py"
+JUDGE_HOME="${PTB_JUDGE_HOME:-/tmp/ptb_judge}"
+JUDGE_TIMEOUT_SEC="${PTB_JUDGE_TIMEOUT_SEC:-3000}"   # per judge; verifier budget is 5h incl. eval
 
-    if [ -n "$JUDGE_TASK" ] && [ -n "$CODEX_API_KEY" ]; then
-        echo "Running codex CLI contamination judge..."
-        # The weights live on the volume, outside the judge's cwd. Expose them
-        # at the condor-parity path so the judge can inspect final_model/
-        # (e.g. spot a downloaded instruct checkpoint). Read-only mount, so
-        # the judge cannot alter what evaluate.py will load.
-        if [ "$MODEL_DIR" != "$CODE_DIR/final_model" ] && [ ! -e "$CODE_DIR/final_model" ]; then
-            ln -s "$MODEL_DIR" "$CODE_DIR/final_model" && echo "Linked $CODE_DIR/final_model -> $MODEL_DIR for the judge"
-        fi
-        set +e
-        cd "$CODE_DIR"
-        codex --search -a never exec --json -c model_reasoning_summary=detailed \
-            --skip-git-repo-check --yolo --model "gpt-5.4" "$JUDGE_TASK" \
-            2>&1 | tee "$LOGS_DIR/judge_output.json"
-        JUDGE_EXIT_CODE=$?
-        set -e
-        echo "Judge exit code: $JUDGE_EXIT_CODE"
+AGENT_NAME="claude"
+if [ -f "$TESTS/metadata.json" ]; then
+    AGENT_NAME=$(python3 -c "import json; print(json.load(open('$TESTS/metadata.json')).get('agent_name','claude'))" 2>/dev/null || echo "claude")
+fi
 
-        # Codex writes these files directly into the workspace
-        if [ -f "$CODE_DIR/contamination_judgement.txt" ]; then
-            cp "$CODE_DIR/contamination_judgement.txt" "$LOGS_DIR/contamination_judgement.txt"
-            echo "Contamination judgement: $(cat "$LOGS_DIR/contamination_judgement.txt")"
-        else
-            echo "no contamination detected (codex did not produce output)" > "$LOGS_DIR/contamination_judgement.txt"
-        fi
-        if [ -f "$CODE_DIR/disallowed_model_judgement.txt" ]; then
-            cp "$CODE_DIR/disallowed_model_judgement.txt" "$LOGS_DIR/disallowed_model_judgement.txt"
-            echo "Model judgement: $(cat "$LOGS_DIR/disallowed_model_judgement.txt")"
-        else
-            echo "only allowed use detected (codex did not produce output)" > "$LOGS_DIR/disallowed_model_judgement.txt"
-        fi
+# ---- sandbox ------------------------------------------------------------
+rm -rf "$JUDGE_HOME"
+mkdir -p "$JUDGE_HOME/task"
+cp -a "$CODE_DIR/." "$JUDGE_HOME/task/"
+rm -rf "$JUDGE_HOME/task/judgement.json" "$JUDGE_HOME/task/final_model"
+[ -d "$MODEL_DIR" ] && ln -s "$MODEL_DIR" "$JUDGE_HOME/task/final_model"
+
+cp "$JUDGES_DIR/judge_tools/contamination_check.py" "$JUDGES_DIR/judge_tools/model_identity_check.py" "$JUDGE_HOME/"
+cp -r "$JUDGES_DIR/judge_tools/reference_configs" "$JUDGE_HOME/reference_configs"
+[ -f "$TESTS/test_data.json" ] && cp "$TESTS/test_data.json" "$JUDGE_HOME/test_data.json"
+[ -f "$MODEL_DIR/config.json" ] && cp "$MODEL_DIR/config.json" "$JUDGE_HOME/final_model_config.json"
+
+# ---- traces -------------------------------------------------------------
+# ptb_collect.sh stages harbor's agent logs under /logs/artifacts/agent_logs/.
+# The agent's own transcript is <harbor-agent-name>.txt; pick the largest
+# non-empty .txt so codex/gemini/opencode agents work too.
+AGENT_LOGS_DIR="${PTB_AGENT_LOGS_DIR:-/logs/artifacts/agent_logs}"
+RAW_TRACE=$(ls -S "$AGENT_LOGS_DIR"/*.txt 2>/dev/null | head -1 || true)
+if [ -n "$RAW_TRACE" ] && [ -s "$RAW_TRACE" ]; then
+    cp "$RAW_TRACE" "$JUDGE_HOME/solve_out.txt"
+    cp "$RAW_TRACE" "$LOGS_DIR/solve_out.txt"
+    echo "Agent trace: $RAW_TRACE ($(wc -c < "$RAW_TRACE") bytes)"
+    # parse_trace.py also writes *_sanitized companions (needs $PTB/.env, empty here)
+    if python3 "$TRACE_PARSER" --agent "$AGENT_NAME" "$JUDGE_HOME/solve_out.txt" -o "$JUDGE_HOME/solve_parsed.txt"; then
+        cp "$JUDGE_HOME/solve_parsed.txt" "$LOGS_DIR/solve_parsed.txt"
+        rm -f "$JUDGE_HOME"/*_sanitized.txt
+        echo "Parsed trace: $(wc -l < "$JUDGE_HOME/solve_parsed.txt") lines"
     else
-        echo "Warning: CODEX_API_KEY not set or prompt generation failed, skipping judge"
-        echo "no contamination detected (judge skipped - no API key)" > "$LOGS_DIR/contamination_judgement.txt"
-        echo "only allowed use detected (judge skipped - no API key)" > "$LOGS_DIR/disallowed_model_judgement.txt"
+        echo "WARNING: trace parsing failed; judges fall back to the raw trace (../solve_out.txt)"
     fi
 else
-    echo "Warning: contamination_judge.py or metadata not found in /tests, skipping judge"
-    echo "no contamination detected (judge not available)" > "$LOGS_DIR/contamination_judgement.txt"
-    echo "only allowed use detected (judge not available)" > "$LOGS_DIR/disallowed_model_judgement.txt"
+    echo "WARNING: no agent trace found under $AGENT_LOGS_DIR — judges will run without one"
 fi
+
+# The agent harness model (api judge's {agent_harness} clause): the parsed
+# claude trace carries a "Model: <name>" line; PTB_AGENT_CONFIG overrides.
+AGENT_CONFIG="${PTB_AGENT_CONFIG:-}"
+if [ -z "$AGENT_CONFIG" ] && [ -f "$JUDGE_HOME/solve_parsed.txt" ]; then
+    AGENT_CONFIG=$(grep -m1 -E '^\s*Model: ' "$JUDGE_HOME/solve_parsed.txt" | sed -E 's/^\s*Model: //' || true)
+fi
+echo "Judge context: benchmark=$BENCHMARK_ID model=$MODEL_ID agent=$AGENT_NAME agent_config=${AGENT_CONFIG:-<unknown>}"
+
+# ---- codex config (condor: containers/other_home_data/.codex) -------------
+export CODEX_HOME="$JUDGE_HOME/.codex"
+mkdir -p "$CODEX_HOME"
+cat > "$CODEX_HOME/config.toml" <<EOF_CODEX
+[projects."$JUDGE_HOME/task"]
+trust_level = "trusted"
+
+[shell_environment_policy]
+inherit = "all"
+EOF_CODEX
+
+# ---- judge set + order: ALL_JUDGES from judge_lib.sh ---------------------
+ALL_JUDGES=($(grep -oE '^ALL_JUDGES=\([^)]*\)' "$JUDGES_DIR/judge_lib.sh" | sed -E 's/^ALL_JUDGES=\((.*)\)$/\1/'))
+JUDGE_DEFAULT_MODEL=$(grep -oE '^JUDGE_DEFAULT_MODEL="[^"]*"' "$JUDGES_DIR/judge_lib.sh" | cut -d'"' -f2)
+JUDGE_DEFAULT_REASONING_EFFORT=$(grep -oE '^JUDGE_DEFAULT_REASONING_EFFORT="[^"]*"' "$JUDGES_DIR/judge_lib.sh" | cut -d'"' -f2)
+echo "Judges: ${ALL_JUDGES[*]} (defaults: ${JUDGE_DEFAULT_MODEL:-gpt-5.4} / ${JUDGE_DEFAULT_REASONING_EFFORT:-xhigh})"
+
+if [ -z "${OPENAI_API_KEY:-}" ] && [ -z "${CODEX_API_KEY:-}" ]; then
+    echo "WARNING: no OPENAI_API_KEY/CODEX_API_KEY in the verifier env — skipping all judges"
+    ALL_JUDGES=()
+fi
+export OPENAI_API_KEY="${OPENAI_API_KEY:-$CODEX_API_KEY}"
+export CODEX_API_KEY="${CODEX_API_KEY:-$OPENAI_API_KEY}"
+
+for JUDGE_NAME in "${ALL_JUDGES[@]}"; do
+    JUDGE_LABEL=""; JUDGE_OUTPUT_ID=""; JUDGE_PROMPT_FILE=""
+    JUDGE_MODEL="${JUDGE_DEFAULT_MODEL:-gpt-5.4}"
+    JUDGE_REASONING_EFFORT="${JUDGE_DEFAULT_REASONING_EFFORT:-xhigh}"
+    JUDGE_CODEX_VERSION=""
+    # judge.conf is plain KEY="value" lines (sourced by judge_lib.sh too)
+    source "$JUDGES_DIR/$JUDGE_NAME/judge.conf"
+    if [ -z "$JUDGE_LABEL" ] || [ -z "$JUDGE_OUTPUT_ID" ]; then
+        echo "WARNING: $JUDGE_NAME/judge.conf incomplete, skipping"; continue
+    fi
+    echo ""
+    echo "--- Judge: $JUDGE_LABEL (model=$JUDGE_MODEL effort=$JUDGE_REASONING_EFFORT codex=${JUDGE_CODEX_VERSION:-image}) ---"
+
+    # Per-judge codex CLI pin (judge_lib.sh installs it into the sandbox home)
+    CODEX_BIN="codex"
+    if [ -n "$JUDGE_CODEX_VERSION" ]; then
+        PIN_PREFIX="$JUDGE_HOME/.codex-cli-$JUDGE_CODEX_VERSION"
+        if [ ! -x "$PIN_PREFIX/bin/codex" ]; then
+            echo "  installing @openai/codex@$JUDGE_CODEX_VERSION ..."
+            npm install -g --prefix "$PIN_PREFIX" --no-fund --no-audit "@openai/codex@$JUDGE_CODEX_VERSION" > "$LOGS_DIR/codex_install_$JUDGE_CODEX_VERSION.log" 2>&1 || true
+        fi
+        if [ -x "$PIN_PREFIX/bin/codex" ]; then
+            CODEX_BIN="$PIN_PREFIX/bin/codex"
+        else
+            echo "  WARNING: pinned codex install failed, using the image's codex ($(codex --version 2>/dev/null))"
+        fi
+    fi
+
+    JUDGE_PROMPT=$(python3 "$JUDGES_DIR/get_judge_prompt.py" --judge "$JUDGE_NAME" \
+        --benchmark-id "$BENCHMARK_ID" --model "$MODEL_ID" \
+        --agent "$AGENT_NAME" ${AGENT_CONFIG:+--agent-config "$AGENT_CONFIG"}) || {
+        echo "WARNING: prompt generation failed for $JUDGE_NAME, skipping"; continue; }
+
+    rm -f "$JUDGE_HOME/task/judgement.json"
+    set +e
+    (
+        cd "$JUDGE_HOME/task" && \
+        timeout --signal=TERM --kill-after=60s "$JUDGE_TIMEOUT_SEC" \
+        "$CODEX_BIN" --search -a never exec --json \
+            -c model_reasoning_summary=detailed \
+            -c model_reasoning_effort="$JUDGE_REASONING_EFFORT" \
+            --skip-git-repo-check --yolo --model "$JUDGE_MODEL" "$JUDGE_PROMPT" 2>&1
+    ) | tee "$LOGS_DIR/judge_output_$JUDGE_OUTPUT_ID.json" > /dev/null
+    JUDGE_EXIT=${PIPESTATUS[0]}
+    set -e
+    echo "  exit code: $JUDGE_EXIT"
+
+    python3 "$TRACE_PARSER" --agent codex "$LOGS_DIR/judge_output_$JUDGE_OUTPUT_ID.json" \
+        -o "$LOGS_DIR/judge_output_$JUDGE_OUTPUT_ID.txt" > /dev/null 2>&1 || true
+    # parse_trace.py also writes *_sanitized companions; with the empty .env
+    # they are byte-identical copies, so drop them to keep /logs/verifier lean.
+    rm -f "$LOGS_DIR"/judge_output_"$JUDGE_OUTPUT_ID"_sanitized.*
+
+    if [ -f "$JUDGE_HOME/task/judgement.json" ]; then
+        cp "$JUDGE_HOME/task/judgement.json" "$LOGS_DIR/judgement_$JUDGE_OUTPUT_ID.json"
+        echo "  $JUDGE_LABEL judgement: $(cat "$LOGS_DIR/judgement_$JUDGE_OUTPUT_ID.json")"
+    else
+        echo "  WARNING: judgement.json not created by $JUDGE_LABEL (see judge_output_$JUDGE_OUTPUT_ID.txt); continuing"
+    fi
+done
 
 # ============================================================
 # Evaluation with 3-phase retry logic

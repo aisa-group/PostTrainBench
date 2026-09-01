@@ -41,8 +41,9 @@ retries = 3
 # tests/Dockerfile). test.sh + evaluate.py + templates/ +
 # contamination_judge.py + metadata.json are baked INTO the image at
 # build time; harbor does not upload tests/ at runtime for separate envs.
+# 5h: four codex judges at xhigh reasoning (src/judges) + the 3-phase eval retry.
 [verifier]
-timeout_sec = 10800.0
+timeout_sec = 18000.0
 environment_mode = "separate"
 
 [verifier.env]
