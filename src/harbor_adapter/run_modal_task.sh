@@ -34,6 +34,9 @@
 # Auth: ANTHROPIC_API_KEY for claude-code, or a Claude Max subscription via
 #   export CLAUDE_CODE_OAUTH_TOKEN="$(cat ../../agents/claude_non_api/oauth_token)" CLAUDE_FORCE_OAUTH=1
 # OPENAI_API_KEY is always required (contamination judge in the verifier).
+# Both keys fall back to the repo-root .env (condor's canonical key store)
+# when not exported; an exported var always wins. PTB_ENV_FILE overrides
+# the .env path.
 set -euo pipefail
 
 TASK=""; AGENT="claude-code"; MODEL=""; JOB_NAME=""; DELETE_VOLUME=0
@@ -52,13 +55,28 @@ while [ $# -gt 0 ]; do
         --agent-kwarg|--ak) AGENT_KWARGS+=(--ak "$2"); shift 2 ;;
         --delete-volume) DELETE_VOLUME=1; shift ;;
         --) shift; EXTRA=("$@"); break ;;
-        -h|--help) sed -n '2,36p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,39p' "$0"; exit 0 ;;
         *) echo "unknown arg: $1" >&2; exit 2 ;;
     esac
 done
 [ -n "$TASK" ] && [ -n "$MODEL" ] || { echo "need --task and --model (see --help)" >&2; exit 2; }
 [ -d "$TASK" ] || { echo "task dir not found: $TASK" >&2; exit 2; }
-[ -n "${OPENAI_API_KEY:-}" ] || { echo "OPENAI_API_KEY is not set (needed by the verifier's judge)" >&2; exit 2; }
+
+# API keys: an exported var wins; otherwise fall back to the repo-root .env
+# (the condor pipeline's canonical key store). Read directly, like
+# src/judges/rerun/commit_rerun_judges.sh — never source set_env_vars.sh (its
+# module-loading block fails off the head node). Only the keys this flow uses
+# are loaded; the rest of .env never enters the process env.
+ENV_FILE="${PTB_ENV_FILE:-$(cd "$(dirname "$0")/../.." && pwd)/.env}"
+for _k in OPENAI_API_KEY ANTHROPIC_API_KEY; do
+    if [ -z "${!_k:-}" ] && [ -f "$ENV_FILE" ]; then
+        _v="$(grep -E "^${_k}=" "$ENV_FILE" | head -1 | cut -d= -f2- | sed "s/^[\"']//; s/[\"']\$//" || true)"
+        if [ -n "$_v" ]; then
+            export "$_k=$_v"
+        fi
+    fi
+done
+[ -n "${OPENAI_API_KEY:-}" ] || { echo "OPENAI_API_KEY is not set and not found in $ENV_FILE (needed by the verifier's judge)" >&2; exit 2; }
 
 # The `modal` CLI must come from the same environment as `harbor` (harbor's
 # venv has the modal extra; on hosts with an HTTP proxy it also needs the

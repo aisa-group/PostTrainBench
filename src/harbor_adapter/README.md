@@ -130,6 +130,11 @@ specific Claude Code CLI in the sandbox instead of the image's pinned one;
 
 - The verifier receives `OPENAI_API_KEY` as both `OPENAI_API_KEY` and `CODEX_API_KEY` (codex CLI reads `CODEX_API_KEY`).
 - For arenahardwriting and healthbench, `OPENAI_API_KEY` is also passed to the agent environment since their `evaluate.py` scripts call the OpenAI API for judging.
+- `run_modal_task.sh` resolves both keys like the condor tooling does: an exported variable
+  wins; otherwise it reads exactly these two keys from the repo-root `.env` (the condor
+  pipeline's canonical key store — `PTB_ENV_FILE` overrides the path). The other provider
+  keys in `.env` are never loaded into the process env, so nothing outside the allowlist
+  can reach a sandbox.
 
 ## Task Structure
 
