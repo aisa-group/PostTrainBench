@@ -1,0 +1,121 @@
+version = "1.0"
+
+[metadata]
+author_name = "PostTrainBench Team"
+category = "ml-training"
+tags = ["post-training", "llm", "fine-tuning", "gpu"]
+
+# Resources mirror src/commit_utils/single_task.sub (request_cpus = 16,
+# request_memory = 131072 MB, request_disk = 400G, one H100 80GB).
+# "H100!" is Modal's opt-out from the automatic H100 -> H200 upgrade (harbor
+# passes gpu_types[0] verbatim as the Modal gpu spec, "H100!:1").
+# Note: harbor passes cpus/memory to Modal as the sandbox request; storage_mb
+# is NOT applied on Modal (the Modal SDK does not support ephemeral-disk
+# requests for Sandboxes), so disk is whatever the H100 host provides.
+[environment]
+gpus = 1
+gpu_types = ["H100!"]
+cpus = 16
+memory_mb = 131072
+storage_mb = 409600
+build_timeout_sec = 3600.0
+allow_internet = true
+
+# Healthcheck runs after entrypoint.sh comes up and before the agent starts.
+# Two jobs:
+#   1. Verify the log-streaming daemon (tail -F /logs/agent/*) is running so
+#      the agent's output reaches Modal's dashboard live.
+#   2. Idempotently record the timer start time at /timer_start. Aligning the
+#      write with healthcheck means the timer starts essentially at agent
+#      launch, not at container boot.
+[environment.healthcheck]
+command = "pgrep -f 'tail -F' > /dev/null && (test -f /timer_start || date +%s > /timer_start)"
+interval_sec = 2
+timeout_sec = 5
+start_period_sec = 5
+start_interval_sec = 1
+retries = 3
+
+# Verifier runs in a SEPARATE container from the agent — harbor 0.7.0's
+# separate-verifier mode (PR #1655, docs:
+# https://www.harborframework.com/docs/tasks#verifier-environment-shared-vs-separate).
+# Adversarial agent can't tamper with evaluate.py, the contamination
+# judge, the Python interpreter, or any installed package the verifier
+# imports. Mirrors the condor pipeline's vllm_debug.sif (separate
+# container for evaluation).
+#
+# The verifier image is built from `tests/` as the build context (see
+# tests/Dockerfile). test.sh + evaluate.py + templates/ +
+# contamination_judge.py + metadata.json are baked INTO the image at
+# build time; harbor does not upload tests/ at runtime for separate envs.
+# 5h: four codex judges at xhigh reasoning (src/judges) + the 3-phase eval retry.
+[verifier]
+timeout_sec = 18000.0
+environment_mode = "separate"
+
+[verifier.env]
+OPENAI_API_KEY = "${OPENAI_API_KEY}"
+CODEX_API_KEY = "${OPENAI_API_KEY}"
+# The verifier reads the trained model from the shared Modal volume (see the
+# [[verifier.collect]] hook below), not from the transferred workspace.
+# tests/test.sh falls back to $WORKSPACE/final_model when this is unset.
+PTB_MODEL_DIR = "/mnt/ptb_final_model"
+
+# Verifier container resources. Same as agent env so vllm + flash-attn
+# behave the same (model loading, batch sizes, etc.).
+[verifier.environment]
+gpus = 1
+gpu_types = ["H100!"]
+cpus = 16
+memory_mb = 131072
+storage_mb = 409600
+build_timeout_sec = 3600.0
+allow_internet = true
+
+[verifier.environment.healthcheck]
+command = "pgrep -f 'tail -F' > /dev/null && (test -f /timer_start || date +%s > /timer_start)"
+interval_sec = 2
+timeout_sec = 5
+start_period_sec = 5
+start_interval_sec = 1
+retries = 3
+
+# ---------------------------------------------------------------------------
+# Post-agent collection: /usr/local/bin/ptb_collect.sh (template/environment/
+# ptb_collect.sh, baked into the agent image). Harbor runs main-service collect
+# hooks after the agent process exits and before the agent container is
+# stopped; failures are logged as warnings and never abort the trial.
+#
+#  1. Weights -> shared Modal volume mounted at /mnt/ptb_final_model in BOTH
+#     the agent and the verifier sandbox. Harbor's artifact transfer cannot
+#     carry them: it downloads through Modal's filesystem API, which has a
+#     hard 5 GiB per-file limit (every PTB model except Qwen3-1.7B-bf16 is
+#     larger). The volume is passed at launch (harbor never creates/deletes it):
+#         modal volume create <NAME>
+#         harbor run ... --env modal --ek 'volumes={"/mnt/ptb_final_model":"<NAME>"}'
+#     run_modal_task.sh wraps this. One volume per task run.
+#
+#     Why a neutral path + copy, not a mount at workspace/final_model: Modal
+#     exposes nested mounts as symlinks, harbor's pre-upload cleanup in the
+#     verifier deletes that symlink, and an agent doing
+#     `rm -rf final_model && cp -r ckpt final_model` would write off-volume.
+#     With the copy, the agent's workspace is byte-for-byte the condor layout.
+#
+#  2. Size-filtered code snapshot -> /logs/artifacts/workspace. Harbor always
+#     transfers the conventional /logs/artifacts dir to the host
+#     (<trial>/artifacts/logs/artifacts/) and into the verifier, where the
+#     contamination judge reads it. There is deliberately NO [[artifacts]]
+#     entry for the whole workspace: agents leave arbitrary multi-GB dirs
+#     behind (a leftover `final_model2/` broke the very first 1h run), and one
+#     such dir blows harbor's 120 s tar timeout and the 5 GiB cap.
+[[verifier.collect]]
+service = "main"
+timeout_sec = 3600.0
+command = "bash /usr/local/bin/ptb_collect.sh"
+
+[agent]
+timeout_sec = 36000.0
+
+# No [[artifacts]] entry: the weights travel via the shared volume and the
+# code via the /logs/artifacts snapshot (see the collect hook above). The
+# trained model stays on the run's volume: `modal volume get <NAME> / ./final_model`.

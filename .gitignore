@@ -243,6 +243,9 @@ __marimo__/
 
 # testing parsed agent traces
 output.txt
+harbor/
+harbor_old/
+harbor_015/
 
 # Nested checkout of the public website (has its own .git); never track from here
 posttrainbench-website/
