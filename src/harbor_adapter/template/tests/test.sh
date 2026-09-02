@@ -429,6 +429,7 @@ if [ -f "$LOGS_DIR/metrics.json" ]; then
     cat "$LOGS_DIR/metrics.json"
 
     # Try to extract accuracy from the metrics JSON
+    PARSE_ERROR_LOG="$LOGS_DIR/metrics_parse_error.txt"
     ACCURACY=$(python3 -c "
 import json
 try:
@@ -450,7 +451,13 @@ try:
 except Exception as e:
     print(f'Error parsing metrics: {e}', file=__import__('sys').stderr)
     print(0)
-" 2>&1)
+" 2>"$PARSE_ERROR_LOG")
+
+    if [ -s "$PARSE_ERROR_LOG" ]; then
+        cat "$PARSE_ERROR_LOG" >&2
+    else
+        rm -f "$PARSE_ERROR_LOG"
+    fi
 
     echo "Accuracy: $ACCURACY"
     echo "$ACCURACY" > "$LOGS_DIR/reward.txt"
