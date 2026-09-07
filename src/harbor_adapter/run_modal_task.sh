@@ -16,6 +16,7 @@
 #   bash run_modal_task.sh --task tasks/posttrainbench-gsm8k-qwen3-1.7b \
 #       --agent claude-code --model anthropic/claude-opus-4-8 \
 #       [--job-name NAME] [--cli-version latest|<x.y.z>] [--effort high|...] \
+#       [--thinking-display summarized|omitted|none] \
 #       [--codex-auth-json agents/codex_non_api/auth.json] [--agent-kwarg k=v] \
 #       [--delete-volume] [-- <extra harbor run args>]
 #
@@ -40,7 +41,7 @@
 set -euo pipefail
 
 TASK=""; AGENT="claude-code"; MODEL=""; JOB_NAME=""; DELETE_VOLUME=0
-CLI_VERSION=""; EFFORT="high"; CODEX_AUTH_JSON=""
+CLI_VERSION=""; EFFORT="high"; CODEX_AUTH_JSON=""; THINKING_DISPLAY="summarized"
 AGENT_KWARGS=(); EXTRA=()
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -55,7 +56,7 @@ while [ $# -gt 0 ]; do
         --agent-kwarg|--ak) AGENT_KWARGS+=(--ak "$2"); shift 2 ;;
         --delete-volume) DELETE_VOLUME=1; shift ;;
         --) shift; EXTRA=("$@"); break ;;
-        -h|--help) sed -n '2,39p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,40p' "$0"; exit 0 ;;
         *) echo "unknown arg: $1" >&2; exit 2 ;;
     esac
 done
