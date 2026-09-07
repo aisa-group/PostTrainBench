@@ -32,8 +32,15 @@ ALL_JUDGES=(data_contamination_judge api_usage_judge ptb_lookup_judge general_ju
 
 # codex CLI defaults shared by the judges; a judge.conf may override
 # JUDGE_MODEL / JUDGE_REASONING_EFFORT / JUDGE_CODEX_VERSION per judge.
-JUDGE_DEFAULT_MODEL="gpt-5.4"
+#
+# 2026-08-31: OpenAI retired gpt-5.4 from Codex on ChatGPT-signed-in sessions
+# (docs.chatgpt.com/models). All ChatGPT-authed judges must now use
+# gpt-5.6-terra (successor) with codex CLI >= 0.144.0 for the compact-endpoint
+# migration. general_judge has been running this pairing successfully since
+# introduction, so we align the shared defaults to match.
+JUDGE_DEFAULT_MODEL="gpt-5.6-terra"
 JUDGE_DEFAULT_REASONING_EFFORT="xhigh"
+JUDGE_DEFAULT_CODEX_VERSION="0.144.5"
 JUDGE_CONTAINER="gpt_5_5.sif"
 
 # load_judge_conf <judge_name>
@@ -51,10 +58,11 @@ load_judge_conf() {
     JUDGE_PROMPT_FILE=""
     JUDGE_MODEL="$JUDGE_DEFAULT_MODEL"
     JUDGE_REASONING_EFFORT="$JUDGE_DEFAULT_REASONING_EFFORT"
-    # Empty = use the container's pinned codex; a version (e.g. "0.144.5")
-    # makes run_judge_exec npm-install exactly that @openai/codex release into
-    # the sandbox home and run it instead.
-    JUDGE_CODEX_VERSION=""
+    # A version (e.g. "0.144.5") makes run_judge_exec npm-install exactly that
+    # @openai/codex release into the sandbox home and run it instead of the
+    # container's pinned codex. Set an empty override in judge.conf to fall
+    # back to whatever codex the container ships.
+    JUDGE_CODEX_VERSION="$JUDGE_DEFAULT_CODEX_VERSION"
     source "$conf"
     if [ -z "$JUDGE_LABEL" ] || [ -z "$JUDGE_OUTPUT_ID" ] || [ -z "$JUDGE_PROMPT_FILE" ]; then
         echo "ERROR: $conf must set JUDGE_LABEL, JUDGE_OUTPUT_ID and JUDGE_PROMPT_FILE" >&2
