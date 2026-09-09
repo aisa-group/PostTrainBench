@@ -68,6 +68,7 @@ API_KEY_ENV_VARS = [
     "GEMINI_API_KEY",
     "BEN_HF_TOKEN",
     "HARDIK_HF_TOKEN",
+    "HF_TOKEN",  # harbor adapter: exposed to the agent sandbox (src/harbor_adapter/README.md)
     "OPENCODE_API_KEY",
     "ZAI_API_KEY",
     "DASHSCOPE_API_KEY"

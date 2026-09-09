@@ -46,7 +46,7 @@ Prerequisite (same as `run_task.sh`): every benchmark needs its gitignored
 `../contamination_check.py`; the judges use it too):
 
 ```bash
-# from the repo root; gpqamain needs MY_HF_TOKEN (gated dataset)
+# from the repo root; gpqamain needs HF_TOKEN (gated dataset)
 uv run --no-project --with datasets --with huggingface_hub --with pyarrow \
     python src/judges/test_data_download/download_test_data.py
 ```
@@ -80,6 +80,10 @@ export ANTHROPIC_API_KEY=<your-key>   # Claude agent via API ...
 # ... or a Claude Max subscription instead of the API key:
 export CLAUDE_CODE_OAUTH_TOKEN="$(cat ../../agents/claude_non_api/oauth_token)"   # from `claude setup-token`
 export CLAUDE_FORCE_OAUTH=1           # harbor drops ANTHROPIC_API_KEY from the sandbox so the CLI uses the token
+
+# Read-only Hugging Face token (gated Hub assets, see "API Key Requirements");
+# a value in .env takes precedence. $HF_HOME/token is deliberately NOT used.
+export HF_TOKEN=hf_...
 ```
 
 Behind an HTTP proxy (`https_proxy` set), Modal's client additionally needs
@@ -127,14 +131,49 @@ specific Claude Code CLI in the sandbox instead of the image's pinned one;
 |-----|---------|-------------|
 | `ANTHROPIC_API_KEY` | Agent (Claude) | All benchmarks |
 | `OPENAI_API_KEY` | Contamination judge (codex CLI), evaluation judge | All benchmarks (judge), arenahardwriting/healthbench (agent eval) |
+| `HF_TOKEN` (read-only) | Agent (base-model + training-data download, `evaluate.py`), verifier (`evaluate.py`) | All tasks (harbor refuses to start without it, and `check_hf_token.py` must pass); strictly needed by the 7 `gemma3-4b` tasks (`google/gemma-3-4b-pt` is gated: manual), the 4 `gpqamain` tasks (`Idavidrein/gpqa` is gated: auto) and whenever the agent pulls one of the gated training datasets condor's cache holds |
 
 - The verifier receives `OPENAI_API_KEY` as both `OPENAI_API_KEY` and `CODEX_API_KEY` (codex CLI reads `CODEX_API_KEY`).
 - For arenahardwriting and healthbench, `OPENAI_API_KEY` is also passed to the agent environment since their `evaluate.py` scripts call the OpenAI API for judging.
-- `run_modal_task.sh` resolves both keys like the condor tooling does: an exported variable
+- `run_modal_task.sh` resolves both API keys like the condor tooling does: an exported variable
   wins; otherwise it reads exactly these two keys from the repo-root `.env` (the condor
   pipeline's canonical key store — `PTB_ENV_FILE` overrides the path). The other provider
   keys in `.env` are never loaded into the process env, so nothing outside the allowlist
   can reach a sandbox.
+- **Hugging Face token.** Condor serves the gated assets from its pre-populated `HF_HOME`
+  overlay (`containers/download_hf_cache/resources.json` is that cache's manifest); harbor
+  sandboxes start with an empty cache and download from the Hub, which refuses anonymous
+  access to gated repos. `run_modal_task.sh` therefore exports `HF_TOKEN` — from `.env` if
+  set there, else the exported variable (`.env` beats the shell, deliberately the opposite
+  of the API keys; `HF_HOME` and the `$HF_HOME/token` file `hf auth login` writes are
+  ignored on purpose) — and the generated `task.toml` declares `HF_TOKEN = "${HF_TOKEN}"` in
+  `[environment.env]` (agent sandbox, injected at creation) and `[verifier.env]`. The wrapper
+  prints which source it used (`hf token: ...`), never the value.
+
+  Before the run starts, `check_hf_token.py` verifies the token against the Hub and aborts
+  with the fix spelled out if either check fails:
+  1. **Read-only.** The agent can read the token from its sandbox env, so a token with role
+     `write` — or a fine-grained one with any non-`*.read` permission — is rejected; create a
+     token of type *Read* at <https://huggingface.co/settings/tokens> (a fine-grained one also
+     needs "Read access to contents of all public gated repos you can access").
+  2. **Access to the gated repos a harbor agent must reach.** `gated_hf_resources.json` lists
+     the gated entries of `resources.json` (condor's cache manifest) that matter for harbor
+     runs — as of 2026-09-08 `google/gemma-3-4b-pt` and `Idavidrein/gpqa`. The token's
+     account must have accepted each repo's conditions (gpqa's `auto` gate grants instantly;
+     gemma's `manual` gate waits for the owner), otherwise a harbor agent has less data reach
+     than a condor agent. The list is trusted as committed (the check never consults
+     `resources.json` itself) and is curated by hand: `HF_TOKEN=... python3
+     src/harbor_adapter/check_hf_token.py --refresh` (~400 public metadata calls) rewrites it
+     with *every* gated entry of `resources.json`, so review the diff and drop what harbor
+     does not need before committing.
+
+  For trace publishing, `dev_utils/extract_traces.py` redacts `HF_TOKEN` when it is set in
+  `.env`; if you only export it, put the value in the secrets file named by
+  `POST_TRAIN_BENCH_SANITIZATION_SECRETS` (`src/trace_parsing/sanitize_trace.py` only
+  redacts `*_API_KEY` values). Harbor itself scrubs `[verifier.env]` secrets from the job
+  dir after each trial.
+  The base model is still downloaded inside the agent's timed budget on every task; only
+  the gate is solved here, not the missing cache.
 
 ## Task Structure
 
@@ -371,6 +410,12 @@ the trial start time in Unix seconds). Each run dir carries `metrics.json`, the 
   Override per run with `--ak version=<x.y.z>` (harbor installs it at agent setup).
 - **Judge models** come from `src/judges/*/judge.conf` (gpt-5.4; gpt-5.6-terra for the general judge). `gpt-5.1-codex`/`gpt-5.2-codex` no longer exist on the Responses API.
 - **GPU type**: a plain `gpu_types = ["H100"]` lets Modal upgrade the sandbox to an H200 (observed in early runs); the template uses `"H100!"` (Modal's opt-out) so runs stay on the same hardware as condor.
+- **No HF cache in the sandboxes**: condor overlay-mounts a pre-populated `HF_HOME`; here every
+  task downloads its base model from the Hub inside the agent's timed budget, and the gated
+  repos (`google/gemma-3-4b-pt`, `Idavidrein/gpqa`, the gated training datasets in
+  `gated_hf_resources.json`) need the read-only `HF_TOKEN` that `run_modal_task.sh` exports
+  and `check_hf_token.py` validates (see "API Key Requirements"). A run launched without it
+  fails at startup, not 10 hours later.
 - **codex must not inherit stdin in the verifier**: `codex exec` appends piped stdin to the
   prompt and reads it to EOF; under harbor's exec the verifier's stdin is a pipe that never
   closes, so codex hangs before its first API call (exit 124 after the judge timeout).

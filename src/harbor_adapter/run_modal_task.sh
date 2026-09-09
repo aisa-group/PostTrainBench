@@ -38,6 +38,8 @@
 # Both keys fall back to the repo-root .env (condor's canonical key store)
 # when not exported; an exported var always wins. PTB_ENV_FILE overrides
 # the .env path.
+# A read-only Hugging Face token (HF_TOKEN, .env first) is always required
+# too, for the gated Hub assets — see the HF_TOKEN block below.
 set -euo pipefail
 
 TASK=""; AGENT="claude-code"; MODEL=""; JOB_NAME=""; DELETE_VOLUME=0
@@ -56,7 +58,7 @@ while [ $# -gt 0 ]; do
         --agent-kwarg|--ak) AGENT_KWARGS+=(--ak "$2"); shift 2 ;;
         --delete-volume) DELETE_VOLUME=1; shift ;;
         --) shift; EXTRA=("$@"); break ;;
-        -h|--help) sed -n '2,40p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,42p' "$0"; exit 0 ;;
         *) echo "unknown arg: $1" >&2; exit 2 ;;
     esac
 done
@@ -69,15 +71,29 @@ done
 # module-loading block fails off the head node). Only the keys this flow uses
 # are loaded; the rest of .env never enters the process env.
 ENV_FILE="${PTB_ENV_FILE:-$(cd "$(dirname "$0")/../.." && pwd)/.env}"
+env_file_value() {   # value of KEY=$1 in .env, outer quotes stripped; empty if absent
+    [ -f "$ENV_FILE" ] || return 0
+    grep -E "^$1=" "$ENV_FILE" | head -1 | cut -d= -f2- | sed "s/^[\"']//; s/[\"']\$//" || true
+}
 for _k in OPENAI_API_KEY ANTHROPIC_API_KEY; do
-    if [ -z "${!_k:-}" ] && [ -f "$ENV_FILE" ]; then
-        _v="$(grep -E "^${_k}=" "$ENV_FILE" | head -1 | cut -d= -f2- | sed "s/^[\"']//; s/[\"']\$//" || true)"
-        if [ -n "$_v" ]; then
-            export "$_k=$_v"
-        fi
+    if [ -z "${!_k:-}" ]; then
+        _v="$(env_file_value "$_k")"
+        [ -n "$_v" ] && export "$_k=$_v"
     fi
 done
 [ -n "${OPENAI_API_KEY:-}" ] || { echo "OPENAI_API_KEY is not set and not found in $ENV_FILE (needed by the verifier's judge)" >&2; exit 2; }
+
+if _t="$(env_file_value HF_TOKEN)" && [ -n "$_t" ]; then
+    HF_TOKEN_SOURCE="HF_TOKEN in $ENV_FILE"
+elif [ -n "${HF_TOKEN:-}" ]; then
+    _t="$HF_TOKEN"; HF_TOKEN_SOURCE="exported HF_TOKEN"
+else
+    echo "no Hugging Face token: set HF_TOKEN in $ENV_FILE or export it (a read-only token; needed for the gated Hub assets, see check_hf_token.py)" >&2
+    exit 2
+fi
+export HF_TOKEN="$_t"
+echo "hf token: $HF_TOKEN_SOURCE"
+python3 "$(dirname "$0")/check_hf_token.py"
 
 # The `modal` CLI must come from the same environment as `harbor` (harbor's
 # venv has the modal extra; on hosts with an HTTP proxy it also needs the

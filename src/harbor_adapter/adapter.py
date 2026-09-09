@@ -117,7 +117,7 @@ class PostTrainBenchAdapter:
             raise FileNotFoundError(
                 f"{path} not found. It is gitignored; generate it with\n"
                 f"  python src/judges/test_data_download/download_test_data.py --tasks {benchmark_id}\n"
-                f"(needs the `datasets` package; gpqamain additionally needs MY_HF_TOKEN "
+                f"(needs the `datasets` package; gpqamain additionally needs HF_TOKEN "
                 f"for the gated dataset)."
             )
         return path
@@ -134,20 +134,36 @@ class PostTrainBenchAdapter:
             f"timeout_sec = {float(agent_timeout)}",
         )
 
-        # API-key allowlist (mirrors run_task.sh): the agent sandbox receives
-        # only what harbor's agent injects for its own provider plus the keys
-        # the benchmark's grading declares in info.json (e.g. OPENAI_API_KEY
-        # for the LLM-judged benchmarks). Nothing else reaches the agent.
-        # `[environment.env]` is harbor's per-task sandbox env (resolved from
-        # the host at runtime); it applies to the agent sandbox only — the
-        # separate verifier has its own `[verifier.env]`. (There is no
-        # `[agent.env]` in harbor's task schema; unknown tables are ignored.)
+        # Agent-sandbox env. `[environment.env]` is harbor's per-task sandbox
+        # env (resolved from the host at runtime, injected at sandbox
+        # creation); it applies to the agent sandbox only — the separate
+        # verifier has its own `[verifier.env]`. (There is no `[agent.env]`
+        # in harbor's task schema; unknown tables are ignored.)
+        #   - HF_TOKEN: condor's agent reads the base model and gpqamain's
+        #     dataset from the pre-populated HF_HOME overlay
+        #     (containers/download_hf_cache/resources.json); harbor's sandbox
+        #     has an empty cache and downloads from the Hub, which refuses
+        #     anonymous access to the gated ones (google/gemma-3-4b-pt,
+        #     Idavidrein/gpqa — gated_hf_resources.json). run_modal_task.sh
+        #     exports the token after check_hf_token.py has verified it is
+        #     read-only and reaches all of them.
+        #   - API-key allowlist (mirrors run_task.sh): besides what harbor's
+        #     agent injects for its own provider, only the keys the
+        #     benchmark's grading declares in info.json (e.g. OPENAI_API_KEY
+        #     for the LLM-judged benchmarks). Nothing else reaches the agent.
+        content += (
+            "\n# Agent-sandbox env, resolved from the host when the sandbox is created.\n"
+            "# HF_TOKEN: the gated Hub assets condor serves from its HF cache (gemma-3-4b-pt,\n"
+            "# Idavidrein/gpqa; see gated_hf_resources.json) have no cache here.\n"
+            "# run_modal_task.sh exports a read-only token verified by check_hf_token.py.\n"
+            "[environment.env]\n"
+            'HF_TOKEN = "${HF_TOKEN}"\n'
+        )
         if benchmark_info.required_api_keys:
             content += (
-                "\n# Provider keys this benchmark's own grading (evaluate.py) needs, from\n"
+                "# Provider keys this benchmark's own grading (evaluate.py) needs, from\n"
                 "# src/eval/tasks/<id>/info.json `required_api_keys`. The agent prompt\n"
                 "# (rule 10) restricts them to running the evaluation.\n"
-                "[environment.env]\n"
             )
             for key in benchmark_info.required_api_keys:
                 content += f'{key} = "${{{key}}}"\n'

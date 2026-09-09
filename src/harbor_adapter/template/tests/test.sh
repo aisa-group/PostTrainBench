@@ -56,6 +56,8 @@ echo "Workspace: $WORKSPACE"
 echo "Logs dir: $LOGS_DIR"
 echo "Model dir: $MODEL_DIR"
 echo "Code dir (judge): $CODE_DIR"
+# [verifier.env] HF_TOKEN: gpqamain's evaluate.py loads the gated dataset from the Hub.
+echo "HF_TOKEN: $([ -n "${HF_TOKEN:-}" ] && echo set || echo unset)"
 
 # Check GPU availability
 echo ""

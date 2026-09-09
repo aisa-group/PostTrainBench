@@ -56,6 +56,7 @@ environment_mode = "separate"
 [verifier.env]
 OPENAI_API_KEY = "${OPENAI_API_KEY}"
 CODEX_API_KEY = "${OPENAI_API_KEY}"
+HF_TOKEN = "${HF_TOKEN}"
 # The verifier reads the trained model from the shared Modal volume (see the
 # [[verifier.collect]] hook below), not from the transferred workspace.
 # tests/test.sh falls back to $WORKSPACE/final_model when this is unset.
