@@ -15,7 +15,7 @@ echo "Running download_test_data.py inside apptainer container..."
 
 apptainer exec \
     --bind "${REPO_ROOT}:${REPO_ROOT}" \
-    --env MY_HF_TOKEN="${MY_HF_TOKEN:-}" \
+    --env HF_TOKEN="${HF_TOKEN:-}" \
     --env HF_HOME="${HF_HOME}" \
     "${POST_TRAIN_BENCH_CONTAINERS_DIR}/soft_file_locking.sif" \
     python3 "$SCRIPT_DIR/download_test_data.py" "$@"

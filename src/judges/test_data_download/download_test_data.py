@@ -125,9 +125,9 @@ def download_bfcl():
 
 def download_gpqamain():
     log("Downloading gpqamain from HuggingFace (Idavidrein/gpqa, gpqa_main)...")
-    hf_token = os.environ.get("MY_HF_TOKEN")
+    hf_token = os.environ.get("HF_TOKEN")
     if not hf_token:
-        raise RuntimeError("MY_HF_TOKEN environment variable not set (required for gated GPQA dataset)")
+        raise RuntimeError("HF_TOKEN environment variable not set (required for gated GPQA dataset)")
 
     from datasets import load_dataset
     ds = load_dataset("Idavidrein/gpqa", "gpqa_main", split="train", token=hf_token, streaming=True)

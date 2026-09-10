@@ -1319,9 +1319,6 @@
       ]
     },
     {
-      "dataset": "GAIR/LIMA"
-    },
-    {
       "dataset": "HuggingFaceH4/no_robots"
     },
     {
@@ -1511,12 +1508,6 @@
       "dataset": "knkarthick/dialogsum"
     },
     {
-      "dataset": "lmsys/chatbot_arena_conversations"
-    },
-    {
-      "dataset": "lmsys/lmsys-chat-1m"
-    },
-    {
       "dataset": "lmsys/mt_bench_human_judgments"
     },
     {
@@ -1524,9 +1515,6 @@
     },
     {
       "dataset": "mlabonne/orpo-dpo-mix-40k"
-    },
-    {
-      "dataset": "nampdn-ai/tiny-codes"
     },
     {
       "dataset": "neulab/conala"
@@ -1753,9 +1741,6 @@
       "dataset": "casey-martin/MedInstruct"
     },
     {
-      "dataset": "Detsutut/MedInstruct"
-    },
-    {
       "dataset": "dmis-lab/meerkat-instructions"
     },
     {
@@ -1769,9 +1754,6 @@
     },
     {
       "dataset": "thbndi/Mimic4Dataset"
-    },
-    {
-      "dataset": "Amod/mental_health_counseling_conversations"
     },
     {
       "dataset": "ShenLab/MentalChat16K"
@@ -1799,12 +1781,6 @@
     },
     {
       "dataset": "HiTZ/Multilingual-Medical-Corpus"
-    },
-    {
-      "dataset": "claws-lab/XLingHealth"
-    },
-    {
-      "dataset": "Trelis/hh-rlhf-dpo"
     },
     {
       "dataset": "RLHFlow/HH-RLHF-Helpful-standard"
@@ -1865,9 +1841,6 @@
     },
     {
       "dataset": "FreedomIntelligence/DxBench"
-    },
-    {
-      "dataset": "stellalisy/MediQ_AskDocs_preference"
     },
     {
       "dataset": "empirischtech/med-qa-orpo-dpo"
@@ -1946,9 +1919,6 @@
     },
     {
       "dataset": "antoinebcx/smiles-molecules-chembl"
-    },
-    {
-      "dataset": "eve-bio/drug-target-activity"
     },
     {
       "dataset": "StanfordAIMI/stanford-deidentifier-only-i2b2"
