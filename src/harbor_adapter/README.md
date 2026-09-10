@@ -343,6 +343,14 @@ The verifier extracts the accuracy metric from `metrics.json` as the reward (0-1
 - `/logs/verifier/judge_output_<id>.{json,txt}` - raw and parsed judge traces
 - `/logs/verifier/solve_out.txt`, `solve_parsed.txt` - the agent transcript the judges saw
 
+If `final_model` is absent or lacks `config.json`, the verifier skips judges and
+evaluation. It writes all four verdicts with false flags and a justification such
+as "No final model submitted", and writes the base model's zero-shot score to
+`metrics.json` and `reward.txt`. The failure reason is retained in `metrics.json`
+as `error`. Task generation reads the score from `scripts/baselines.json` and
+bakes it into verifier-only `metadata.json` as `baseline_accuracy`; regenerate
+existing tasks and rebuild their verifier images to pick up this behavior.
+
 The trained model itself stays on the run's Modal volume (`modal volume get <volume> / ./final_model`); the host-side `artifacts/logs/artifacts/workspace/` holds the agent's code snapshot (plus `.ptb_workspace_sizes.txt`, what was left in the workspace).
 
 ## Agent Launch Parity (claude-code)

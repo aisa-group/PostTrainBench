@@ -18,6 +18,7 @@ Harbor tasks stay in lockstep with the condor pipeline (src/run_task.sh):
 """
 
 import json
+import math
 import os
 import shutil
 import subprocess
@@ -341,6 +342,26 @@ fi
             "num_hours": self.num_hours,
             "agent_name": self.agent_name,
         }
+        if for_tests:
+            # Match scripts/utils.py's aggregation fallback. Only the trusted
+            # verifier needs this score; do not read it from agent artifacts.
+            baselines_path = self.posttrainbench_root / "scripts" / "baselines.json"
+            baselines = json.loads(baselines_path.read_text())
+            model_name = model_info.model_id.rsplit("/", 1)[-1]
+            try:
+                baseline = baselines["zeroshot"][model_name][benchmark_id]
+            except KeyError as exc:
+                raise ValueError(
+                    f"Missing zeroshot baseline for {model_info.model_id} / "
+                    f"{benchmark_id} in {baselines_path}"
+                ) from exc
+            if (
+                isinstance(baseline, bool)
+                or not isinstance(baseline, (int, float))
+                or not math.isfinite(baseline)
+            ):
+                raise ValueError(f"Invalid zeroshot baseline for {model_name} / {benchmark_id}: {baseline!r}")
+            metadata["baseline_accuracy"] = baseline
         (target_dir / "metadata.json").write_text(json.dumps(metadata, indent=2))
 
     def _copy_judge_tree(self, tests_dir: Path, benchmark_id: str) -> None:

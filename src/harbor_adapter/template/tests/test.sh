@@ -64,14 +64,48 @@ echo ""
 echo "=== GPU Check ==="
 nvidia-smi 2>&1 | tee "$LOGS_DIR/gpu_check.txt" || echo "nvidia-smi failed"
 
+# No submitted model: record the base-model score and explicit skipped-judge
+# verdicts so the exported run remains aggregatable without calling any judges.
+write_no_model_results() {
+    python3 - "$TESTS/metadata.json" "$LOGS_DIR" "$1" <<'PY'
+import json
+import math
+import sys
+from pathlib import Path
+
+metadata_path, logs_path, reason = sys.argv[1:]
+metadata = json.loads(Path(metadata_path).read_text())
+accuracy = metadata["baseline_accuracy"]
+if isinstance(accuracy, bool) or not isinstance(accuracy, (int, float)) or not math.isfinite(accuracy):
+    raise ValueError(f"Invalid baseline_accuracy in {metadata_path}: {accuracy!r}")
+
+logs = Path(logs_path)
+judge_fields = {
+    "gpt5_4": ("contamination", "disallowed_model"),
+    "api": ("disallowed_api_usage",),
+    "ptb_lookup": ("disallowed_ptb_lookup",),
+    "general": ("general_anomaly",),
+}
+for judge_id, fields in judge_fields.items():
+    verdict = {}
+    for field in fields:
+        verdict[field] = False
+        verdict[f"justification_{field}"] = reason
+    (logs / f"judgement_{judge_id}.json").write_text(json.dumps(verdict, indent=2) + "\n")
+
+(logs / "metrics.json").write_text(json.dumps({"accuracy": accuracy, "error": reason}, indent=2) + "\n")
+(logs / "reward.txt").write_text(f"{accuracy}\n")
+print(f"{reason}; skipping judges and evaluation, using baseline accuracy {accuracy}")
+PY
+}
+
 # Check if final_model exists in agent's workspace
 echo ""
 echo "=== Checking final_model ==="
 if [ ! -d "$MODEL_DIR" ]; then
     echo "ERROR: final_model directory not found at $MODEL_DIR"
-    { ls -la "$WORKSPACE"; echo "--- $(dirname "$MODEL_DIR") ---"; ls -la "$(dirname "$MODEL_DIR")"; } > "$LOGS_DIR/workspace_listing.txt" 2>&1
-    echo '{"error": "final_model not found", "accuracy": 0}' > "$LOGS_DIR/metrics.json"
-    echo "0" > "$LOGS_DIR/reward.txt"
+    { ls -la "$WORKSPACE"; echo "--- $(dirname "$MODEL_DIR") ---"; ls -la "$(dirname "$MODEL_DIR")"; } > "$LOGS_DIR/workspace_listing.txt" 2>&1 || true
+    write_no_model_results "No final model submitted"
     exit 0
 fi
 
@@ -81,8 +115,7 @@ ls -la "$MODEL_DIR" | tee "$LOGS_DIR/final_model_listing.txt"
 
 if [ ! -f "$MODEL_DIR/config.json" ]; then
     echo "ERROR: final_model/config.json not found - not a valid model"
-    echo '{"error": "invalid model - no config.json", "accuracy": 0}' > "$LOGS_DIR/metrics.json"
-    echo "0" > "$LOGS_DIR/reward.txt"
+    write_no_model_results "No valid final model submitted: final_model/config.json not found"
     exit 0
 fi
 
