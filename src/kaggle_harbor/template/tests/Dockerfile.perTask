@@ -1,0 +1,44 @@
+# Per-task verifier image: the heavy layers come from a prebuilt base, the
+# task's own tests/ tree is layered on top.
+#
+# WHY THIS EXISTS. The previous arrangement passed one prebuilt image
+# (--verifier-docker-image) for all 28 tasks. harbor then PULLS instead of
+# building (environments/definition.py:26-36) and additionally skips the
+# tests upload for a separate verifier env (trial.py:618 hardcodes
+# skip_tests_upload=True, verifier.py:96-101 honours it: "The verifier image
+# already owns /tests/test.{sh,bat}"). Both are hardcoded -- force_build is
+# pinned False at trial.py:671 -- so /tests could ONLY ever be whatever the
+# image was built with.
+#
+# The image had been built from the gsm8k task, so all 28 tasks ran gsm8k's
+# metadata.json, test.sh, score_run.py AND repo/src/eval/tasks/gsm8k/. Proof
+# from a HEALTHBENCH run (1120803) verifier stdout:
+#
+#     benchmark_id=gsm8k model_to_train=Qwen/Qwen3-1.7B-Base
+#     File "/tests/repo/src/eval/tasks/gsm8k/evaluate.py", line 138
+#
+# Every non-gsm8k cell would have been graded on GSM8K and reported
+# `completed`. The identical reward 0.12661106899166036 across all seven
+# benchmarks was gsm8k's zero-shot baseline, read from gsm8k's metadata.
+#
+# Building per task is therefore not an optimisation choice, it is the only
+# channel through which a task's own /tests can reach its verifier.
+#
+# COST. The base carries CUDA, vllm, the npm CLIs and inspect_evals (~25 GB);
+# this adds one ~12 MB COPY on top of a layer the node has already cached, so
+# the per-run cost is the pull that was being paid anyway.
+ARG PTB_VERIFIER_BASE
+FROM ${PTB_VERIFIER_BASE}
+
+# rm BEFORE the COPY. COPY merges into an existing directory, so without this
+# the base's stale tree survives wherever the new task has no file to shadow
+# it -- and that is exactly the failure being fixed: a healthbench task ships
+# only repo/src/eval/tasks/healthbench/, so gsm8k's would have remained
+# alongside it.
+RUN rm -rf /tests
+COPY . /tests/
+RUN rm -f /tests/Dockerfile /tests/requirements-direct.txt && \
+    chmod +x /tests/test.sh
+
+ENV HOME=/home/ben
+WORKDIR /tests

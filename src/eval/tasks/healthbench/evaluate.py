@@ -41,7 +41,7 @@ VLLM_HEALTH_TIMEOUT = 600
 VLLM_REQUEST_TIMEOUT = 300
 VLLM_GENERATION_RETRY = 3
 
-JUDGE_MODEL = "gpt-5-mini"
+JUDGE_MODEL = os.environ.get("PTB_JUDGE_MODEL", "openai/gpt-5-mini")
 
 
 def _model_alias(model_path: str) -> str:

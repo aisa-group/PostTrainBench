@@ -1,0 +1,49 @@
+# Per-task AGENT image: heavy layers from a prebuilt base, this task's own
+# home/ layered on top.
+#
+# WHY THIS EXISTS. Exactly the D231 failure, one level up. Passing a prebuilt
+# image as `[environment] docker_image` makes harbor PULL instead of BUILD
+# (environments/definition.py:26-36), so `COPY home/ /home/ben/` in the main
+# Dockerfile never runs and the agent gets whatever home the BASE was built
+# with. ptb-agent:v2 was built from a gsm8k task, so on every task the agent
+# saw:
+#
+#     /home/ben/task/evaluate.py   ->  import inspect_evals.gsm8k
+#     /home/ben/test_data.json     ->  1319 gsm8k items
+#
+# The prompt tells the agent it may query the benchmark via evaluate.py, so
+# agents that trusted it optimised for grade-school math and were then graded
+# on AIME 2025 / BFCL / HumanEval. Confirmed in judge verdicts across the
+# 2026-09-09 diagnostic, e.g. run 1545542 (bfcl/SmolLM3): the agent concluded
+# "the BFCL labeling is irrelevant ... the task is effectively GSM8K", trained
+# on 60k math word problems, and scored 0. Agents that instead trusted
+# instruction.md -- which was always correct -- scored normally, which is why
+# the corruption looked like random model variance.
+#
+# gsm8k cells were unaffected: their baked home happened to match the task.
+#
+# Building per task is the only channel through which a task's own home/ can
+# reach its agent, exactly as tests/Dockerfile.perTask is for /tests.
+#
+# COST. The base carries CUDA, vllm and the npm CLIs (~25 GB); this adds a
+# ~12 MB COPY on a layer the node has already pulled.
+ARG PTB_AGENT_BASE
+FROM ${PTB_AGENT_BASE}
+
+# rm BEFORE the COPY. COPY merges into an existing directory, so without this
+# the base's gsm8k evaluate.py survives wherever the new task has no file to
+# shadow it -- which is the failure being fixed. test_data.json sits directly
+# in /home/ben and IS shadowed by every task, but task/ holds per-benchmark
+# subtrees (evaluation_code/, task_context/) that would otherwise persist.
+RUN rm -rf /home/ben/task
+COPY home/ /home/ben/
+
+# preflight.sh is baked at /usr/local/bin and the healthcheck runs it from
+# there, so shipping it in the task dir alone is inert (proved by probe run
+# 1375308). Copying it here is what finally delivers the D233 agent-side
+# cache fix without a base rebuild.
+COPY preflight.sh /usr/local/bin/preflight.sh
+RUN chmod +x /usr/local/bin/preflight.sh
+
+ENV HOME=/home/ben
+WORKDIR /home/ben/task

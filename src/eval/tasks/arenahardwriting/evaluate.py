@@ -39,7 +39,7 @@ VLLM_GENERATION_RETRY = 3
 MAX_REPETITIONS = 5  # Maximum allowed repetitions of any pattern
 
 BENCHMARK = "arena-hard-v2.0"
-JUDGE_MODEL = "gpt-5-mini"
+JUDGE_MODEL = os.environ.get("PTB_JUDGE_MODEL", "openai/gpt-5-mini")
 REASONING_EFFORT = "medium"
 JUDGE_CONFIG = "evaluation_code/config/arena-hard-v2.0.yaml"
 JUDGE_MAX_COMPLETION = 49152
