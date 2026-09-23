@@ -37,6 +37,14 @@ except AttributeError:
 # exactly one level below the root.
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
+# Make scripts/utils.py importable so we can call materialize_majority_verdict
+# without duplicating the aggregation logic here.
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+try:
+    from utils import materialize_majority_verdict  # type: ignore
+except Exception:
+    materialize_majority_verdict = None  # type: ignore
+
 
 def load_dotenv() -> dict[str, str]:
     """Parse the repo-root .env into a dict.
@@ -462,16 +470,28 @@ def _process_subdir(subdir_str: str, dest_dir_str: str, force: bool) -> dict:
     ):
         copy_other_files(subdir, dest_dir, fname, api_keys=_WORKER_API_KEYS, optional=True)
 
-    # Judge artifacts — canonical GPT-5.4 contamination verdict + trace,
-    # rerun variant preferred over the base. The third-party-API-usage judge
-    # (judgement_api*.json) is NOT extracted even though scoring now consumes
-    # it (flag => baseline fallback): it is known to flip on rerun (non-
-    # deterministic false positives), so the viewer doesn't surface it. The
-    # PTB-lookup judge (judgement_ptb_lookup*.json) is archival and likewise
-    # not extracted.
-    copy_preferring_rerun(subdir, dest_dir, 'judgement_gpt5_4.json',   api_keys=_WORKER_API_KEYS)
+    # Judge artifacts — canonical GPT-5.4 contamination verdict + trace.
+    # Preference order for the contamination verdict JSON, encoded by
+    # copy_preferring_majority: multi-run majority (judgement_multi_runs/
+    # judgement_gpt5_4_final.json, materialized on demand when slots 2/3
+    # are present) > _rerun.json > inline. The output file is always named
+    # judgement_gpt5_4.json in the destination so downstream tools don't
+    # need to know a majority happened.
+    copy_preferring_majority(subdir, dest_dir, 'judgement_gpt5_4.json', api_keys=_WORKER_API_KEYS)
     copy_preferring_rerun(subdir, dest_dir, 'judge_output_gpt5_4.json', api_keys=_WORKER_API_KEYS)
     copy_preferring_rerun(subdir, dest_dir, 'judge_output_gpt5_4.txt',  api_keys=_WORKER_API_KEYS)
+
+    # API-usage judge (disallowed_api_usage schema) and PTB-lookup judge
+    # (disallowed_ptb_lookup schema). Both flag directly into scoring in
+    # `scripts/collect.py` (api-usage flag → baseline fallback; ptb-lookup
+    # flag → error), so making the verdicts (and the codex traces) visible
+    # on the viewer lets researchers inspect what was flagged and why.
+    copy_preferring_rerun(subdir, dest_dir, 'judgement_api.json',        api_keys=_WORKER_API_KEYS)
+    copy_preferring_rerun(subdir, dest_dir, 'judge_output_api.json',     api_keys=_WORKER_API_KEYS)
+    copy_preferring_rerun(subdir, dest_dir, 'judge_output_api.txt',      api_keys=_WORKER_API_KEYS)
+    copy_preferring_rerun(subdir, dest_dir, 'judgement_ptb_lookup.json', api_keys=_WORKER_API_KEYS)
+    copy_preferring_rerun(subdir, dest_dir, 'judge_output_ptb_lookup.json', api_keys=_WORKER_API_KEYS)
+    copy_preferring_rerun(subdir, dest_dir, 'judge_output_ptb_lookup.txt',  api_keys=_WORKER_API_KEYS)
 
     # Legacy v1.0 judge artifacts (pre-revamp benchmark version) — copied
     # as fallback so old cells that were never re-judged still show a
@@ -687,6 +707,41 @@ def copy_other_files(subdir, dest_dir, filename, dest_filename=None, api_keys=No
     elif not optional:
         # Hard-required missing — surface it, but don't fabricate content.
         print(f"  WARN: required file {filename} missing for {subdir.name}")
+
+
+def copy_preferring_majority(subdir, dest_dir, base_filename, api_keys):
+    """Copy the contamination verdict, preferring the multi-run majority.
+
+    Only meaningful for ``judgement_gpt5_4.json`` — the only judge with a
+    multi-run setup today. Preference order:
+      1. ``judgement_multi_runs/<stem>_final<ext>`` (majority of slots 1/2/3),
+         materialized on demand by scripts.utils.materialize_majority_verdict
+         when slots 2 and 3 exist.
+      2. ``<stem>_rerun<ext>`` (single rerun).
+      3. ``<base_filename>`` (inline verdict from run_task.sh).
+    The `_sanitized` companion is preferred within whichever candidate wins.
+    The destination file is always written under the canonical
+    ``<base_filename>`` name — downstream tools stay ignorant of which slot
+    produced the verdict.
+    """
+    # Try to materialize the multi-run majority (idempotent — returns the
+    # cached path if it already exists). Only wired up for gpt5_4 today; a
+    # different base_filename just skips the materialization step.
+    if materialize_majority_verdict is not None and base_filename == 'judgement_gpt5_4.json':
+        try:
+            materialize_majority_verdict(str(subdir))
+        except Exception as e:
+            # A malformed slot file, permissions issue, or torn-write mid-flight
+            # should not derail the extract — fall through to the legacy layout.
+            print(f"  WARN: multi-run majority materialization failed for {subdir.name}: {e}")
+    base = Path(base_filename)
+    stem, ext = base.stem, base.suffix
+    final_path = subdir / "judgement_multi_runs" / f"{stem}_final{ext}"
+    for candidate in (final_path, subdir / f"{stem}_rerun{ext}", subdir / base_filename):
+        src = prefer_sanitized(candidate)
+        if src.exists():
+            copy_file_sanitized(src, dest_dir / base_filename, api_keys)
+            return
 
 
 def copy_preferring_rerun(subdir, dest_dir, base_filename, api_keys):
