@@ -1,0 +1,19 @@
+# HTCondor template for running slot 2 or slot 3 of the multi-run judge
+# variance experiment. Runs data_contamination_judge only.
+#
+# Variables (override with -a "name=value"):
+#   result_dir   – result directory to judge (required)
+#   slot         – slot number (2 or 3) — controls the output suffix
+#                  (_run2 or _run3) and file naming (required)
+executable = /bin/bash
+arguments = src/judges/multi_run/run_judge_slot.sh --slot $(slot) $(result_dir)
+environment = "HOME=$ENV(HOME)"
+error = logs/multi_judge_slot$(slot)_$(Cluster).err
+output = logs/multi_judge_slot$(slot)_$(Cluster).out
+log = logs/multi_judge_slot$(slot)_$(Cluster).log
+concurrency_limits=user.codex_judge_rerun:1000
+request_memory = 81920
+request_cpus = 8
+request_disk = 100G
++BypassLXCfs = "true"
+queue

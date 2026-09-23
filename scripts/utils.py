@@ -125,6 +125,16 @@ HARDCODED_AGENT_MAP = {
         "claude_non_api_claude-opus-5_10h_run1",
         "claude_non_api_claude-opus-5_10h_run2",
     ],
+    "GLM 5.3": [
+        "glmx_glm-5.3_1m__10h_run1",
+        "glmx_glm-5.3_1m__10h_run2",
+
+    ],
+    "GLM 5.3 Flash": [
+        "glmx_glm-5.3-flash_10h_run1",
+        "glmx_glm-5.3-flash_10h_run2",
+    ],
+
 }
 
 HARDCODED_BENCHMARKS = [
@@ -407,58 +417,219 @@ def load_metrics(metrics_path: str) -> str:
 JUDGEMENT_FIELDS = ("contamination", "disallowed_model")
 
 
-def judgement_path(run_dir: str) -> str:
-    """Return the GPT-5.4 contamination judgement path for a run directory.
+MULTI_RUN_DIRNAME = "judgement_multi_runs"
 
-    Prefers ``judgement_gpt5_4_rerun.json`` (written by the rerun pipeline) and
-    falls back to ``judgement_gpt5_4.json`` from the initial ``run_task.sh``
-    run. This is the single place that encodes the rerun-over-original
-    preference; everything that needs the judgement should go through here (or
-    through ``load_judgement``). Raises FileNotFoundError when neither exists.
+
+def _slot1_judgement_path(run_dir: str) -> str | None:
+    """Return the slot-1 (single-verdict) contamination judgement path, or None.
+
+    Slot 1 = whichever of the historical single-verdict files exists, with the
+    same rerun-over-inline preference the pipeline has always used.
     """
     rerun_path = os.path.join(run_dir, "judgement_gpt5_4_rerun.json")
     original_path = os.path.join(run_dir, "judgement_gpt5_4.json")
-
     if os.path.exists(rerun_path):
         return rerun_path
     if os.path.exists(original_path):
         return original_path
+    return None
+
+
+def _compute_majority_verdict(
+    run_dir: str, slot1_path: str, slot2_path: str, slot3_path: str
+) -> dict:
+    """Load the three slot verdicts and return the per-field majority as a dict.
+
+    Pure function — reads only. Callers who want to persist the result use
+    ``_write_majority_verdict`` afterwards (best-effort; not required).
+    """
+    slot_infos = []
+    for slot_num, path in ((1, slot1_path), (2, slot2_path), (3, slot3_path)):
+        with open(path, "r") as f:
+            data = json.load(f)
+        slot_infos.append((slot_num, path, data))
+
+    contam_maj = sum(1 for _, _, d in slot_infos if d["contamination"]) >= 2
+    dm_maj = sum(1 for _, _, d in slot_infos if d["disallowed_model"]) >= 2
+
+    def _joined(field: str) -> str:
+        parts = []
+        for slot_num, _, d in slot_infos:
+            parts.append(
+                f"[slot {slot_num}] contamination={d['contamination']} "
+                f"disallowed_model={d['disallowed_model']}\n"
+                + d.get(field, "")
+            )
+        return "\n\n".join(parts)
+
+    return {
+        "contamination": contam_maj,
+        "disallowed_model": dm_maj,
+        "justification_contamination": _joined("justification_contamination"),
+        "justification_disallowed_model": _joined("justification_disallowed_model"),
+        "_meta": {
+            "aggregation": "per_field_majority_of_3",
+            "slots": [
+                {
+                    "slot": slot_num,
+                    "path": os.path.relpath(path, run_dir),
+                    "contamination": d["contamination"],
+                    "disallowed_model": d["disallowed_model"],
+                    "judge_model": d.get("_meta", {}).get("judge_model", "unknown"),
+                    "judge_codex_version": d.get("_meta", {}).get(
+                        "judge_codex_version", "unknown"
+                    ),
+                    "timestamp": d.get("_meta", {}).get("timestamp", ""),
+                }
+                for slot_num, path, d in slot_infos
+            ],
+        },
+    }
+
+
+def _try_write_majority_cache(final_path: str, verdict: dict) -> bool:
+    """Try to write ``verdict`` to ``final_path`` (tempfile + atomic rename).
+
+    Returns True on success, False if the write fails (e.g. Lustre EIO on
+    the target directory). A failed write never leaves a corrupt final file.
+    Failure is a warning, not an error — the caller has the verdict in memory
+    already; caching is only for audit.
+    """
+    try:
+        os.makedirs(os.path.dirname(final_path), exist_ok=True)
+        tmp_path = final_path + ".tmp"
+        with open(tmp_path, "w") as f:
+            json.dump(verdict, f, indent=2)
+        os.replace(tmp_path, final_path)
+        return True
+    except OSError as e:
+        import sys
+        print(
+            f"WARNING: could not cache majority verdict to {final_path}: {e}",
+            file=sys.stderr,
+        )
+        try:
+            os.remove(final_path + ".tmp")
+        except OSError:
+            pass
+        return False
+
+
+def _multi_run_slot_paths(run_dir: str) -> tuple[str | None, str, str, str]:
+    """Return (slot1_path_or_None, slot2_path, slot3_path, final_path)."""
+    multi_dir = os.path.join(run_dir, MULTI_RUN_DIRNAME)
+    return (
+        _slot1_judgement_path(run_dir),
+        os.path.join(multi_dir, "judgement_gpt5_4_run2.json"),
+        os.path.join(multi_dir, "judgement_gpt5_4_run3.json"),
+        os.path.join(multi_dir, "judgement_gpt5_4_final.json"),
+    )
+
+
+def materialize_majority_verdict(run_dir: str) -> str | None:
+    """Materialize the multi-run majority verdict cache for ``run_dir``.
+
+    Returns the cached ``_final.json`` path on success, or None when the
+    three slots aren't all present OR the cache write fails (e.g. Lustre
+    EIO). A None return does NOT mean the majority is unavailable —
+    ``load_judgement`` computes it in memory regardless. This function is
+    only for callers that need a concrete file path (e.g. the extract
+    pipeline that hands the file to the trace viewer).
+    """
+    slot1, slot2, slot3, final_path = _multi_run_slot_paths(run_dir)
+    if os.path.exists(final_path):
+        return final_path
+    if slot1 is None or not os.path.exists(slot2) or not os.path.exists(slot3):
+        return None
+    verdict = _compute_majority_verdict(run_dir, slot1, slot2, slot3)
+    if _try_write_majority_cache(final_path, verdict):
+        return final_path
+    return None
+
+
+def judgement_path(run_dir: str) -> str:
+    """Return a GPT-5.4 contamination judgement path for a run directory.
+
+    Preference order:
+      1. Cached majority verdict at
+         ``judgement_multi_runs/judgement_gpt5_4_final.json``.
+      2. Freshly materialized cache (attempted opportunistically; may fail
+         silently on Lustre EIO).
+      3. Legacy single verdict: ``judgement_gpt5_4_rerun.json`` when present,
+         else ``judgement_gpt5_4.json``.
+
+    Note: prefer ``load_judgement`` when you only need the verdict fields;
+    it applies the majority in-memory even when the cache write is failing.
+    """
+    final_path = materialize_majority_verdict(run_dir)
+    if final_path is not None:
+        return final_path
+
+    slot1 = _slot1_judgement_path(run_dir)
+    if slot1 is not None:
+        return slot1
+
     raise FileNotFoundError(
         f"No GPT-5.4 contamination judgement in {run_dir} "
-        f"(expected judgement_gpt5_4_rerun.json or judgement_gpt5_4.json)"
+        f"(expected judgement_multi_runs/judgement_gpt5_4_final.json, "
+        f"judgement_gpt5_4_rerun.json, or judgement_gpt5_4.json)"
     )
+
+
+def _validate_judgement_schema(data: dict, source: str) -> dict:
+    """Enforce the contamination-verdict schema; return the checked fields dict."""
+    if not isinstance(data, dict):
+        raise ValueError(f"{source}: top-level JSON is not an object")
+    missing = [f for f in JUDGEMENT_FIELDS if f not in data]
+    if missing:
+        raise ValueError(f"{source}: missing fields: {', '.join(missing)}")
+    for field in JUDGEMENT_FIELDS:
+        if not isinstance(data[field], bool):
+            raise TypeError(
+                f"{source}: field {field!r} must be bool, got "
+                f"{type(data[field]).__name__}: {data[field]!r}"
+            )
+    return {field: data[field] for field in JUDGEMENT_FIELDS}
 
 
 def load_judgement(run_dir: str) -> dict:
     """Load the GPT-5.4 contamination judge verdict for a single run directory.
 
-    Reads only the GPT-5.4 contamination judge output (preferring the rerun
-    file; see ``judgement_path``). The API usage and PTB-lookup judges have
-    their own loaders (``load_api_judgement`` / ``load_ptb_lookup_judgement``).
+    When all three multi-run slots are present, applies the per-field majority
+    IN MEMORY (best-effort persists to ``judgement_gpt5_4_final.json``, but a
+    write failure does not affect correctness). Otherwise falls back to the
+    cached majority file if it exists, then to the legacy single verdict
+    (``_rerun.json`` preferred over ``.json``).
 
-    Raises FileNotFoundError when neither judgement file exists,
-    json.JSONDecodeError on a malformed file, and ValueError/TypeError when the
-    schema does not match what the contamination judge writes.
+    Raises FileNotFoundError when no verdict is available,
+    json.JSONDecodeError on a malformed file, and ValueError/TypeError when
+    the schema does not match what the contamination judge writes.
     """
-    path = judgement_path(run_dir)
+    slot1, slot2_path, slot3_path, final_path = _multi_run_slot_paths(run_dir)
 
-    with open(path, "r") as f:
-        data = json.load(f)
-    if not isinstance(data, dict):
-        raise ValueError(f"{path}: top-level JSON is not an object")
+    # Fast path: all 3 slots present → compute majority in-memory.
+    if slot1 is not None and os.path.exists(slot2_path) and os.path.exists(slot3_path):
+        verdict = _compute_majority_verdict(run_dir, slot1, slot2_path, slot3_path)
+        _try_write_majority_cache(final_path, verdict)  # opportunistic
+        return _validate_judgement_schema(verdict, f"majority({run_dir})")
 
-    missing = [f for f in JUDGEMENT_FIELDS if f not in data]
-    if missing:
-        raise ValueError(f"{path}: missing fields: {', '.join(missing)}")
+    # Cached majority exists but slots don't all — read the cache.
+    if os.path.exists(final_path):
+        with open(final_path, "r") as f:
+            data = json.load(f)
+        return _validate_judgement_schema(data, final_path)
 
-    for field in JUDGEMENT_FIELDS:
-        if not isinstance(data[field], bool):
-            raise TypeError(
-                f"{path}: field {field!r} must be bool, got "
-                f"{type(data[field]).__name__}: {data[field]!r}"
-            )
+    # Legacy single-verdict fallback.
+    if slot1 is not None:
+        with open(slot1, "r") as f:
+            data = json.load(f)
+        return _validate_judgement_schema(data, slot1)
 
-    return {field: data[field] for field in JUDGEMENT_FIELDS}
+    raise FileNotFoundError(
+        f"No GPT-5.4 contamination judgement in {run_dir} "
+        f"(expected judgement_multi_runs/judgement_gpt5_4_final.json, "
+        f"judgement_gpt5_4_rerun.json, or judgement_gpt5_4.json)"
+    )
 
 
 API_USAGE_FIELD = "disallowed_api_usage"

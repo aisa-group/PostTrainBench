@@ -203,3 +203,72 @@ collect_judge_output() {
         echo "WARNING: judgement.json not created by ${JUDGE_LABEL} (see $out_dir/${out_base}.txt); continuing — a missing inline verdict never aborts the task run" >&2
     fi
 }
+
+# tag_judgement_meta <judgement_path> <slot>
+# Injects a "_meta" block (judge_model, judge_codex_version, slot, timestamp)
+# into an existing verdict JSON so downstream tooling can tell which judge
+# model produced it (the JUDGE_OUTPUT_ID alone doesn't distinguish gpt-5.4 vs
+# gpt-5.6-terra after the 2026-08-31 migration). Silently no-op if the file
+# doesn't exist. Reads JUDGE_MODEL / JUDGE_CODEX_VERSION from the currently
+# loaded judge.conf.
+tag_judgement_meta() {
+    local judgement_path="$1" slot="$2"
+    [ -f "$judgement_path" ] || return 0
+    local ts tmpf
+    ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    tmpf="$(mktemp)"
+    if jq --arg model "$JUDGE_MODEL" \
+          --arg cv "${JUDGE_CODEX_VERSION:-container-default}" \
+          --arg slot "$slot" \
+          --arg ts "$ts" \
+          '. + {_meta: {judge_model: $model, judge_codex_version: $cv, slot: ($slot|tonumber), timestamp: $ts}}' \
+          "$judgement_path" > "$tmpf" 2>/dev/null; then
+        mv "$tmpf" "$judgement_path"
+    else
+        rm -f "$tmpf"
+    fi
+}
+
+# run_contamination_judge_slot <job_dir> <job_tmp> <out_dir> <slot> <benchmark> <model_hf> <agent> <agent_config> <missing_fatal>
+#
+# Runs data_contamination_judge and writes its output for one slot of the
+# multi-run best-of-3 experiment:
+#   slot 1 -> <out_dir>/judgement_gpt5_4.json (top level, backwards compat)
+#   slot N -> <out_dir>/judgement_multi_runs/judgement_gpt5_4_run<N>.json
+#
+# The emitted judgement is tagged with a _meta block via tag_judgement_meta.
+# Cleans $job_dir/task/judgement.json before invoking the judge (SAFE: any
+# previous slot's judgement has already been copied out to its final path by
+# collect_judge_output).
+#
+# Caller must have already run load_judge_conf "data_contamination_judge",
+# prepare_judge_sandbox, and setup_judge_codex_auth. May also set
+# JUDGE_EXTRA_APPTAINER_ARGS.
+run_contamination_judge_slot() {
+    local job_dir="$1" job_tmp="$2" out_dir="$3" slot="$4"
+    local benchmark="$5" model_hf="$6" agent="$7" agent_config="$8"
+    local missing_fatal="$9"
+
+    local slot_out_dir suffix
+    if [ "$slot" = "1" ]; then
+        slot_out_dir="$out_dir"
+        suffix=""
+    else
+        slot_out_dir="$out_dir/${MULTI_RUN_DIRNAME:-judgement_multi_runs}"
+        mkdir -p "$slot_out_dir"
+        suffix="_run${slot}"
+    fi
+
+    # Clean any leftover judgement in the sandbox — the previous slot/judge
+    # has already been safely copied to its final path by collect_judge_output.
+    rm -f "$job_dir/task/judgement.json"
+
+    local prompt
+    prompt=$(build_judge_prompt "data_contamination_judge" "$benchmark" "$model_hf" "$agent" "$agent_config")
+
+    local output_json="$slot_out_dir/judge_output_${JUDGE_OUTPUT_ID}${suffix}.json"
+    run_judge_exec "$job_dir" "$job_tmp" "$output_json" "$prompt"
+    collect_judge_output "$job_dir" "$slot_out_dir" "$suffix" "$missing_fatal"
+
+    tag_judgement_meta "$slot_out_dir/judgement_${JUDGE_OUTPUT_ID}${suffix}.json" "$slot"
+}

@@ -370,24 +370,40 @@ JUDGE_EXTRA_APPTAINER_ARGS=(
     --bind "${HF_MERGED}:${HF_HOME_NEW}"
 )
 
-FIRST_JUDGE=1
 for JUDGE_NAME in "${ALL_JUDGES[@]}"; do
     load_judge_conf "${JUDGE_NAME}" || exit 1
 
     echo "=== Judge: ${JUDGE_LABEL} ==="
 
-    # Clean judgement file between judges so each one starts fresh
-    [ "$FIRST_JUDGE" = "1" ] || rm -f "${JOB_DIR}/task/judgement.json"
-    FIRST_JUDGE=0
+    if [ "${JUDGE_NAME}" = "data_contamination_judge" ]; then
+        # Best-of-3: run the contamination judge three times so
+        # scripts/utils.py::load_judgement can take a per-field majority. Slot
+        # 1 lands at judgement_gpt5_4.json (top level, backwards compatible);
+        # slots 2 and 3 land under judgement_multi_runs/. Each slot cleans its
+        # own sandbox judgement.json AFTER the previous slot has been safely
+        # copied out by collect_judge_output. missing_fatal=0 so a failing
+        # slot never blocks the 10h agent's evaluation.
+        for SLOT in 1 2 3; do
+            echo "  --- slot ${SLOT} of 3 ---"
+            with_huggingface_overlay run_contamination_judge_slot \
+                "${JOB_DIR}" "${JOB_TMP}" "${EVAL_DIR}" "${SLOT}" \
+                "${EVALUATION_TASK}" "${MODEL_TO_TRAIN}" "${AGENT}" "${AGENT_CONFIG}" 0
+        done
+    else
+        # Single-run judges (api_usage, ptb_lookup, general): unchanged.
+        # Clean the sandbox judgement.json — safe because the previous
+        # judge/slot's collect_judge_output has already copied it out.
+        rm -f "${JOB_DIR}/task/judgement.json"
 
-    JUDGE_PROMPT=$(build_judge_prompt "${JUDGE_NAME}" "${EVALUATION_TASK}" "${MODEL_TO_TRAIN}" "${AGENT}" "${AGENT_CONFIG}")
+        JUDGE_PROMPT=$(build_judge_prompt "${JUDGE_NAME}" "${EVALUATION_TASK}" "${MODEL_TO_TRAIN}" "${AGENT}" "${AGENT_CONFIG}")
 
-    with_huggingface_overlay run_judge_exec "${JOB_DIR}" "${JOB_TMP}" "${EVAL_DIR}/judge_output_${JUDGE_OUTPUT_ID}.json" "${JUDGE_PROMPT}"
+        with_huggingface_overlay run_judge_exec "${JOB_DIR}" "${JOB_TMP}" "${EVAL_DIR}/judge_output_${JUDGE_OUTPUT_ID}.json" "${JUDGE_PROMPT}"
 
-    # missing_fatal=0: a judge that produces no verdict warns and moves on. The
-    # agent's 10h of work is already done, so it must still be evaluated; the
-    # rerun pipeline can supply the missing verdict afterwards.
-    collect_judge_output "${JOB_DIR}" "${EVAL_DIR}" "" 0
+        # missing_fatal=0: a judge that produces no verdict warns and moves on. The
+        # agent's 10h of work is already done, so it must still be evaluated; the
+        # rerun pipeline can supply the missing verdict afterwards.
+        collect_judge_output "${JOB_DIR}" "${EVAL_DIR}" "" 0
+    fi
 done
 
 echo "================================"
