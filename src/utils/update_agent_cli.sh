@@ -1,11 +1,16 @@
 #!/bin/bash
-# Auto-update an agent's CLI harness to the latest npm release and record the
-# version that will actually run. Invoked from each agents/<agent>/solve.sh just
-# before the CLI is launched (run_task.sh copies this script into the sandbox at
-# /home/ben/update_agent_cli.sh).
+# Auto-update an agent's CLI harness to the specified npm release (default:
+# latest) and record the version that will actually run. Invoked from each
+# agents/<agent>/solve.sh just before the CLI is launched (run_task.sh copies
+# this script into the sandbox at /home/ben/update_agent_cli.sh).
 #
 # Usage: update_agent_cli.sh <cli-binary>
 #   e.g. update_agent_cli.sh claude
+#
+# Version pin: set <BIN-uppercase>_CLI_VERSION in the environment to install
+# a specific npm version instead of `latest`. Example:
+#     CLAUDE_CLI_VERSION=2.1.207 update_agent_cli.sh claude
+# ⇒ `npm install ...@2.1.207`. Missing/empty → `@latest` (previous behavior).
 #
 # The binary -> npm package mapping below is the single source of truth; add a
 # line here when introducing an agent that uses a new CLI.
@@ -43,13 +48,18 @@ case "${SKIP,,}" in
     *)             SKIP_UPDATE=0 ;;
 esac
 
+# Version pin: look up <BIN>_CLI_VERSION (uppercase). Empty/missing → 'latest'.
+# Passing `claude` reads $CLAUDE_CLI_VERSION, `codex` reads $CODEX_CLI_VERSION, etc.
+VERSION_ENV="$(echo "${BIN}" | tr '[:lower:]' '[:upper:]')_CLI_VERSION"
+REQUESTED_VERSION="${!VERSION_ENV:-latest}"
+
 UPDATE_STATUS="success"
 if [ "$SKIP_UPDATE" = "1" ]; then
     UPDATE_STATUS="skipped"
     echo "[update_agent_cli] POST_TRAIN_BENCH_SKIP_CLI_UPDATE set; using pinned ${BIN}"
 else
-    echo "[update_agent_cli] updating ${BIN} (${PKG}) to latest ..."
-    if ! timeout 300 npm install -g --prefix "$HOME/.local" --no-fund --no-audit "${PKG}@latest"; then
+    echo "[update_agent_cli] updating ${BIN} (${PKG}) to ${REQUESTED_VERSION} ..."
+    if ! timeout 300 npm install -g --prefix "$HOME/.local" --no-fund --no-audit "${PKG}@${REQUESTED_VERSION}"; then
         UPDATE_STATUS="failed"
         echo "[update_agent_cli] WARNING: update failed; falling back to pinned ${BIN}" >&2
     fi
@@ -66,6 +76,7 @@ VERSION_OUTPUT="$("$BIN" --version 2>&1 || echo "<version lookup failed>")"
     echo "package: ${PKG}"
     echo "path: ${RESOLVED_PATH}"
     echo "version: ${VERSION_OUTPUT}"
+    echo "requested_version: ${REQUESTED_VERSION}"
     echo "update: ${UPDATE_STATUS}"
     echo "recorded_at: $(date -Iseconds)"
 } > "$VERSION_FILE"
