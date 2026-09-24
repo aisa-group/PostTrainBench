@@ -7,10 +7,16 @@
 # Usage: update_agent_cli.sh <cli-binary>
 #   e.g. update_agent_cli.sh claude
 #
-# Version pin: set <BIN-uppercase>_CLI_VERSION in the environment to install
-# a specific npm version instead of `latest`. Example:
+# Version pin: set <BIN-uppercase>_CLI_VERSION (e.g. CLAUDE_CLI_VERSION,
+# CODEX_CLI_VERSION, GEMINI_CLI_VERSION, OPENCODE_CLI_VERSION) to install that
+# exact npm version instead of `latest`. run_task.sh forwards these from .env
+# into the sandbox. Example:
 #     CLAUDE_CLI_VERSION=2.1.207 update_agent_cli.sh claude
-# ⇒ `npm install ...@2.1.207`. Missing/empty → `@latest` (previous behavior).
+# ⇒ `npm install ...@2.1.207`. Missing/empty → `@latest`.
+#
+# A pin is strict: it is installed even when POST_TRAIN_BENCH_SKIP_CLI_UPDATE
+# is set, and if the install fails the script exits non-zero (solve.sh then
+# aborts) instead of falling back.
 #
 # The binary -> npm package mapping below is the single source of truth; add a
 # line here when introducing an agent that uses a new CLI.
@@ -20,8 +26,9 @@
 # install into the user-writable $HOME/.local prefix, which run_task.sh places
 # ahead of the system path in PATH so the updated binary shadows the pinned one.
 #
-# The update is best-effort: if it fails (e.g. registry unreachable) we keep the
-# container's pinned version and still record whatever is actually installed.
+# Without a pin the update is best-effort: if it fails (e.g. registry
+# unreachable) we keep the container's baked version and still record whatever
+# is actually installed.
 
 set -u
 
@@ -51,17 +58,30 @@ esac
 # Version pin: look up <BIN>_CLI_VERSION (uppercase). Empty/missing → 'latest'.
 # Passing `claude` reads $CLAUDE_CLI_VERSION, `codex` reads $CODEX_CLI_VERSION, etc.
 VERSION_ENV="$(echo "${BIN}" | tr '[:lower:]' '[:upper:]')_CLI_VERSION"
-REQUESTED_VERSION="${!VERSION_ENV:-latest}"
+PINNED_VERSION="${!VERSION_ENV:-}"
+if [ "$PINNED_VERSION" = "latest" ]; then
+    PINNED_VERSION=""
+fi
+REQUESTED_VERSION="${PINNED_VERSION:-latest}"
+
+if [ -n "$PINNED_VERSION" ] && [ "$SKIP_UPDATE" = "1" ]; then
+    echo "[update_agent_cli] ${VERSION_ENV}=${PINNED_VERSION} overrides POST_TRAIN_BENCH_SKIP_CLI_UPDATE"
+    SKIP_UPDATE=0
+fi
 
 UPDATE_STATUS="success"
 if [ "$SKIP_UPDATE" = "1" ]; then
     UPDATE_STATUS="skipped"
-    echo "[update_agent_cli] POST_TRAIN_BENCH_SKIP_CLI_UPDATE set; using pinned ${BIN}"
+    echo "[update_agent_cli] POST_TRAIN_BENCH_SKIP_CLI_UPDATE set; using container's ${BIN}"
 else
     echo "[update_agent_cli] updating ${BIN} (${PKG}) to ${REQUESTED_VERSION} ..."
     if ! timeout 300 npm install -g --prefix "$HOME/.local" --no-fund --no-audit "${PKG}@${REQUESTED_VERSION}"; then
+        if [ -n "$PINNED_VERSION" ]; then
+            echo "[update_agent_cli] ERROR: failed to install pinned ${PKG}@${PINNED_VERSION} (${VERSION_ENV})" >&2
+            exit 1
+        fi
         UPDATE_STATUS="failed"
-        echo "[update_agent_cli] WARNING: update failed; falling back to pinned ${BIN}" >&2
+        echo "[update_agent_cli] WARNING: update failed; falling back to container's ${BIN}" >&2
     fi
 fi
 

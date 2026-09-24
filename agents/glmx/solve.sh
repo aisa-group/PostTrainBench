@@ -39,14 +39,13 @@ export IS_SANDBOX="1"
 # backward-compatible.
 if [[ "${AGENT_CONFIG}" == glm-5.3* ]]; then
     export CLAUDE_ENABLE_STREAM_WATCHDOG=0
-    # Ask update_agent_cli.sh to install this exact version. Override the
-    # global .env POST_TRAIN_BENCH_SKIP_CLI_UPDATE=1 opt-out so the upgrade
-    # actually runs (other glmx configs still respect the .env skip).
+    # Ask update_agent_cli.sh to install this exact version (a pin overrides
+    # the .env POST_TRAIN_BENCH_SKIP_CLI_UPDATE=1 opt-out and any
+    # CLAUDE_CLI_VERSION set in .env).
     export CLAUDE_CLI_VERSION="2.1.207"
-    export POST_TRAIN_BENCH_SKIP_CLI_UPDATE=0
 fi
 
-bash /home/ben/update_agent_cli.sh claude
+bash /home/ben/update_agent_cli.sh claude || exit 1
 
 printf '%s' "$PROMPT" | claude --print --verbose --model "$AGENT_CONFIG" \
     --output-format stream-json \

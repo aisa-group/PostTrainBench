@@ -65,11 +65,17 @@ PostTrainBench/
    the harness to the latest npm release and writes its version to `cli_version.txt` (surfaced in
    the result dir). The helper (`src/utils/update_agent_cli.sh`, copied into the sandbox by
    `run_task.sh`) holds the binary→npm-package mapping; add a `case` entry there if the agent uses
-   a CLI not already covered (`claude`, `codex`, `gemini`, `opencode`). The update is best-effort —
+   a CLI not already covered (`claude`, `codex`, `gemini`, `opencode`). Without a pin the update is best-effort —
    a failure falls back to the container's pinned version and still records what actually ran.
    Set `POST_TRAIN_BENCH_SKIP_CLI_UPDATE=1` in `.env` to disable the update globally and pin CLI
    versions to whatever the container ships; `cli_version.txt` still records what ran
-   (`update: skipped`).
+   (`update: skipped`). To install an exact version instead of latest, set
+   `CLAUDE_CLI_VERSION` / `CODEX_CLI_VERSION` / `GEMINI_CLI_VERSION` / `OPENCODE_CLI_VERSION`
+   in `.env` (`run_task.sh` forwards them into the sandbox). Per-model pins hardcoded in a
+   `solve.sh` (`claude_non_api_max`, `glmx`) override the `.env` value. A pin is strict: it overrides
+   `POST_TRAIN_BENCH_SKIP_CLI_UPDATE`, and a failed install aborts
+   `solve.sh` (every `solve.sh` calls the helper with `|| exit 1`). A new CLI in the helper's
+   mapping also needs its `<BIN>_CLI_VERSION` added to the forwarding loop in `run_task.sh`.
 
 Example structure:
 ```bash
