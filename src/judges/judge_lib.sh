@@ -216,7 +216,12 @@ tag_judgement_meta() {
     [ -f "$judgement_path" ] || return 0
     local ts tmpf
     ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    tmpf="$(mktemp)"
+    # Temp file next to the verdict (same filesystem, so mv is an atomic
+    # rename) carrying the verdict's own mode: mktemp creates files 0600, and
+    # mv-ing that over the verdict would make it unreadable to everyone but
+    # the job's owner (collect.py run by anyone else then crashes on it).
+    tmpf="$(mktemp "${judgement_path}.XXXXXX")"
+    chmod --reference="$judgement_path" "$tmpf"
     if jq --arg model "$JUDGE_MODEL" \
           --arg cv "${JUDGE_CODEX_VERSION:-container-default}" \
           --arg slot "$slot" \
