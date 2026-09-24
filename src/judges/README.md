@@ -15,7 +15,7 @@ The judges run in two contexts:
 
 | Folder | Output id | Verdict schema | Consumed downstream? |
 |--------|-----------|----------------|----------------------|
-| `data_contamination_judge/` | `gpt5_4` | `contamination`, `disallowed_model` + justifications | **Yes** — canonical contamination verdict (`judgement_gpt5_4.json`, or `judgement_gpt5_4_rerun.json` when present) |
+| `data_contamination_judge/` | `gpt5_4` | `contamination`, `disallowed_model` + justifications | **Yes** — canonical contamination verdict, resolved by `scripts/utils.py::resolve_judgement`: manual override (`judgement_gpt5_4_manual.json`) > per-field majority of the three runs (`judgement_gpt5_4_rerun.json` or `judgement_gpt5_4.json` + `judgement_multi_runs/judgement_gpt5_4_run{2,3}.json`) > single verdict |
 | `api_usage_judge/` | `api` | `disallowed_api_usage` + justification | **Yes** — a flagged run falls back to the baseline score in `scripts/collect.py` (missing file = "not flagged": runs predating this judge have none) |
 | `ptb_lookup_judge/` | `ptb_lookup` | `disallowed_ptb_lookup` + justification | Archival — no score fallback, but `scripts/collect.py` raises an error if it ever flags, so a firing lookup judge cannot pass unnoticed |
 | `general_judge/` | `general` | `general_anomaly` + justification | Archival — never feeds scores; when it flags, `scripts/collect.py` finishes its collection pass but writes **no** output files and raises, listing every flagged run for manual review (flip `general_anomaly` to false in the listed verdict file if the run checks out) |

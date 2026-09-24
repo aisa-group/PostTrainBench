@@ -8,7 +8,7 @@ Layout produced per run:
         solve_out.txt               # raw stream-JSON trace (NOT solve_parsed.txt)
         metrics.json                # if present
         metrics_averaged.json       # if present
-        judgement_gpt5_4.json       # canonical contamination verdict (rerun preferred; if present)
+        judgement_gpt5_4.json       # effective contamination verdict (manual > majority of 3 > rerun > inline; if present)
         judge_output_gpt5_4.{json,txt} # GPT-5.4 contamination-judge trace (rerun preferred; if present)
         error.log                   # if present
         time_taken.txt              # if present
@@ -472,11 +472,12 @@ def _process_subdir(subdir_str: str, dest_dir_str: str, force: bool) -> dict:
 
     # Judge artifacts — canonical GPT-5.4 contamination verdict + trace.
     # Preference order for the contamination verdict JSON, encoded by
-    # copy_preferring_majority: multi-run majority (judgement_multi_runs/
-    # judgement_gpt5_4_final.json, materialized on demand when slots 2/3
-    # are present) > _rerun.json > inline. The output file is always named
-    # judgement_gpt5_4.json in the destination so downstream tools don't
-    # need to know a majority happened.
+    # copy_preferring_majority (mirrors scripts/utils.py::resolve_judgement):
+    # manual override (judgement_gpt5_4_manual.json) > multi-run majority
+    # (judgement_multi_runs/judgement_gpt5_4_final.json, rewritten from the
+    # three slots on every extract) > _rerun.json > inline. The output file is
+    # always named judgement_gpt5_4.json in the destination so downstream
+    # tools don't need to know an override or a majority happened.
     copy_preferring_majority(subdir, dest_dir, 'judgement_gpt5_4.json', api_keys=_WORKER_API_KEYS)
     copy_preferring_rerun(subdir, dest_dir, 'judge_output_gpt5_4.json', api_keys=_WORKER_API_KEYS)
     copy_preferring_rerun(subdir, dest_dir, 'judge_output_gpt5_4.txt',  api_keys=_WORKER_API_KEYS)
@@ -710,34 +711,42 @@ def copy_other_files(subdir, dest_dir, filename, dest_filename=None, api_keys=No
 
 
 def copy_preferring_majority(subdir, dest_dir, base_filename, api_keys):
-    """Copy the contamination verdict, preferring the multi-run majority.
+    """Copy the contamination verdict, preferring a manual override, then the
+    multi-run majority.
 
     Only meaningful for ``judgement_gpt5_4.json`` — the only judge with a
-    multi-run setup today. Preference order:
-      1. ``judgement_multi_runs/<stem>_final<ext>`` (majority of slots 1/2/3),
-         materialized on demand by scripts.utils.materialize_majority_verdict
-         when slots 2 and 3 exist.
-      2. ``<stem>_rerun<ext>`` (single rerun).
-      3. ``<base_filename>`` (inline verdict from run_task.sh).
+    multi-run setup and manual overrides today. Preference order (mirrors
+    scripts/utils.py::resolve_judgement):
+      1. ``<stem>_manual<ext>`` (human reviewer's override, written by hand;
+         see dev_utils/README.md).
+      2. ``judgement_multi_runs/<stem>_final<ext>`` (majority of slots 1/2/3),
+         rewritten from the slots by scripts.utils.materialize_majority_verdict
+         on every call. Only the path it returns is used: a leftover
+         ``_final`` file it could not rewrite may be stale and is ignored.
+      3. ``<stem>_rerun<ext>`` (single rerun).
+      4. ``<base_filename>`` (inline verdict from run_task.sh).
     The `_sanitized` companion is preferred within whichever candidate wins.
     The destination file is always written under the canonical
     ``<base_filename>`` name — downstream tools stay ignorant of which slot
     produced the verdict.
     """
-    # Try to materialize the multi-run majority (idempotent — returns the
-    # cached path if it already exists). Only wired up for gpt5_4 today; a
-    # different base_filename just skips the materialization step.
+    base = Path(base_filename)
+    stem, ext = base.stem, base.suffix
+    candidates = [subdir / f"{stem}_manual{ext}"]
+    # Rewrite the multi-run majority from the slots. Only wired up for gpt5_4
+    # today; a different base_filename just skips the materialization step.
     if materialize_majority_verdict is not None and base_filename == 'judgement_gpt5_4.json':
+        final_path = None
         try:
-            materialize_majority_verdict(str(subdir))
+            final_path = materialize_majority_verdict(str(subdir))
         except Exception as e:
             # A malformed slot file, permissions issue, or torn-write mid-flight
             # should not derail the extract — fall through to the legacy layout.
             print(f"  WARN: multi-run majority materialization failed for {subdir.name}: {e}")
-    base = Path(base_filename)
-    stem, ext = base.stem, base.suffix
-    final_path = subdir / "judgement_multi_runs" / f"{stem}_final{ext}"
-    for candidate in (final_path, subdir / f"{stem}_rerun{ext}", subdir / base_filename):
+        if final_path is not None:
+            candidates.append(Path(final_path))
+    candidates += [subdir / f"{stem}_rerun{ext}", subdir / base_filename]
+    for candidate in candidates:
         src = prefer_sanitized(candidate)
         if src.exists():
             copy_file_sanitized(src, dest_dir / base_filename, api_keys)

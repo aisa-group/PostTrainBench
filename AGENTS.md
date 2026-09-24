@@ -243,10 +243,15 @@ and a prompt template (see `src/judges/README.md`, including how to add a new ju
    no score impact and no error, whether it is missing or flagged. Review its flags with
    `scripts/find_flagged_runs.py --judge general_judge`.
 
-Each judge writes its own per-judge file; there is no aggregation step. The canonical verdicts
-consumed downstream are `judgement_gpt5_4.json` (contamination/disallowed_model) and
-`judgement_api.json` (API usage) — or their `_rerun` variants when the rerun pipeline has
-produced them. `scripts/collect.py` enforces judge coverage: every scored run (metrics.json
+Each judge writes its own per-judge file. The canonical verdicts consumed downstream are the
+contamination verdict (contamination/disallowed_model) and `judgement_api.json` (API usage, or
+its `_rerun` variant when the rerun pipeline has produced it). The contamination verdict is
+resolved by `scripts/utils.py::resolve_judgement`: a manual override
+(`judgement_gpt5_4_manual.json`, written by hand after a review, see `dev_utils/README.md`)
+wins; else the per-field majority of the three contamination-judge runs (slot 1 =
+`judgement_gpt5_4_rerun.json` or `judgement_gpt5_4.json`, slots 2/3 =
+`judgement_multi_runs/judgement_gpt5_4_run{2,3}.json`); else the single slot-1 verdict. Never
+flip a judge's own verdict file — record a manual override instead. `scripts/collect.py` enforces judge coverage: every scored run (metrics.json
 present) must carry a contamination and an API verdict, and runs with ids >=
 `NEWER_JUDGES_MIN_RUN_ID` (`scripts/utils.py`) a PTB-lookup verdict too; a method containing a
 scored run without a required verdict is skipped (warning, no CSVs) instead of aggregated.
@@ -285,7 +290,9 @@ results/{agent}_{agent_config}_{num_hours}h[_{num_gpus}gpu]{experiment_name}/
     ├── final_model/             # Trained model checkpoint
     ├── system_monitor.log       # GPU/CPU/RAM samples from src/utils/system_monitor.sh
     ├── judge_output_gpt5_4.{json,txt}   # data_contamination_judge raw + parsed trace
-    ├── judgement_gpt5_4.json            # data_contamination_judge structured verdict
+    ├── judgement_gpt5_4.json            # data_contamination_judge structured verdict (slot 1 of 3)
+    ├── judgement_multi_runs/            # contamination judge slots 2/3 (judgement_gpt5_4_run{2,3}.json) + majority cache (_final.json)
+    ├── judgement_gpt5_4_manual.json     # optional human override of the contamination verdict (wins over the judges)
     ├── judge_output_api.{json,txt}      # api_usage_judge raw + parsed trace
     ├── judgement_api.json               # api_usage_judge structured verdict (flag ⇒ baseline score)
     ├── judge_output_ptb_lookup.{json,txt} # ptb_lookup_judge raw + parsed trace
@@ -298,7 +305,8 @@ results/{agent}_{agent_config}_{num_hours}h[_{num_gpus}gpu]{experiment_name}/
 
 Result directories with the `_rerun` suffix on `judgement_*.json` come from the rerun-judge
 pipeline; original files are kept side-by-side. The canonical contamination verdict is
-`judgement_gpt5_4.json` (or `judgement_gpt5_4_rerun.json` when present); the canonical
+resolved by `scripts/utils.py::resolve_judgement` (manual override > majority of the three
+judge runs > `judgement_gpt5_4_rerun.json` > `judgement_gpt5_4.json`); the canonical
 API-usage verdict is `judgement_api.json` (or `judgement_api_rerun.json`).
 
 ## Code Style
