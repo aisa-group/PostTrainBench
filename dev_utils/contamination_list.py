@@ -1,21 +1,12 @@
 #!/usr/bin/env python3
-import json
 import os
+import sys
 
-
-def load_judgement(run_path: str) -> dict | None:
-    """Load the GPT-5.4 contamination judgement for a run dir.
-
-    Prefers judgement_gpt5_4_rerun.json (rerun pipeline) over
-    judgement_gpt5_4.json (initial run). Returns the parsed dict, or None when
-    neither file exists (run has no judge output yet).
-    """
-    for name in ("judgement_gpt5_4_rerun.json", "judgement_gpt5_4.json"):
-        path = os.path.join(run_path, name)
-        if os.path.exists(path):
-            with open(path, "r") as f:
-                return json.load(f)
-    return None
+# The effective contamination verdict (manual override > majority of three
+# judge runs > rerun > inline) is resolved in scripts/utils.py, the same way
+# collect.py scores it.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts"))
+from utils import resolve_judgement
 
 
 def get_latest_runs(method_path: str):
@@ -66,14 +57,15 @@ def main():
         run_paths = get_latest_runs(method_path)
 
         for run_path in run_paths:
-            judgement = load_judgement(run_path)
-            if judgement is None:
+            resolved = resolve_judgement(run_path)
+            if resolved is None:
                 continue
+            _, judgement = resolved
 
-            if judgement.get("contamination") and run_path not in ignored_runs:
+            if judgement["contamination"] and run_path not in ignored_runs:
                 contaminated_list.append(run_path)
 
-            if judgement.get("disallowed_model") and run_path not in ignored_runs:
+            if judgement["disallowed_model"] and run_path not in ignored_runs:
                 disallowed_list.append(run_path)
 
     # 2. Output the lists

@@ -88,7 +88,7 @@ Some models are only available through CLI subscriptions rather than API keys (e
    ```
 3. Copy the generated credentials:
    ```bash
-   cp ~/.codex/auth.json agents/codex_non_api/auth.json
+   cp ~/.codex/auth.json agents/codex_non_api/auth.json && chmod 600 agents/codex_non_api/auth.json  
    ```
 4. Submit jobs with `agent=codex_non_api`:
    ```bash

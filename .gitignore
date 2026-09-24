@@ -22,6 +22,7 @@ logs
 # Cluster-ID logs from commit_rerun_judges.sh submissions (incl. legacy_* dirs
 # from the pre-src/judges pipeline)
 src/judges/rerun/submission_logs/
+src/judges/multi_run/submission_logs/
 
 containers/empty_dot_git
 
@@ -246,6 +247,9 @@ output.txt
 
 # Nested checkout of the public website (has its own .git); never track from here
 posttrainbench-website/
+
+# Nested checkout of the trace-viewer pipeline (has its own .git); never track from here
+ptb-traces-pipeline/
 
 # HTCondor scheduler logs from rerun_specific_runs.sh submissions
 src/disallowed_usage_judge/rerun_judge/rerun_specific_runs_logs/

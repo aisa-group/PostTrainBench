@@ -7,6 +7,6 @@ printf 'model_reasoning_effort = "low"\n\n' > "$tmp"
 mv "$tmp" "$file"
 
 # Auto-update the CLI harness to the latest release and record its version.
-bash /home/ben/update_agent_cli.sh codex
+bash /home/ben/update_agent_cli.sh codex || exit 1
 
 printf '%s' "$PROMPT" | codex --search exec --skip-git-repo-check --yolo --model "$AGENT_CONFIG"
