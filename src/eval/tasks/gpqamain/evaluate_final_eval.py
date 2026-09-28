@@ -1,74 +1,33 @@
 #!/usr/bin/env python3
-# Final-evaluation variant of evaluate.py. run_task.sh (and the eval rerun / baseline scripts) run this file when it
-# exists; the agent sandbox only ever gets evaluate.py. The differences are the scorer: verify() below replaces
-# inspect_evals' humaneval scorer, which counts an early process exit as a correct answer; and --seed: the final
-# evaluation runs once per fixed seed and averages the results.
+# Final-evaluation variant of evaluate.py. run_task.sh (and the eval rerun / baseline scripts) run this file; the
+# agent sandbox only ever gets evaluate.py. The only difference is --seed, which fixes sampling and the answer-choice
+# order: the final evaluation runs once per fixed seed and averages the results.
+"""
+GPQA: A Graduate-Level Google-Proof Q&A Benchmark
+
+David Rein, Betty Li Hou, Asa Cooper Stickland, Jackson Petty, Richard
+Yuanzhe Pang, Julien Dirani, Julian Michael, Samuel R. Bowman
+https://arxiv.org/abs/2311.12022
+
+Based on: https://github.com/UKGovernmentBEIS/inspect_evals/blob/main/src/inspect_evals/gpqa/gpqa.py
+"""
 from __future__ import annotations
 import os
 
+from typing import Any
+
 import argparse
 import json
-import secrets
 
+from inspect_ai import Task, task
+from inspect_ai.dataset import Sample, hf_dataset
+from inspect_ai.scorer import choice
+from inspect_ai.solver import multiple_choice
 from inspect_ai.log._log import EvalLog, EvalMetric, EvalSample
 from inspect_ai import eval as inspect_eval  # type: ignore  # noqa: E402
-from inspect_ai.scorer import CORRECT, INCORRECT, Score, Scorer, Target, accuracy, scorer, stderr
-from inspect_ai.solver import TaskState
-from inspect_ai.util import ExecResult, sandbox
 from inspect_ai.util._display import init_display_type  # noqa: E402
 
-import inspect_evals.humaneval # noqa: F401, E402  (registers task definitions)
-from inspect_evals.humaneval.humaneval import VERIFY_TIMEOUT, find_code
-
-
-def build_verification_code(prompt: str, answer: str, test: str, entry_point: str, token: str) -> str:
-    """The upstream inspect_evals verification program, plus a line that prints `token` once check() has returned."""
-    return "".join([prompt, answer, "\n", test, "\n", f"check({entry_point})", "\n", f"print({token!r})", "\n"])
-
-
-def check_completed(result: ExecResult, token: str) -> bool:
-    return result.success and token in result.stdout
-
-
-@scorer(metrics=[accuracy(), stderr()])
-def verify() -> Scorer:
-    """inspect_evals' humaneval verify(), except a sample only counts as correct if check() actually ran to the end.
-
-    Upstream marks a sample correct whenever the program exits with code 0, so generated code that ends the process
-    early (sys.exit(0), os._exit(0), unittest.main(), ...) before the assertions run was scored as correct. Here the
-    program prints a fresh random token after check() returns, and the token must appear in stdout.
-    """
-    async def score(state: TaskState, target: Target) -> Score:
-        answer = find_code(state.output.completion)
-        token = secrets.token_hex(16)
-        code = build_verification_code(
-            state.metadata["prompt"], answer, state.metadata["test"], state.metadata["entry_point"], token
-        )
-
-        try:
-            result = await sandbox().exec(cmd=["python", "-c", code], timeout=VERIFY_TIMEOUT)
-        except TimeoutError:
-            result = ExecResult(False, 1, "", "Verification timed out.")
-
-        if check_completed(result, token):
-            return Score(value=CORRECT, answer=answer, explanation="")
-
-        if result.success:
-            reason = "The process exited with code 0 before check() completed."
-        else:
-            reason = result.stderr
-        return Score(
-            value=INCORRECT,
-            answer=answer,
-            explanation=(
-                "The following verification code was executed:\n\n```python\n\n"
-                + code
-                + f"\n```\n\nThe submission was incorrect\n\n{reason}"
-            ),
-        )
-
-    return score
-
+DEFAULT_EPOCHS = 1
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run Inspect AI eval without banners.")
@@ -82,7 +41,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--limit",
         type=int,
-        default=150,
+        default=50,
         help="Optional limit for number of samples to evaluate.",
     )
     parser.add_argument(
@@ -92,33 +51,34 @@ def parse_args() -> argparse.Namespace:
         help="Optional path to output the metrics as a seperate JSON file.",
     )
     parser.add_argument(
+        "--max-tokens",
+        type=int,
+        default=16000,
+    )
+    parser.add_argument(
         '--templates-dir',
         type=str,
         default="templates/",
+    )
+    parser.add_argument(
+        "--gpu-memory-utilization",
+        type=float,
+        default=0.8,
     )
     # You can adjust --max-connections this if you want faster tests and don't receive errors
     parser.add_argument(
         "--max-connections",
         type=int,
-        default=1,
-    )
-    parser.add_argument(
-        "--gpu-memory-utilization",
-        type=float,
-        default=0.3,
-    )
-    parser.add_argument(
-        "--max-tokens",
-        type=int,
-        default=4000,
+        default=6,
     )
     parser.add_argument(
         "--seed",
         type=int,
         default=None,
-        help="Random seed for sampling during generation (default: unseeded).",
+        help="Random seed for sampling during generation and for the answer-choice order (default: unseeded).",
     )
     return parser.parse_args()
+
 
 def main() -> None:
     args = parse_args()
@@ -129,10 +89,7 @@ def main() -> None:
     if (args.limit is not None) and (args.limit != -1):
         other_kwargs["limit"] = args.limit
 
-    task = inspect_evals.humaneval.humaneval(
-        sandbox="local",
-        scorer=verify(),
-    )
+    task = gpqa_main(shuffle_seed=args.seed)
     model_args = {
         'gpu_memory_utilization': args.gpu_memory_utilization,
     }
@@ -144,9 +101,9 @@ def main() -> None:
         model_args=model_args,
         score_display=False,
         log_realtime=False,
-        log_format='json',
         timeout=18000000,
         attempt_timeout=18000000,
+        log_format='json',
         max_tokens=args.max_tokens,
         max_connections=args.max_connections,
         seed=args.seed,
@@ -162,6 +119,40 @@ def main() -> None:
 
         with open(args.json_output_file, 'w') as f:
             json.dump(metrics, f, indent=2)
+
+@task
+def gpqa_main(shuffle_seed: int | None = None) -> Task:
+    return Task(
+        dataset=hf_dataset(
+            path='Idavidrein/gpqa',
+            name='gpqa_main',
+            split='train',
+            sample_fields=record_to_sample,
+            # Seeded so a fixed --seed also fixes the answer-choice order.
+            shuffle_choices=True if shuffle_seed is None else shuffle_seed,
+        ),
+        solver=[
+            multiple_choice(cot=True),
+        ],
+        scorer=choice(),
+        epochs=DEFAULT_EPOCHS,
+    )
+
+
+# map records to inspect samples (note that target is always "A" in the,
+# dataset, we will shuffle the presentation of options to mitigate this)
+def record_to_sample(record: dict[str, Any]) -> Sample:
+    return Sample(
+        input=record["Question"],
+        choices=[
+            str(record["Correct Answer"]),
+            str(record["Incorrect Answer 1"]),
+            str(record["Incorrect Answer 2"]),
+            str(record["Incorrect Answer 3"]),
+        ],
+        target="A",
+        id=record["Record ID"],
+    )
 
 def model_type(args) -> str:
     if 'qwen' in args.model_path.lower():

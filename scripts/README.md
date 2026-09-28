@@ -108,11 +108,12 @@ python scripts/verify.py \
 ## Re-evaluating a finished run N times
 
 `rerun_eval_n_times.sh` re-evaluates a job's `final_model/` N times and writes
-mean / std / stderr / min / max per metric into `metrics_averaged.json`. Useful
-because each job's standard `metrics.json` is a single decoding sample per
-question and does not capture decoding noise.
+mean / std / stderr / min / max per metric into `metrics_averaged.json`. A job's
+standard `metrics.json` is already the mean over 5 fixed seeds (see "Results
+Structure" in `AGENTS.md`). These reruns pass no `--seed`, so each one is a fresh
+unseeded decoding sample, e.g. to estimate the spread beyond those 5 seeds.
 
-It mirrors `src/run_task.sh`'s evaluation step exactly:
+Apart from the seeds, it mirrors `src/run_task.sh`'s evaluation step:
 
 - runs `src/eval/tasks/<task>/evaluate_final_eval.py` if it exists, else
   `src/eval/tasks/<task>/evaluate.py` (the live source — **not** the
@@ -128,7 +129,7 @@ Per-run JSONs are written to `<EVAL_DIR>/reruns/run_{i}.json` (with
 
 | File | Description |
 |---|---|
-| `rerun_eval_n_times.sh` | Driver: re-runs `evaluate.py` N times on one EVAL_DIR and aggregates |
+| `rerun_eval_n_times.sh` | Driver: re-runs the task's final-eval script N times (unseeded) on one EVAL_DIR and aggregates |
 | `aggregate_metrics_runs.py` | Helper called by the driver: computes mean/std/stderr/min/max from per-run JSONs |
 | `../src/commit_utils/rerun_eval.sub` | HTCondor submission file |
 

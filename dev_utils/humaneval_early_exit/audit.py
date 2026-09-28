@@ -8,7 +8,8 @@ follows check(). `passes_without_exit` then says whether the answer passes check
 False means the logged score was inflated by that sample, True means it was untested but correct anyway.
 
 Final-eval logs are the inspect logs of run_task.sh's official evaluation. They are written to
-<submitting checkout>/src/eval/tasks/humaneval/logs/ and named in the run dir's final_eval*.txt ("Log: logs/...").
+<submitting checkout>/src/eval/tasks/humaneval/logs/ and named in the run dir's final_eval*.txt ("Log: logs/..."), or
+in evaluation/final_eval_seed*_*.txt for runs with the seeded final evaluation (one log per seed).
 
 Steps:
   1. list   (login node)       find each humaneval run dir's final-eval logs; writes a TSV
@@ -41,7 +42,9 @@ def cmd_list(args: argparse.Namespace) -> None:
         assert os.path.isdir(results_dir), results_dir
         run_dirs += sorted(glob.glob(os.path.join(results_dir, "*", "humaneval_*")))
     for run_dir in run_dirs:
-        for final_eval_txt in sorted(glob.glob(os.path.join(run_dir, "final_eval*.txt"))):
+        final_eval_txts = (glob.glob(os.path.join(run_dir, "final_eval*.txt"))
+                           + glob.glob(os.path.join(run_dir, "evaluation", "final_eval*.txt")))
+        for final_eval_txt in sorted(final_eval_txts):
             with open(final_eval_txt, errors="replace") as f:
                 referenced = FINAL_EVAL_LOG_RE.findall(f.read())
             for rel in referenced:

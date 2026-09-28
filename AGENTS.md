@@ -140,14 +140,18 @@ alias in the CLI's `[models] default`.
      present, `run_task.sh` also copies it (plus `contamination_check.py`) into the agent sandbox
      home and `get_prompt.py` adds a "Decontamination Tool" prompt section, so the agent can
      screen its own training data for test-set overlap
+   - `evaluate_final_eval.py` - Variant of `evaluate.py` that the final evaluation runs instead
+     (`run_task.sh`, `scripts/rerun_eval_n_times.sh`, `dev_utils/test_evaluation/`, baselines). It is
+     **never** copied into the agent sandbox, which only sees `evaluate.py`. It must accept `--seed` and
+     use it for generation (the final evaluation runs once per fixed seed, see "Results Structure").
+     `run_task.sh` and `run_only_evaluation.sh` exit at job start if it is missing. Also use it for
+     grading hardening the agent should not see (e.g. humaneval's scorer, where upstream counts an early
+     process exit as a pass). Keep it in sync with `evaluate.py` otherwise. A task with an
+     `evaluate_openrouter.py` also needs `evaluate_openrouter_final_eval.py`, the same variant of that
+     file, which `run_task.sh` runs when grading goes through OpenRouter.
 3. Optional files:
    - `evaluation_code/` - Supporting evaluation code copied into the agent sandbox
    - `task_context/` - Additional context (e.g. dataset hints) copied into the agent sandbox
-   - `evaluate_final_eval.py` - Variant of `evaluate.py` that the final evaluation runs instead when it
-     exists (`run_task.sh`, `scripts/rerun_eval_n_times.sh`, `dev_utils/test_evaluation/`, baselines). It is
-     **never** copied into the agent sandbox, which only sees `evaluate.py`. Use it for grading hardening
-     the agent should not see (e.g. humaneval's scorer, where upstream counts an early process exit as a
-     pass). Keep it in sync with `evaluate.py` otherwise.
 
 The `evaluate.py` must:
 - Use `inspect_ai` framework
@@ -297,9 +301,26 @@ results/{agent}_{agent_config}_{num_hours}h[_{num_gpus}gpu]{experiment_name}/
     ├── judgement_ptb_lookup.json        # ptb_lookup_judge structured verdict (archival; collect.py errors if flagged)
     ├── judge_output_general.{json,txt}  # general_judge raw + parsed trace
     ├── judgement_general.json           # general_judge structured verdict (archival; ignored by collect.py)
-    ├── final_eval_*.txt                 # vLLM/inspect-ai evaluation logs (one per retry)
-    └── metrics.json                     # Final benchmark scores
+    ├── evaluation/                      # Per-seed final-evaluation outputs
+    │   ├── final_eval_seed{S}_{N}.txt   # vLLM/inspect-ai evaluation logs (one per seed and retry)
+    │   └── metrics_seed{S}.json         # Benchmark scores of one evaluation seed
+    └── metrics.json                     # Final benchmark scores: mean over the seeds that succeeded
 ```
+
+The final evaluation runs once for each fixed seed in `EVAL_SEEDS` (`src/run_task.sh`, currently
+0–4). The seed goes to `evaluate_final_eval.py` as `--seed`. Each seed runs the max-tokens retry
+cascade:
+- The first seed starts at stage 0. If it fails at every stage, the other seeds are skipped and
+  no `metrics.json` is written, so `scripts/collect.py` uses the baseline.
+- The later seeds start at the stage where the first seed succeeded, so they use the same
+  max-tokens setting. A later seed that fails at every stage is left out of the mean.
+
+`src/utils/aggregate_seed_metrics.py` then writes `metrics.json`. It holds the mean of each
+top-level numeric metric over the seeds that succeeded, plus `num_seeds`, `num_seeds_succeeded`
+and `per_seed` (the raw metrics and cascade stage of each seed). Runs from before this change have
+no `evaluation/` folder: they have one `final_eval_{N}.txt` series in the run dir and an unseeded
+`metrics.json`. `dev_utils/test_evaluation/run_only_evaluation.sh` writes its per-seed files to
+`z_new_{cluster_id}_evaluation/` instead.
 
 Result directories with the `_rerun` suffix on `judgement_*.json` come from the rerun-judge
 pipeline; original files are kept side-by-side. The canonical contamination verdict is

@@ -1,73 +1,18 @@
 #!/usr/bin/env python3
-# Final-evaluation variant of evaluate.py. run_task.sh (and the eval rerun / baseline scripts) run this file when it
-# exists; the agent sandbox only ever gets evaluate.py. The differences are the scorer: verify() below replaces
-# inspect_evals' humaneval scorer, which counts an early process exit as a correct answer; and --seed: the final
-# evaluation runs once per fixed seed and averages the results.
+# Final-evaluation variant of evaluate.py. run_task.sh (and the eval rerun / baseline scripts) run this file; the
+# agent sandbox only ever gets evaluate.py. The only difference is --seed: the final evaluation runs once per fixed
+# seed and averages the results.
 from __future__ import annotations
 import os
 
 import argparse
 import json
-import secrets
 
 from inspect_ai.log._log import EvalLog, EvalMetric, EvalSample
 from inspect_ai import eval as inspect_eval  # type: ignore  # noqa: E402
-from inspect_ai.scorer import CORRECT, INCORRECT, Score, Scorer, Target, accuracy, scorer, stderr
-from inspect_ai.solver import TaskState
-from inspect_ai.util import ExecResult, sandbox
 from inspect_ai.util._display import init_display_type  # noqa: E402
 
-import inspect_evals.humaneval # noqa: F401, E402  (registers task definitions)
-from inspect_evals.humaneval.humaneval import VERIFY_TIMEOUT, find_code
-
-
-def build_verification_code(prompt: str, answer: str, test: str, entry_point: str, token: str) -> str:
-    """The upstream inspect_evals verification program, plus a line that prints `token` once check() has returned."""
-    return "".join([prompt, answer, "\n", test, "\n", f"check({entry_point})", "\n", f"print({token!r})", "\n"])
-
-
-def check_completed(result: ExecResult, token: str) -> bool:
-    return result.success and token in result.stdout
-
-
-@scorer(metrics=[accuracy(), stderr()])
-def verify() -> Scorer:
-    """inspect_evals' humaneval verify(), except a sample only counts as correct if check() actually ran to the end.
-
-    Upstream marks a sample correct whenever the program exits with code 0, so generated code that ends the process
-    early (sys.exit(0), os._exit(0), unittest.main(), ...) before the assertions run was scored as correct. Here the
-    program prints a fresh random token after check() returns, and the token must appear in stdout.
-    """
-    async def score(state: TaskState, target: Target) -> Score:
-        answer = find_code(state.output.completion)
-        token = secrets.token_hex(16)
-        code = build_verification_code(
-            state.metadata["prompt"], answer, state.metadata["test"], state.metadata["entry_point"], token
-        )
-
-        try:
-            result = await sandbox().exec(cmd=["python", "-c", code], timeout=VERIFY_TIMEOUT)
-        except TimeoutError:
-            result = ExecResult(False, 1, "", "Verification timed out.")
-
-        if check_completed(result, token):
-            return Score(value=CORRECT, answer=answer, explanation="")
-
-        if result.success:
-            reason = "The process exited with code 0 before check() completed."
-        else:
-            reason = result.stderr
-        return Score(
-            value=INCORRECT,
-            answer=answer,
-            explanation=(
-                "The following verification code was executed:\n\n```python\n\n"
-                + code
-                + f"\n```\n\nThe submission was incorrect\n\n{reason}"
-            ),
-        )
-
-    return score
+import inspect_evals.gsm8k # noqa: F401, E402  (registers task definitions)
 
 
 def parse_args() -> argparse.Namespace:
@@ -96,21 +41,21 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default="templates/",
     )
-    # You can adjust --max-connections this if you want faster tests and don't receive errors
+    # You can adjust --max-connections if you want faster tests and don't receive errors (or if you have issues with vllm, try lowering this value)
     parser.add_argument(
         "--max-connections",
         type=int,
-        default=1,
-    )
-    parser.add_argument(
-        "--gpu-memory-utilization",
-        type=float,
-        default=0.3,
+        default=2,
     )
     parser.add_argument(
         "--max-tokens",
         type=int,
         default=4000,
+    )
+    parser.add_argument(
+        "--gpu-memory-utilization",
+        type=float,
+        default=0.3,
     )
     parser.add_argument(
         "--seed",
@@ -129,10 +74,7 @@ def main() -> None:
     if (args.limit is not None) and (args.limit != -1):
         other_kwargs["limit"] = args.limit
 
-    task = inspect_evals.humaneval.humaneval(
-        sandbox="local",
-        scorer=verify(),
-    )
+    task = "inspect_evals/gsm8k"
     model_args = {
         'gpu_memory_utilization': args.gpu_memory_utilization,
     }

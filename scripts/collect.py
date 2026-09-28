@@ -150,9 +150,14 @@ def collect_method(
                 # or time file). Fall through to baseline fallback. Skip the
                 # warning when a final_eval_9.txt-style file exists — the
                 # eval exhausted its retries, so a missing metrics.json is
-                # expected. Matches both `final_eval_9.txt` and the rerun
-                # naming `*_final_eval_9.txt` (e.g. `z_new_<id>_final_eval_9.txt`).
-                if not glob.glob(os.path.join(run_dir, "*final_eval_9.txt")):
+                # expected. Matches the pre-seed `final_eval_9.txt` in the run
+                # dir, the per-seed `evaluation/final_eval_seed<S>_9.txt`, and
+                # their rerun variants (`z_new_<id>_final_eval_9.txt`,
+                # `z_new_<id>_evaluation/final_eval_seed<S>_9.txt`).
+                if not (
+                    glob.glob(os.path.join(run_dir, "*final_eval_9.txt"))
+                    or glob.glob(os.path.join(run_dir, "*evaluation", "final_eval_seed*_9.txt"))
+                ):
                     print(f"WARNING: skipping broken run {run_dir}: {e}")
                 metrics_grid[model][bench] = ""
                 contamination_grid[model][bench] = ""
