@@ -18,7 +18,7 @@
 #      generated training data) there. The snapshot is size-budgeted instead
 #      of relying on exclude patterns: agents leave arbitrary multi-GB dirs
 #      behind (checkpoints, `final_model2`, datasets), and one such dir is
-#      enough to blow harbor's 120 s tar timeout / Modal's 5 GiB download
+#      enough to blow harbor's tar timeout (600 s; 120 s before 0.23.0) / Modal's 5 GiB download
 #      cap and lose the judge's view of the code. Files are taken smallest
 #      first, so source code always fits; weight formats are never taken.
 set -u
@@ -31,8 +31,9 @@ exec > >(tee -a /logs/agent/ptb_collect.log) 2>&1
 WORKSPACE="${PTB_WORKSPACE:-/home/agent/workspace}"
 VOLUME_DIR="${PTB_VOLUME_DIR:-/mnt/ptb_final_model}"
 SNAPSHOT_DIR="${PTB_SNAPSHOT_DIR:-/logs/artifacts/workspace}"
-# Budget: harbor gzips the snapshot with a 120 s timeout and Modal caps the
-# download at 5 GiB; 2 GB total is comfortably inside both. Per-file cap keeps
+# Budget: harbor gzips the snapshot with a 600 s timeout (120 s before harbor
+# 0.23.0) and Modal caps the download at 5 GiB; 2 GB total is comfortably
+# inside both. Per-file cap keeps
 # a single stray blob from eating the budget.
 MAX_FILE_BYTES="${PTB_SNAPSHOT_MAX_FILE_BYTES:-536870912}"    # 512 MiB
 MAX_TOTAL_BYTES="${PTB_SNAPSHOT_MAX_TOTAL_BYTES:-2147483648}" # 2 GiB

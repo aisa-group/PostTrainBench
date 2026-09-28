@@ -111,7 +111,9 @@ fi
 
 # Check if final_model has required files
 echo "Contents of final_model:"
-ls -la "$MODEL_DIR" | tee "$LOGS_DIR/final_model_listing.txt"
+# Trailing slash: MODEL_DIR is the volume mount, which Modal exposes as a
+# symlink; without it `ls -la` lists the link itself, not the model files.
+ls -la "$MODEL_DIR/" | tee "$LOGS_DIR/final_model_listing.txt"
 
 if [ ! -f "$MODEL_DIR/config.json" ]; then
     echo "ERROR: final_model/config.json not found - not a valid model"

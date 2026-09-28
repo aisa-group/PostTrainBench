@@ -28,9 +28,9 @@
 #     --cli-version latest (resolved via `npm view` now, so it is recorded) or
 #     an explicit version; harbor installs it in the sandbox at agent setup.
 #   - `--thinking-display summarized` (harbor: --ak thinking_display, upstream
-#     harbor-framework/harbor#3030; needs harbor > 0.22.0). Without it the
+#     harbor-framework/harbor#3030; needs harbor >= 0.23.0). Without it the
 #     stream-json trace carries EMPTY thinking blocks. `--thinking-display
-#     none` omits the flag (pre-#3030 harbor keeps working).
+#     none` omits the flag (older harbor rejects the kwarg).
 #
 # Auth: ANTHROPIC_API_KEY for claude-code, or a Claude Max subscription via
 #   export CLAUDE_CODE_OAUTH_TOKEN="$(cat ../../agents/claude_non_api/oauth_token)" CLAUDE_FORCE_OAUTH=1

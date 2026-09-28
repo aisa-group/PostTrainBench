@@ -230,7 +230,8 @@ Instead (all in `template/task.toml`):
    config). There is deliberately **no `[[artifacts]]` entry for the whole
    workspace**: agents leave arbitrary multi-GB dirs behind (a leftover
    `final_model2/` broke the first 1 h run), and one such dir blows harbor's
-   120 s tar timeout and the 5 GiB cap — exclude patterns cannot keep up.
+   tar timeout (120 s before harbor 0.23.0, 600 s since) and the 5 GiB cap — exclude
+   patterns cannot keep up.
 5. `[verifier.env] PTB_MODEL_DIR = "/mnt/ptb_final_model"`; `tests/test.sh`
    evaluates `MODEL_DIR="${PTB_MODEL_DIR:-$WORKSPACE/final_model}"`.
 
@@ -310,8 +311,9 @@ but the **task-directory copy** differs:
 In practice the judges read source files, JSONL/data files and logs, which both variants keep;
 the Harbor budget only bites on a workspace holding > 2 GiB of non-weight data, where the
 largest files are dropped first. Rationale for the budget: Modal's file download caps single
-files at 5 GiB and harbor's transfer has a fixed 120 s gzip timeout, so an unbounded copy
-would fail exactly on the runs where it matters most.
+files at 5 GiB and harbor's transfer gzips with a fixed timeout (600 s since harbor 0.23.0,
+[harbor#3046](https://github.com/harbor-framework/harbor/pull/3046); 120 s before), so an
+unbounded copy would fail exactly on the runs where it matters most.
 
 ## Timer
 
@@ -365,20 +367,19 @@ The trained model itself stays on the run's Modal volume (`modal volume get <vol
 | prompt via stdin (`printf '%s' "$PROMPT" \| claude --print …`) | same (harbor's agent) |
 | `--thinking-display summarized` | `--ak thinking_display=summarized` (wrapper default; `--thinking-display summarized\|omitted\|none`) — see below |
 
-**`--thinking-display summarized` needs harbor > 0.22.0.** Without this flag Claude Code's
+**`--thinking-display summarized` needs harbor >= 0.23.0.** Without this flag Claude Code's
 `--print` mode emits `thinking` blocks with **empty** text in the stream-json trace (verified on
 CLI 2.1.252: the summaries appear only with the explicit flag; the `thinkingDisplay` /
 `showThinkingSummaries` settings keys and `CLAUDE_CODE_THINKING_DISPLAY_UPDATES=1` do not help in
 non-interactive mode), so the judges would see none of the agent's reasoning while the condor
 v1.1 traces carry it. Harbor's claude-code agent gained a `thinking_display` kwarg upstream
-([harbor#3030](https://github.com/harbor-framework/harbor/pull/3030), merged 2026-09-01, first
-release after 0.22.0); `run_modal_task.sh` passes `--ak thinking_display=summarized` by default.
-On an older harbor the kwarg is rejected — pass `--thinking-display none` there (the trace then
-has empty thinking blocks, as before). Until the next PyPI release, install harbor from the
-merge commit:
+([harbor#3030](https://github.com/harbor-framework/harbor/pull/3030), released in 0.23.0);
+`run_modal_task.sh` passes `--ak thinking_display=summarized` by default. On an older harbor the
+kwarg is rejected — upgrade, or pass `--thinking-display none` (the trace then has empty thinking
+blocks). `--force` rebuilds harbor's venv, so reinstall `python-socks` afterwards on proxy hosts:
 
 ```bash
-uv tool install --force 'harbor[modal] @ git+https://github.com/harbor-framework/harbor.git@6af8d6e3'
+uv tool install --force 'harbor[modal]>=0.23.0'
 uv pip install --python "$(dirname "$(readlink -f "$(command -v harbor)")")/python" python-socks   # proxy hosts
 ```
 

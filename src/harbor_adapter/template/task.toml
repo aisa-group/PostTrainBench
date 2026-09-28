@@ -108,7 +108,8 @@ retries = 3
 #     contamination judge reads it. There is deliberately NO [[artifacts]]
 #     entry for the whole workspace: agents leave arbitrary multi-GB dirs
 #     behind (a leftover `final_model2/` broke the very first 1h run), and one
-#     such dir blows harbor's 120 s tar timeout and the 5 GiB cap.
+#     such dir blows harbor's tar timeout (600 s; 120 s before 0.23.0) and
+#     the 5 GiB cap.
 [[verifier.collect]]
 service = "main"
 timeout_sec = 3600.0
