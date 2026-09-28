@@ -134,7 +134,18 @@ HARDCODED_AGENT_MAP = {
         "glmx_glm-5.3-flash_10h_run1",
         "glmx_glm-5.3-flash_10h_run2",
     ],
-
+    "Fable 5.1 (Max)": [
+        "claude_non_api_max_claude-fable-5-1_1m__10h_run1",
+        "claude_non_api_max_claude-fable-5-1_1m__10h_run2",
+    ],
+    "Opus-5.5 (Max)": [
+        "claude_non_api_max_claude-opus-5-5_1m__10h_run1",
+        "claude_non_api_max_claude-opus-5-5_1m__10h_run2",
+    ],
+    "GPT-6-Astra": [
+        "codex_non_api_max_gpt-6-astra_10h_run1",
+        "codex_non_api_max_gpt-6-astra_10h_run2",
+    ],
 }
 
 HARDCODED_BENCHMARKS = [
