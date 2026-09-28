@@ -74,7 +74,6 @@ HARDCODED_AGENT_MAP = {
 HARDCODED_BENCHMARKS = [
     "aime2025",
     "arenahardwriting",
-    "bfcl",
     "gpqamain",
     "gsm8k",
     "healthbench",

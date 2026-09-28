@@ -148,10 +148,12 @@ HARDCODED_AGENT_MAP = {
     ],
 }
 
+# bfcl is excluded from scoring: nearly every agent saturates it, so its
+# contribution came down to whether the contamination judge flagged the cell.
+# factors.json is derived from this list — rerun compute_factors.py after edits.
 HARDCODED_BENCHMARKS = [
     "aime2025",
     "arenahardwriting",
-    "bfcl",
     "gpqamain",
     "gsm8k",
     "healthbench",

@@ -61,6 +61,7 @@ from utils import (
     load_time_taken,
     format_time_hms,
     BUDGET_SECONDS,
+    HARDCODED_BENCHMARKS,
 )
 
 # Directories to skip (baselines are hardcoded in baselines.json)
@@ -87,6 +88,9 @@ def collect_method(
     instead of aggregated.
     """
     latest_runs = walk_latest_runs(method_path, min_run_id, max_run_id)
+    # Only scored benchmarks enter the per-method CSVs; runs of retired
+    # benchmarks (bfcl) stay on disk but are ignored here.
+    latest_runs = {k: v for k, v in latest_runs.items() if k[0] in HARDCODED_BENCHMARKS}
     if not latest_runs:
         return None
 
