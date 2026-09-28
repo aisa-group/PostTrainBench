@@ -14,5 +14,7 @@ concurrency_limits=user.codex_judge_rerun:1000
 request_memory = 81920
 request_cpus = 8
 request_disk = 100G
+# g132 has a broken link to a Lustre OST: task/ copies fail with "Cannot send after transport endpoint shutdown".
+requirements = Machine != "g132.internal.cluster.is.localnet"
 +BypassLXCfs = "true"
 queue
