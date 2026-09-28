@@ -70,6 +70,7 @@ declare -a RESULT_DIRS
 RESULT_DIRS=()
 declare -A MAX_ID_BY_KEY DIR_BY_KEY
 skipped_superseded=0
+skipped_retired=0
 for input in "${INPUT_DIRS[@]}"; do
     input="${input%/}"
     if [ ! -d "$input" ]; then
@@ -108,6 +109,12 @@ for input in "${INPUT_DIRS[@]}"; do
         name="$(basename "$d")"
         [[ "$name" =~ ^(.+)_([0-9]+)$ ]]
         key="${BASH_REMATCH[1]}"
+        # bfcl is retired from scoring (see HARDCODED_BENCHMARKS in scripts/utils.py);
+        # don't spend judge runs on it when expanding a method dir.
+        if [[ "$name" == bfcl_* ]]; then
+            skipped_retired=$((skipped_retired+1))
+            continue
+        fi
         if [ "$d" != "${DIR_BY_KEY[$key]}" ]; then
             echo "  [skip superseded by _${MAX_ID_BY_KEY[$key]}] $(basename "$input")/$name"
             skipped_superseded=$((skipped_superseded+1))
@@ -203,31 +210,42 @@ submit_slot() {
 }
 
 # wait_for_clusters <cid> [<cid> ...]
-# Poll condor_q until none of the given cluster IDs remain in the queue.
+# Poll condor_q until none of the given cluster IDs is idle or running.
+# Held jobs (JobStatus 5) are reported but not waited on — they never finish
+# on their own, so counting them would stall slot 3 forever.
 wait_for_clusters() {
     [ "$#" -eq 0 ] && return 0
     echo "" >&2
     echo "Waiting for ${#} slot-2 clusters to drain from condor_q ..." >&2
     local ids=("$@")
     while :; do
-        local still=0
+        local active=0 held=()
         local q_out
-        q_out="$(condor_q hbhatnagar -nobatch -af ClusterId 2>/dev/null || echo "")"
+        q_out="$(condor_q "$(whoami)" -nobatch -af ClusterId JobStatus 2>/dev/null || echo "")"
         for cid in "${ids[@]}"; do
-            if echo "$q_out" | grep -qE "^${cid}$"; then
-                still=$((still+1))
-            fi
+            local st
+            st="$(echo "$q_out" | awk -v c="$cid" '$1==c {print $2; exit}')"
+            case "$st" in
+                1|2) active=$((active+1)) ;;
+                5) held+=("$cid") ;;
+            esac
         done
-        if [ "$still" -eq 0 ]; then
-            echo "All slot-2 clusters have left the queue." >&2
+        if [ "$active" -eq 0 ]; then
+            if [ "${#held[@]}" -gt 0 ]; then
+                echo "No slot-2 clusters idle/running; ${#held[@]} held (not waited on): ${held[*]}" >&2
+                echo "  release with: condor_release ${held[*]}" >&2
+            else
+                echo "All slot-2 clusters have left the queue." >&2
+            fi
             return 0
         fi
-        echo "  $still / ${#ids[@]} still queued/running — sleeping 60s ..." >&2
+        echo "  $active / ${#ids[@]} still idle/running (${#held[@]} held) — sleeping 60s ..." >&2
         sleep 60
     done
 }
 
 echo "Skipped (superseded by newer run): $skipped_superseded" >&2
+echo "Skipped (retired benchmark bfcl): $skipped_retired" >&2
 
 # ---------- dispatch ----------
 if [ -n "$SLOT" ]; then
