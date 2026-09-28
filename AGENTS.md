@@ -143,6 +143,11 @@ alias in the CLI's `[models] default`.
 3. Optional files:
    - `evaluation_code/` - Supporting evaluation code copied into the agent sandbox
    - `task_context/` - Additional context (e.g. dataset hints) copied into the agent sandbox
+   - `evaluate_final_eval.py` - Variant of `evaluate.py` that the final evaluation runs instead when it
+     exists (`run_task.sh`, `scripts/rerun_eval_n_times.sh`, `dev_utils/test_evaluation/`, baselines). It is
+     **never** copied into the agent sandbox, which only sees `evaluate.py`. Use it for grading hardening
+     the agent should not see (e.g. humaneval's scorer, where upstream counts an early process exit as a
+     pass). Keep it in sync with `evaluate.py` otherwise.
 
 The `evaluate.py` must:
 - Use `inspect_ai` framework

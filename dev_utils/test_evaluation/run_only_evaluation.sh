@@ -4,6 +4,12 @@ export EVAL_DIR="$2"
 export HOME="$3"
 export CLUSTER="$4"
 
+# Like run_task.sh's final evaluation: prefer the task's evaluate_final_eval.py when it has one.
+export FINAL_EVAL_SCRIPT="evaluate.py"
+if [ -f "src/eval/tasks/${EVALUATION_TASK}/evaluate_final_eval.py" ]; then
+    export FINAL_EVAL_SCRIPT="evaluate_final_eval.py"
+fi
+
 export TMP_SUBDIR="/tmp/posttrain_container_${EVALUATION_TASK}_${RANDOM_UUID}"
 export HF_MERGED="${TMP_SUBDIR}/merged_huggingface"
 mkdir -p "${TMP_SUBDIR}"
@@ -71,7 +77,7 @@ run_evaluation() {
         --bind "${REPO_ROOT}:${REPO_ROOT}" \
         --bind "${HF_MERGED}:${TMP_HF_CACHE}" \
         --pwd "$(pwd)/src/eval/tasks/${EVALUATION_TASK}" \
-        ${POST_TRAIN_BENCH_CONTAINERS_DIR}/vllm_debug.sif python "evaluate.py" \
+        ${POST_TRAIN_BENCH_CONTAINERS_DIR}/vllm_debug.sif python "${FINAL_EVAL_SCRIPT}" \
             --model-path "$EVAL_DIR/final_model" \
             --templates-dir ../../../../src/eval/templates \
             --limit -1 \

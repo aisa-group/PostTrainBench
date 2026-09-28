@@ -25,6 +25,14 @@ else
     export EVAL_SCRIPT="evaluate.py"
 fi
 
+# The final evaluation runs evaluate_final_eval.py when the task has one (e.g. a hardened scorer). It is never
+# copied into the agent sandbox, which only gets ${EVAL_SCRIPT} as task/evaluate.py.
+if [ -f "src/eval/tasks/${EVALUATION_TASK}/evaluate_final_eval.py" ]; then
+    export FINAL_EVAL_SCRIPT="evaluate_final_eval.py"
+else
+    export FINAL_EVAL_SCRIPT="${EVAL_SCRIPT}"
+fi
+
 RESULT_PREFIX_SAFE=$(echo "$MODEL_TO_TRAIN" | tr '/:[]' '____')
 
 AGENT_CONFIG_SAFE=$(echo "$AGENT_CONFIG" | tr '/:[]' '____')
@@ -44,7 +52,7 @@ exec 1>${EVAL_DIR}/output.log
 exec 2>${EVAL_DIR}/error.log
 
 echo "$@"
-echo "Judge backend: ${JUDGE_BACKEND} (eval script: ${EVAL_SCRIPT})"
+echo "Judge backend: ${JUDGE_BACKEND} (eval script: ${EVAL_SCRIPT}, final eval script: ${FINAL_EVAL_SCRIPT})"
 
 export TMP_SUBDIR="/tmp/posttrain_container_${EVALUATION_TASK}_${RESULT_PREFIX_SAFE}_${RANDOM_UUID}"
 
@@ -416,7 +424,7 @@ run_evaluation() {
         --bind "${REPO_ROOT}:${REPO_ROOT}" \
         --bind "${HF_MERGED}:${TMP_HF_CACHE}" \
         --pwd "$(pwd)/src/eval/tasks/${EVALUATION_TASK}" \
-        ${POST_TRAIN_BENCH_CONTAINERS_DIR}/vllm_debug.sif python "${EVAL_SCRIPT}" \
+        ${POST_TRAIN_BENCH_CONTAINERS_DIR}/vllm_debug.sif python "${FINAL_EVAL_SCRIPT}" \
             --model-path "$EVAL_DIR/final_model" \
             --templates-dir ../../../../src/eval/templates \
             --limit -1 \

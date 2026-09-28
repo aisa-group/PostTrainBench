@@ -1,5 +1,5 @@
 #!/bin/bash
-# Re-run the per-task evaluate.py N times on an already-finished EVAL_DIR
+# Re-run the per-task final evaluation N times on an already-finished EVAL_DIR
 # and aggregate per-run metrics into <EVAL_DIR>/metrics_averaged.json.
 #
 # Usage:
@@ -7,7 +7,8 @@
 #
 # Defaults: N=5.
 #
-# Mirrors run_task.sh's evaluation step: runs src/eval/tasks/<task>/evaluate.py
+# Mirrors run_task.sh's evaluation step: runs src/eval/tasks/<task>/evaluate_final_eval.py
+# if it exists, else src/eval/tasks/<task>/evaluate.py
 # (NOT the snapshot in $EVAL_DIR/task) under the same vllm_debug container with
 # the same fuse-overlayfs HF cache and the same max-tokens fallback ladder.
 #
@@ -38,6 +39,12 @@ if [ ! -f "src/eval/tasks/${EVALUATION_TASK}/evaluate.py" ]; then
     echo "ERROR: src/eval/tasks/${EVALUATION_TASK}/evaluate.py not found" >&2
     echo "       (parsed task '${EVALUATION_TASK}' from $(basename "$EVAL_DIR"))" >&2
     exit 1
+fi
+
+# Like run_task.sh's final evaluation: prefer the task's evaluate_final_eval.py when it has one.
+FINAL_EVAL_SCRIPT="evaluate.py"
+if [ -f "src/eval/tasks/${EVALUATION_TASK}/evaluate_final_eval.py" ]; then
+    FINAL_EVAL_SCRIPT="evaluate_final_eval.py"
 fi
 
 REPO_ROOT="$(pwd)"
@@ -100,7 +107,7 @@ run_one() {
         --bind "${HF_MERGED}:${TMP_HF_CACHE}" \
         --pwd "${REPO_ROOT}/src/eval/tasks/${EVALUATION_TASK}" \
         "${POST_TRAIN_BENCH_CONTAINERS_DIR}/${POST_TRAIN_BENCH_CONTAINER_NAME}.sif" \
-        python evaluate.py \
+        python "${FINAL_EVAL_SCRIPT}" \
             --model-path "${EVAL_DIR}/final_model" \
             --templates-dir ../../../../src/eval/templates \
             --limit -1 \

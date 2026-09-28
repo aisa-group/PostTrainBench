@@ -1,0 +1,13 @@
+# Runs `audit.py check` on the log list written by `audit.py list`. Submit from the repo root:
+#   condor_submit_bid 30 -a "log_list=/abs/log_list.tsv" -a "out_dir=/abs/out" -a "sif=/abs/vllm_debug.sif" \
+#       -a "ro_dirs=/abs/results /abs/other_results /abs/checkout/src/eval/tasks/humaneval/logs" \
+#       dev_utils/humaneval_early_exit/audit.sub
+executable = /bin/bash
+arguments = dev_utils/humaneval_early_exit/run_check.sh $(log_list) $(out_dir) $(sif) $(ro_dirs)
+error = logs/humaneval_early_exit_$(Cluster).err
+output = logs/humaneval_early_exit_$(Cluster).out
+log = logs/humaneval_early_exit_$(Cluster).log
+request_cpus = 1
+request_memory = 8192
++BypassLXCfs="true"
+queue

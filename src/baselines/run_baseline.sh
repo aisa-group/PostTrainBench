@@ -9,6 +9,13 @@ set -euo pipefail
 source src/commit_utils/set_env_vars.sh
 
 REPO_ROOT="$(pwd)"
+
+# Like run_task.sh's final evaluation: prefer the task's evaluate_final_eval.py when it has one.
+FINAL_EVAL_SCRIPT="evaluate.py"
+if [ -f "src/eval/tasks/${EVAL_NAME}/evaluate_final_eval.py" ]; then
+    FINAL_EVAL_SCRIPT="evaluate_final_eval.py"
+fi
+
 RESULT_PREFIX_SAFE=$(echo "${MODEL_NAME}" | tr '/:' '_')
 RESULT_DIR="${POST_TRAIN_BENCH_RESULTS_DIR}/baseline/${EVAL_NAME}_${RESULT_PREFIX_SAFE}_${CLUSTER_ID}"
 
@@ -88,7 +95,7 @@ run_eval() {
         --bind "${HF_MERGED}:${TMP_HF_CACHE}" \
         --pwd "${REPO_ROOT}/src/eval/tasks/${EVAL_NAME}" \
         ${POST_TRAIN_BENCH_CONTAINERS_DIR}/vllm_debug.sif \
-        python "evaluate.py" \
+        python "${FINAL_EVAL_SCRIPT}" \
             --model-path "${MODEL_NAME}" \
             --templates-dir ../../../../src/eval/templates \
             --limit -1 \

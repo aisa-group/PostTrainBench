@@ -114,7 +114,8 @@ question and does not capture decoding noise.
 
 It mirrors `src/run_task.sh`'s evaluation step exactly:
 
-- runs `src/eval/tasks/<task>/evaluate.py` (the live source — **not** the
+- runs `src/eval/tasks/<task>/evaluate_final_eval.py` if it exists, else
+  `src/eval/tasks/<task>/evaluate.py` (the live source — **not** the
   potentially-modified snapshot in `<EVAL_DIR>/task/`)
 - inside the same `${POST_TRAIN_BENCH_CONTAINER_NAME}.sif` container
 - with the same fuse-overlayfs HF cache pattern (`with_huggingface_overlay`)
