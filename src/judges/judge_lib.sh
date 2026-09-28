@@ -70,6 +70,39 @@ load_judge_conf() {
     fi
 }
 
+# make_judge_tmp_dir
+# Prints a fresh temp dir for a standalone judge sandbox. Under HTCondor it is
+# created in the job's scratch dir, which is sized by request_disk; the exec
+# node's /tmp can be far smaller and filled up on large task/ snapshots.
+make_judge_tmp_dir() {
+    mktemp -d -p "${_CONDOR_SCRATCH_DIR:-${TMPDIR:-/tmp}}"
+}
+
+# Files the judges never read (they inspect scripts, data and logs as text) but
+# that can make a task/ snapshot hundreds of GB: weights, optimizer/training
+# state and package caches. final_model's config.json reaches the judge
+# separately via prepare_judge_sandbox.
+JUDGE_TASK_COPY_EXCLUDES=(
+    '*.pt' '*.pth' '*.safetensors' '*.bin' '*.ckpt' '*.gguf' '*.onnx'
+    'uv_cache' '.cache' 'huggingface_cache' '__pycache__' '*.pyc'
+)
+
+# copy_task_for_judge <src_task_dir> <dst_task_dir>
+# Copies a result's task/ snapshot into the judge sandbox, skipping
+# JUDGE_TASK_COPY_EXCLUDES. Fails (non-zero) if any file can't be read or
+# written, so a partial copy never reaches a judge.
+copy_task_for_judge() {
+    local src="$1" dst="$2"
+    local excludes=() pat
+    for pat in "${JUDGE_TASK_COPY_EXCLUDES[@]}"; do
+        excludes+=(--exclude="$pat")
+    done
+    mkdir -p "$dst"
+    ( set -o pipefail
+      tar -C "$src" "${excludes[@]}" -cf - . | tar -C "$dst" -xf - )
+    echo "  copied task/ for judge ($(du -sh "$dst" 2>/dev/null | cut -f1), excluding weights/optimizer state/caches)"
+}
+
 # prepare_judge_sandbox <job_dir> <benchmark_id> <final_model_config_src>
 # Copies the judge helper tooling and benchmark metadata into the sandbox
 # home (shared by all judges).

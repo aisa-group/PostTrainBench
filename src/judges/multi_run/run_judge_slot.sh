@@ -94,14 +94,14 @@ echo "  Benchmark: $BENCHMARK | Model: $MODEL_HF | Agent: $AGENT ($AGENT_CONFIG)
 echo "  Judge: $JUDGE_NAME (${JUDGE_MODEL}, codex ${JUDGE_CODEX_VERSION:-container-default})"
 echo "  Output: $JUDGEMENT_PATH"
 
-TMP_DIR=$(mktemp -d)
+TMP_DIR=$(make_judge_tmp_dir)
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 JOB_DIR="$TMP_DIR/job_dir"
 JOB_TMP="$TMP_DIR/tmp"
 mkdir -p "$JOB_DIR" "$JOB_TMP"
 
-cp -r "$RESULT_DIR/task" "$JOB_DIR/task"
+copy_task_for_judge "$RESULT_DIR/task" "$JOB_DIR/task"
 rm -f "$JOB_DIR/task/judgement.json"
 cp "$TRACE_FILE" "$JOB_DIR/$TRACE_NAME"
 
