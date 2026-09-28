@@ -13,7 +13,6 @@ from pathlib import Path
 EXPECTED_BENCHMARKS = [
     "aime2025",
     "arenahardwriting",
-    "bfcl",
     "gpqamain",
     "gsm8k",
     "healthbench",

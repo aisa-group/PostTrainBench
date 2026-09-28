@@ -55,7 +55,6 @@ mkdir -p "$RERUNS_DIR"
 case "$EVALUATION_TASK" in
     aime2025)         FB1="--max-tokens 12000";    FB2="--max-tokens 8000" ;;
     arenahardwriting) FB1="--max-new-tokens 12288"; FB2="--max-new-tokens 8192" ;;
-    bfcl)             FB1="--max-tokens 12000";    FB2="--max-tokens 8000" ;;
     gpqamain)         FB1="--max-tokens 12000";    FB2="--max-tokens 8000" ;;
     gsm8k)            FB1="--max-tokens 3000";     FB2="--max-tokens 2000" ;;
     healthbench)      FB1="--max-new-tokens 12288"; FB2="--max-new-tokens 8192" ;;

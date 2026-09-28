@@ -486,9 +486,6 @@ case "${EVALUATION_TASK}" in
     arenahardwriting)
         MAX_TOKENS_ARG="--max-new-tokens 12288"
         ;;
-    bfcl)
-        MAX_TOKENS_ARG="--max-tokens 12000"
-        ;;
     gpqamain)
         MAX_TOKENS_ARG="--max-tokens 12000"
         ;;
@@ -515,9 +512,6 @@ case "${EVALUATION_TASK}" in
         ;;
     arenahardwriting)
         MAX_TOKENS_ARG="--max-new-tokens 8192"
-        ;;
-    bfcl)
-        MAX_TOKENS_ARG="--max-tokens 8000"
         ;;
     gpqamain)
         MAX_TOKENS_ARG="--max-tokens 8000"

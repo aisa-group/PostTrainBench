@@ -3,7 +3,9 @@
 Collect results from raw run directories into per-method CSVs.
 
 For each method directory in the results dir, does a single pass:
-  1. Finds the latest run per (benchmark, model)
+  1. Finds the latest run per (benchmark, model), for the benchmarks in
+     HARDCODED_BENCHMARKS only (runs of removed benchmarks such as bfcl or
+     aime2026 in old result roots are ignored)
   2. Reads metrics.json, the GPT-5.4 contamination judgement
      (judgement_gpt5_4_rerun.json if present, else judgement_gpt5_4.json),
      the API usage judgement (judgement_api_rerun.json if present, else
@@ -59,6 +61,7 @@ from utils import (
     load_time_taken,
     format_time_hms,
     BUDGET_SECONDS,
+    HARDCODED_BENCHMARKS,
 )
 
 # Directories to skip (baselines are hardcoded in baselines.json)
@@ -84,7 +87,14 @@ def collect_method(
     judge coverage (non-empty "judgements_missing") can be skipped entirely
     instead of aggregated.
     """
-    latest_runs = walk_latest_runs(method_path, min_run_id, max_run_id)
+    # Only benchmarks of the current suite are collected. Old result roots
+    # also hold runs of removed benchmarks (e.g. bfcl, aime2026); those are
+    # not scored and have no baselines.json fallback, so they are ignored.
+    latest_runs = {
+        key: run
+        for key, run in walk_latest_runs(method_path, min_run_id, max_run_id).items()
+        if key[0] in HARDCODED_BENCHMARKS
+    }
     if not latest_runs:
         return None
 
