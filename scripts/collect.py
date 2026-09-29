@@ -6,8 +6,10 @@ For each method directory in the results dir, does a single pass:
   1. Finds the latest run per (benchmark, model), for the benchmarks in
      HARDCODED_BENCHMARKS only (runs of removed benchmarks such as bfcl or
      aime2026 in old result roots are ignored)
-  2. Reads metrics.json, the GPT-5.4 contamination judgement
-     (judgement_gpt5_4_rerun.json if present, else judgement_gpt5_4.json),
+  2. Reads metrics.json, the GPT-5.4 contamination judgement (resolved by
+     utils.resolve_judgement: manual override judgement_gpt5_4_manual.json >
+     majority of the three judge runs > judgement_gpt5_4_rerun.json >
+     judgement_gpt5_4.json),
      the API usage judgement (judgement_api_rerun.json if present, else
      judgement_api.json; absent for runs predating that judge), the
      PTB-lookup judgement (same rerun-over-original preference; archival —

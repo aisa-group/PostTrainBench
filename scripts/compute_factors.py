@@ -1,61 +1,73 @@
 #!/usr/bin/env python3
-"""
-Recompute factors.json (per-benchmark weights of the leaderboard metric).
+"""Derive the per-benchmark leaderboard weights (factors.json) from baselines.json.
 
-The weight of a benchmark is 1 / (mean zero-shot score of the instruct
-models - mean zero-shot score of the base models), taken from baselines.json
-and normalized so the weights over HARDCODED_BENCHMARKS sum to 1. A benchmark
-where instruct-tuning helps less therefore gets a larger weight.
+factor[b] is proportional to 1 / (mean instruct zero-shot score on b
+- mean base zero-shot score on b), normalized so the factors sum to 1. A
+benchmark where the official instruct models barely beat their base models is
+weighted up, so every benchmark contributes comparably to the weighted metric.
+Only the benchmarks in HARDCODED_BENCHMARKS are included, so adding or
+dropping a benchmark there and rerunning this script keeps factors.json
+consistent.
 
-Rerun after changing HARDCODED_BENCHMARKS or the zero-shot baselines:
-    python scripts/compute_factors.py
+Usage: python scripts/compute_factors.py [--check]
+  --check  print the derived factors and exit non-zero if factors.json differs
 """
+import argparse
 import json
+import sys
 
-from utils import (
-    FACTORS_PATH,
-    HARDCODED_BENCHMARKS,
-    EXPECTED_MODELS,
-    load_baselines,
-    mean,
-)
+from utils import BASELINES_PATH, FACTORS_PATH, HARDCODED_BENCHMARKS
+
+# Base model -> its official instruct-tuned counterpart in baselines.json["zeroshot"].
+BASE_TO_INSTRUCT = {
+    "Qwen3-1.7B-Base": "Qwen3-1.7B",
+    "Qwen3-4B-Base": "Qwen3-4B",
+    "SmolLM3-3B-Base": "SmolLM3-3B",
+    "gemma-3-4b-pt": "gemma-3-4b-it",
+}
 
 
-def compute_factors(zeroshot: dict[str, dict[str, float]]) -> dict[str, float]:
-    base_models = sorted(EXPECTED_MODELS)
-    instruct_models = sorted(set(zeroshot) - EXPECTED_MODELS)
-    missing_base = EXPECTED_MODELS - set(zeroshot)
-    if missing_base:
-        raise KeyError(f"baselines.json zeroshot is missing base models: {sorted(missing_base)}")
-    if len(instruct_models) != len(base_models):
-        raise ValueError(
-            f"expected one instruct model per base model, got instruct={instruct_models} "
-            f"base={base_models}"
-        )
+def derive_factors() -> dict[str, float]:
+    with open(BASELINES_PATH) as f:
+        zeroshot = json.load(f)["zeroshot"]
 
     inverse_gaps = {}
     for bench in HARDCODED_BENCHMARKS:
-        gap = (
-            mean([zeroshot[m][bench] for m in instruct_models])
-            - mean([zeroshot[m][bench] for m in base_models])
-        )
+        base_mean = sum(zeroshot[b][bench] for b in BASE_TO_INSTRUCT) / len(BASE_TO_INSTRUCT)
+        inst_mean = sum(zeroshot[i][bench] for i in BASE_TO_INSTRUCT.values()) / len(BASE_TO_INSTRUCT)
+        gap = inst_mean - base_mean
         if gap <= 0:
-            raise ValueError(f"instruct-base gap for {bench} is {gap}; must be positive")
+            raise ValueError(f"{bench}: instruct mean {inst_mean} does not exceed base mean {base_mean}")
         inverse_gaps[bench] = 1.0 / gap
 
     total = sum(inverse_gaps.values())
     return {bench: inverse_gaps[bench] / total for bench in HARDCODED_BENCHMARKS}
 
 
-def main():
-    factors = compute_factors(load_baselines()["zeroshot"])
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--check", action="store_true",
+                        help="Do not write; exit 1 if factors.json differs from the derived factors.")
+    args = parser.parse_args()
+
+    factors = derive_factors()
+    for bench, value in factors.items():
+        print(f"  {bench:<18} {value:.6f}")
+
+    if args.check:
+        with open(FACTORS_PATH) as f:
+            current = json.load(f)
+        same = current.keys() == factors.keys() and all(
+            abs(current[b] - factors[b]) < 1e-12 for b in factors)
+        print("factors.json is up to date" if same else "factors.json differs from derived factors")
+        return 0 if same else 1
+
     with open(FACTORS_PATH, "w") as f:
         json.dump(factors, f, indent=4)
         f.write("\n")
-    for bench, factor in factors.items():
-        print(f"{bench:20s} {factor:.6f}")
     print(f"Written: {FACTORS_PATH}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

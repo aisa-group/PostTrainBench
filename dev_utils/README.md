@@ -30,10 +30,20 @@ Then they will not be shown when running `dev_utils/runs_no_metrics.py`.
 
 ### Double Check the Judge
 It is good to double check if the judge worked correctly.
-For this you can use the `dev_utils/contamination_list.py` script to list flagged runs.
-Then look at the `error.log` to see the judges reasoning and potentially at `task/` to see the output code of the agent.
+For this you can use the `dev_utils/contamination_list.py` script to list flagged runs, or `python scripts/find_flagged_runs.py --judge data_contamination_judge --justification` to also see the judge's reasoning.
+Both list the *effective* verdict that `scripts/collect.py` scores by (see `resolve_judgement` in `scripts/utils.py`): a manual override (`judgement_gpt5_4_manual.json`) if present, else the per-field majority of the three contamination-judge runs (`judgement_gpt5_4_rerun.json` or `judgement_gpt5_4.json`, plus `judgement_multi_runs/judgement_gpt5_4_run{2,3}.json`), else the single verdict.
+Then look at the judge traces (`judge_output_gpt5_4*.txt`, also under `judgement_multi_runs/`) to see the judge's reasoning and potentially at `task/` to see the output code of the agent.
 
-If the judge was wrong, flip the judgement by editing the GPT-5.4 contamination judgement file (`judgement_gpt5_4_rerun.json` if it exists, otherwise `judgement_gpt5_4.json`) and setting the relevant boolean field (`contamination` or `disallowed_model`) to the opposite value.
+If the judge was wrong, do **not** edit the judge's verdict files: with three runs, flipping one of them is outvoted by the other two. Record a manual override instead, which ranks above every judge output: create `judgement_gpt5_4_manual.json` in the run directory (next to the judge files) with both boolean fields set to the corrected verdict, e.g.
+```
+{
+  "contamination": false,
+  "disallowed_model": false,
+  "justification_contamination": "Manual override by <you>, <date>: overlap is with the train split only",
+  "justification_disallowed_model": "Manual override by <you>, <date>: unchanged"
+}
+```
+Both `contamination` and `disallowed_model` are required and must be JSON booleans (`collect.py` raises otherwise); the override replaces the whole verdict, so copy the unchanged field from the current effective verdict. Delete the file to go back to the judge verdict.
 
 For all runs which you went over, add them to the `POST_TRAIN_BENCH_CONTAMINATION_CORRECT` environment variable which is build up like this:
 ```

@@ -15,18 +15,21 @@ The judges run in two contexts:
 
 | Folder | Output id | Verdict schema | Consumed downstream? |
 |--------|-----------|----------------|----------------------|
-| `data_contamination_judge/` | `gpt5_4` | `contamination`, `disallowed_model` + justifications | **Yes** — canonical contamination verdict (`judgement_gpt5_4.json`, or `judgement_gpt5_4_rerun.json` when present) |
+| `data_contamination_judge/` | `gpt5_4` | `contamination`, `disallowed_model` + justifications | **Yes** — canonical contamination verdict, resolved by `scripts/utils.py::resolve_judgement`: manual override (`judgement_gpt5_4_manual.json`) > per-field majority of the three runs (`judgement_gpt5_4_rerun.json` or `judgement_gpt5_4.json` + `judgement_multi_runs/judgement_gpt5_4_run{2,3}.json`) > single verdict |
 | `api_usage_judge/` | `api` | `disallowed_api_usage` + justification | **Yes** — a flagged run falls back to the baseline score in `scripts/collect.py` (missing file = "not flagged": runs predating this judge have none) |
 | `ptb_lookup_judge/` | `ptb_lookup` | `disallowed_ptb_lookup` + justification | Archival — no score fallback, but `scripts/collect.py` raises an error if it ever flags, so a firing lookup judge cannot pass unnoticed |
 | `general_judge/` | `general` | `general_anomaly` + justification | Archival — never feeds scores; when it flags, `scripts/collect.py` finishes its collection pass but writes **no** output files and raises, listing every flagged run for manual review (flip `general_anomaly` to false in the listed verdict file if the run checks out) |
 
-The three reward-hacking judges run as GPT-5.4 via the codex CLI; the general judge — an
-open-ended sweep for "unknown unknowns" (premature agent stops, usage limits/token
-exhaustion, grader-API credit exhaustion on the LLM-judged benchmarks, harness/infra
-failures, novel reward hacking outside the other judges' scope) — runs as GPT-5.6 Terra on
-a codex CLI pinned to 0.144.5 (`JUDGE_CODEX_VERSION`, npm-installed into the sandbox at
-judge time). All use ChatGPT-subscription auth
-(`agents/codex_non_api/auth.json`, bind-mounted so rotated refresh tokens persist).
+All four judges run as GPT-5.6 Terra via the codex CLI (pinned to 0.144.5 —
+`JUDGE_DEFAULT_CODEX_VERSION` in `judge_lib.sh`, npm-installed into the sandbox
+at judge time). The general judge — an open-ended sweep for "unknown unknowns"
+(premature agent stops, usage limits/token exhaustion, grader-API credit
+exhaustion on the LLM-judged benchmarks, harness/infra failures, novel reward
+hacking outside the other judges' scope) — has always used this pairing;
+the three reward-hacking judges migrated from GPT-5.4 → GPT-5.6 Terra when
+OpenAI retired GPT-5.4 from Codex on 2026-08-31. All use ChatGPT-subscription
+auth (`agents/codex_non_api/auth.json`, bind-mounted so rotated refresh tokens
+persist).
 
 ## Layout
 
@@ -165,8 +168,9 @@ Per judge (`<id>` = `JUDGE_OUTPUT_ID`, `<sfx>` = empty inline / `_rerun` standal
      - `JUDGE_OUTPUT_ID` — suffix for all output files (`judgement_<id>.json`, ...)
      - `JUDGE_PROMPT_FILE` — the template's filename
      - optional: `JUDGE_MODEL` / `JUDGE_REASONING_EFFORT` to override the codex defaults
-       (`gpt-5.4` / `xhigh`, see `judge_lib.sh`)
+       (`gpt-5.6-terra` / `xhigh`, see `judge_lib.sh`)
      - optional: `JUDGE_CODEX_VERSION` to pin the codex CLI release for this judge
+       (default: `0.144.5`)
        (e.g. `"0.144.5"`); `judge_lib.sh` npm-installs exactly that `@openai/codex`
        version into the sandbox home and runs it instead of the container's codex.
        Empty/unset = the container's pinned codex.

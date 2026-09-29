@@ -9,7 +9,7 @@ import os
 import argparse
 from pathlib import Path
 
-# Expected benchmarks (from constants.py)
+# Expected benchmarks (mirrors HARDCODED_BENCHMARKS in scripts/utils.py; bfcl is retired)
 EXPECTED_BENCHMARKS = [
     "aime2025",
     "arenahardwriting",
