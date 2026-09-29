@@ -1,7 +1,8 @@
 executable = /bin/bash
 num_gpus = 1
-n = 5
-arguments = scripts/rerun_eval_n_times.sh $(eval_dir) $(n)
+# Empty: the final evaluation's default seeds. Other seeds: -a "seed_args=--seeds <seed>...".
+seed_args =
+arguments = scripts/rerun_eval_n_times.sh $(eval_dir) $(seed_args)
 environment = "OPENAI_API_KEY=$ENV(OPENAI_API_KEY) HOME=$ENV(HOME) POST_TRAIN_BENCH_RESULTS_DIR=$ENV(POST_TRAIN_BENCH_RESULTS_DIR) POST_TRAIN_BENCH_CONTAINERS_DIR=$ENV(POST_TRAIN_BENCH_CONTAINERS_DIR) POST_TRAIN_BENCH_CONTAINER_NAME=$ENV(POST_TRAIN_BENCH_CONTAINER_NAME) POST_TRAIN_BENCH_JOB_SCHEDULER=$ENV(POST_TRAIN_BENCH_JOB_SCHEDULER) HF_HOME=$ENV(HF_HOME)"
 error = logs/rerun_$(Cluster).err
 output = logs/rerun_$(Cluster).out

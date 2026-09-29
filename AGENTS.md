@@ -22,7 +22,8 @@ PostTrainBench/
 │   ├── eval/
 │   │   ├── general/           # Prompt generation (get_prompt.py, prompt.txt)
 │   │   ├── tasks/             # Evaluation benchmarks (aime2025, gsm8k, ...)
-│   │   └── templates/         # Chat templates (Jinja2)
+│   │   ├── templates/         # Chat templates (Jinja2)
+│   │   └── run_final_eval.sh  # The final evaluation of a trained model
 │   ├── trace_parsing/         # Per-agent trace parsers (claude/codex/gemini/opencode)
 │   ├── utils/                 # Utility scripts (check_cuda, system_monitor, timestamp_lines, ...)
 │   └── run_task.sh            # Main task execution orchestrator
@@ -34,6 +35,7 @@ PostTrainBench/
 | File | Purpose |
 |------|---------|
 | `src/run_task.sh` | Main task execution orchestrator (runs agent, then 4 judges, then evaluation) |
+| `src/eval/run_final_eval.sh` | The final evaluation (seeds, max-tokens retry cascade, mean into `metrics.json`); used by `run_task.sh`, `dev_utils/test_evaluation/run_only_evaluation.sh` and `scripts/rerun_eval_n_times.sh` |
 | `src/commit_utils/commit.sh` | Batch job submission across agents × benchmarks × models |
 | `src/commit_utils/set_env_vars.sh` | Sources `.env` and exports `POST_TRAIN_BENCH_*` env vars |
 | `src/commit_utils/single_task.sub` | HTCondor submission template |
@@ -141,14 +143,16 @@ alias in the CLI's `[models] default`.
      home and `get_prompt.py` adds a "Decontamination Tool" prompt section, so the agent can
      screen its own training data for test-set overlap
    - `evaluate_final_eval.py` - Variant of `evaluate.py` that the final evaluation runs instead
-     (`run_task.sh`, `scripts/rerun_eval_n_times.sh`, `dev_utils/test_evaluation/`, baselines). It is
+     (`src/eval/run_final_eval.sh`, and the baselines). It is
      **never** copied into the agent sandbox, which only sees `evaluate.py`. It must accept `--seed` and
      use it for generation (the final evaluation runs once per fixed seed, see "Results Structure").
-     `run_task.sh` and `run_only_evaluation.sh` exit at job start if it is missing. Also use it for
+     `run_final_eval.sh` exits before it evaluates anything if it is missing, and `run_task.sh` runs
+     `run_final_eval.sh --check` at job start. Also use it for
      grading hardening the agent should not see (e.g. humaneval's scorer, see below). Keep it in sync
      with `evaluate.py` otherwise. A task with an `evaluate_openrouter.py` also needs
-     `evaluate_openrouter_final_eval.py`, the same variant of that file, which `run_task.sh` runs when
-     grading goes through OpenRouter.
+     `evaluate_openrouter_final_eval.py`, the same variant of that file, which `run_final_eval.sh` runs
+     when grading goes through OpenRouter. A new task also needs its max-tokens retry cascade in
+     `run_final_eval.sh`.
 
      humaneval's final-eval scorer never runs the model's code next to the tests. Upstream runs both in
      one process, where the code can end the process early (counted as a pass) or return an object that
@@ -317,10 +321,12 @@ results/{agent}_{agent_config}_{num_hours}h[_{num_gpus}gpu]{experiment_name}/
     └── metrics.json                     # Final benchmark scores: mean over the seeds that succeeded
 ```
 
-The final evaluation runs once for each fixed seed in `EVAL_SEEDS` (`src/run_task.sh`, currently
-0–4). arenahardwriting and healthbench use only seed 0, because each seed costs a full set of paid
-OpenAI grader calls. The seed goes to `evaluate_final_eval.py` as `--seed`. Each seed runs the
-max-tokens retry cascade:
+The final evaluation (`src/eval/run_final_eval.sh`) runs once for each fixed seed in
+`FINAL_EVAL_SEEDS`: 72332, 87681, 38992, 92201, 13818. arenahardwriting and healthbench use only the
+first seed, because each seed costs a full set of paid OpenAI grader calls. Earlier seeded runs
+used the seeds 0–4 (only 0 for those two benchmarks); `per_seed` in `metrics.json` shows the seeds
+of a run. The seed goes to
+`evaluate_final_eval.py` as `--seed`. Each seed runs the max-tokens retry cascade:
 - The first seed starts at stage 0. If it fails at every stage, the other seeds are skipped and
   no `metrics.json` is written, so `scripts/collect.py` uses the baseline.
 - The later seeds start at the stage where the first seed succeeded, so they use the same
@@ -331,7 +337,8 @@ top-level numeric metric over the seeds that succeeded, plus `num_seeds`, `num_s
 and `per_seed` (the raw metrics and cascade stage of each seed). Runs from before this change have
 no `evaluation/` folder: they have one `final_eval_{N}.txt` series in the run dir and an unseeded
 `metrics.json`. `dev_utils/test_evaluation/run_only_evaluation.sh` writes its per-seed files to
-`z_new_{cluster_id}_evaluation/` instead.
+`z_new_{cluster_id}_evaluation/` instead. `scripts/rerun_eval_n_times.sh` writes them to `reruns/`
+and the mean to `metrics_averaged.json`, and it can use other seeds (`--seeds`).
 
 Result directories with the `_rerun` suffix on `judgement_*.json` come from the rerun-judge
 pipeline; original files are kept side-by-side. The canonical contamination verdict is

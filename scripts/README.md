@@ -108,33 +108,30 @@ python scripts/verify.py \
 | `parse_all_to_human_readable.sh` | Run human-readable trace parsers across results |
 | `baselines.json`, `factors.json`, `constants.py`, `utils.py` | Shared config / helpers |
 
-## Re-evaluating a finished run N times
+## Re-evaluating a finished run
 
-`rerun_eval_n_times.sh` re-evaluates a job's `final_model/` N times and writes
-mean / std / stderr / min / max per metric into `metrics_averaged.json`. A job's
-standard `metrics.json` is already the mean over 5 fixed seeds (1 seed for
-arenahardwriting/healthbench; see "Results Structure" in `AGENTS.md`). These
-reruns pass no `--seed`, so each one is a fresh unseeded decoding sample, e.g. to
-estimate the spread beyond those fixed seeds.
+`rerun_eval_n_times.sh` runs the final evaluation of `src/run_task.sh` again on
+a job's `final_model/`, without touching the job's `metrics.json`. Both run
+`src/eval/run_final_eval.sh`, so they use the same final-eval script (the live
+source in `src/eval/tasks/<task>/`, **not** the snapshot in `<EVAL_DIR>/task/`),
+the same `vllm_debug.sif` container, the same max-tokens retry cascade and the
+same aggregation (see "Results Structure" in `AGENTS.md`).
 
-Apart from the seeds, it mirrors `src/run_task.sh`'s evaluation step:
+Without `--seeds`, it uses the final evaluation's default seeds, so it repeats
+the job's evaluation. With `--seeds`, it uses the seeds you give, e.g. to
+estimate the spread beyond the default seeds.
 
-- runs `src/eval/tasks/<task>/evaluate_final_eval.py` if it exists, else
-  `src/eval/tasks/<task>/evaluate.py` (the live source — **not** the
-  potentially-modified snapshot in `<EVAL_DIR>/task/`)
-- inside the same `${POST_TRAIN_BENCH_CONTAINER_NAME}.sif` container
-- with the same fuse-overlayfs HF cache pattern (`with_huggingface_overlay`)
-- using the same `--max-tokens` fallback ladder per task
-
-Per-run JSONs are written to `<EVAL_DIR>/reruns/run_{i}.json` (with
-`run_{i}_{level}.log` alongside). The aggregated file is `<EVAL_DIR>/metrics_averaged.json`.
+The per-seed metrics and logs go to `<EVAL_DIR>/reruns/`
+(`metrics_seed<S>.json`, `final_eval_seed<S>_<N>.txt`). The mean over the seeds
+goes to `<EVAL_DIR>/metrics_averaged.json`, in the same format as
+`metrics.json`; `per_seed` holds each seed's metrics. The script refuses to
+start if either already exists.
 
 ### Files
 
 | File | Description |
 |---|---|
-| `rerun_eval_n_times.sh` | Driver: re-runs the task's final-eval script N times (unseeded) on one EVAL_DIR and aggregates |
-| `aggregate_metrics_runs.py` | Helper called by the driver: computes mean/std/stderr/min/max from per-run JSONs |
+| `rerun_eval_n_times.sh` | Driver: runs `src/eval/run_final_eval.sh` on one EVAL_DIR |
 | `../src/commit_utils/rerun_eval.sub` | HTCondor submission file |
 
 ### Usage
@@ -144,18 +141,20 @@ Per-run JSONs are written to `<EVAL_DIR>/reruns/run_{i}.json` (with
 From the repo root:
 
 ```bash
-scripts/rerun_eval_n_times.sh /path/to/EVAL_DIR 5
+scripts/rerun_eval_n_times.sh /path/to/EVAL_DIR                  # default seeds
+scripts/rerun_eval_n_times.sh /path/to/EVAL_DIR --seeds 11 22 33  # other seeds
 ```
 
 `EVAL_DIR` must be an existing job directory containing `final_model/`. The
-task name is parsed from the basename (`<task>_<model_safe>_<cluster_id>`) to
-pick the correct max-tokens fallback ladder.
+task name is parsed from the basename (`<task>_<model_safe>_<cluster_id>`).
 
-#### HTCondor 
+#### HTCondor
 
 ```bash
 condor_submit_bid 50 \
   -a "eval_dir=/path/to/EVAL_DIR" \
-  -a "n=5" \
+  -a "seed_args=--seeds 11 22 33" \
   src/commit_utils/rerun_eval.sub
 ```
+
+Leave out `seed_args` for the default seeds.
