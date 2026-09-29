@@ -400,7 +400,7 @@ fi
         shutil.copy(self._task_src(benchmark_id) / "info.json", info_dst / "info.json")
 
         (tests_dir / "ptb" / ".env").write_text(
-            "# Intentionally empty: sanitize_trace.py reads *_API_KEY values from here.\n"
+            "# Intentionally empty: sanitize_trace.py reads *_API_KEY / *_TOKEN values from here.\n"
         )
 
         shutil.copy(self._test_data_path(benchmark_id), tests_dir / "test_data.json")

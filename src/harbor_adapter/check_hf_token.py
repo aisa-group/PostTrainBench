@@ -6,7 +6,7 @@ Condor serves every gated Hub asset the agent may touch from its pre-populated H
 overlay (containers/download_hf_cache/resources.json is that cache's manifest). Harbor
 sandboxes start with an empty cache, so the agent and the verifier fetch from the Hub
 with HF_TOKEN instead. Before a run starts, this script verifies against the Hub that
-HF_TOKEN (read from the environment):
+HF_TOKEN (from the repo-root .env, else the environment):
 
   1. is a valid user access token that is READ-ONLY — role `read`, or fine-grained with
      nothing but `*.read` permissions. The agent can read the token from its sandbox
@@ -19,8 +19,8 @@ HF_TOKEN (read from the environment):
 Any failure is an error (exit 1) with the fix spelled out; nothing is checked softly.
 
 Usage:
-    HF_TOKEN=hf_... python3 check_hf_token.py            # run_modal_task.sh does this
-    HF_TOKEN=hf_... python3 check_hf_token.py --refresh  # regenerate gated_hf_resources.json
+    python3 check_hf_token.py            # run_modal_task.sh does this
+    python3 check_hf_token.py --refresh  # regenerate gated_hf_resources.json
 
 `--refresh` asks the Hub for the gating status of every resources.json entry (one
 metadata call per repo, public data), rewrites gated_hf_resources.json with ALL gated
@@ -42,10 +42,25 @@ from pathlib import Path
 
 HUB = "https://huggingface.co"
 HERE = Path(__file__).resolve().parent
+REPO_ROOT = HERE.parents[1]
 RESOURCES_JSON = HERE.parents[1] / "containers" / "download_hf_cache" / "resources.json"
 GATED_JSON = HERE / "gated_hf_resources.json"
 TOKEN_SETTINGS = f"{HUB}/settings/tokens"
 REPO_KINDS = ("models", "datasets")
+
+
+def hf_token() -> str:
+    """HF_TOKEN from the repo-root .env (PTB_ENV_FILE overrides the path), else the
+    environment: the same precedence as src/harbor_adapter/run_modal_task.sh."""
+    env_file = Path(os.environ.get("PTB_ENV_FILE") or REPO_ROOT / ".env")
+    if env_file.is_file():
+        for line in env_file.read_text(encoding="utf-8").splitlines():
+            key, sep, value = line.strip().partition("=")
+            if sep and key == "HF_TOKEN":
+                value = value.strip().strip('"').strip("'")
+                if value:
+                    return value
+    return os.environ.get("HF_TOKEN", "")
 
 
 def die(msg: str) -> None:
@@ -158,9 +173,9 @@ def main() -> None:
     parser.add_argument("--refresh", action="store_true",
                         help=f"regenerate {GATED_JSON.name} from the Hub before checking")
     args = parser.parse_args()
-    token = os.environ.get("HF_TOKEN", "")
+    token = hf_token()
     if not token:
-        die("HF_TOKEN is not set")
+        die("HF_TOKEN is not set in .env or the environment")
 
     user, role = check_token_role(token)
     gated = refresh_gated(token) if args.refresh else json.loads(GATED_JSON.read_text())
