@@ -1,5 +1,8 @@
 #!/bin/bash
-set -e
+# No `set -e`, like src/run_task.sh: every step here is best-effort, and harbor
+# ignores this script's exit code. The one hard requirement is that reward.txt
+# ends up holding a single finite number — anything that aborts the script
+# before that turns a finished run into a trial error with no reward.
 
 # PostTrainBench verification script
 # Runs the PostTrainBench v1.1 reward-hacking judges (src/judges, codex CLI) and
@@ -259,11 +262,18 @@ trust_level = "trusted"
 inherit = "all"
 EOF_CODEX
 
-# ---- judge set + order: ALL_JUDGES from judge_lib.sh ---------------------
-ALL_JUDGES=($(grep -oE '^ALL_JUDGES=\([^)]*\)' "$JUDGES_DIR/judge_lib.sh" | sed -E 's/^ALL_JUDGES=\((.*)\)$/\1/'))
-JUDGE_DEFAULT_MODEL=$(grep -oE '^JUDGE_DEFAULT_MODEL="[^"]*"' "$JUDGES_DIR/judge_lib.sh" | cut -d'"' -f2)
-JUDGE_DEFAULT_REASONING_EFFORT=$(grep -oE '^JUDGE_DEFAULT_REASONING_EFFORT="[^"]*"' "$JUDGES_DIR/judge_lib.sh" | cut -d'"' -f2)
-echo "Judges: ${ALL_JUDGES[*]} (defaults: ${JUDGE_DEFAULT_MODEL:-gpt-5.4} / ${JUDGE_DEFAULT_REASONING_EFFORT:-xhigh})"
+# ---- judge set, order and defaults: straight from judge_lib.sh -------------
+# Sourced in a subshell (at top level it only assigns variables and defines
+# functions), so a reformatted ALL_JUDGES or a new default such as
+# JUDGE_DEFAULT_CODEX_VERSION upstream is picked up rather than silently missed.
+JUDGE_LIB_VALUES=$(bash -c 'source "$1" > /dev/null 2>&1 && printf "%s\n" "${ALL_JUDGES[*]}" "${JUDGE_DEFAULT_MODEL:-}" "${JUDGE_DEFAULT_REASONING_EFFORT:-}" "${JUDGE_DEFAULT_CODEX_VERSION:-}"' _ "$JUDGES_DIR/judge_lib.sh")
+{ read -r JUDGE_LIST; read -r JUDGE_DEFAULT_MODEL; read -r JUDGE_DEFAULT_REASONING_EFFORT; read -r JUDGE_DEFAULT_CODEX_VERSION; } <<< "$JUDGE_LIB_VALUES"
+read -r -a ALL_JUDGES <<< "$JUDGE_LIST"
+if [ "${#ALL_JUDGES[@]}" -eq 0 ] || [ -z "$JUDGE_DEFAULT_MODEL" ]; then
+    echo "ERROR: could not read ALL_JUDGES / JUDGE_DEFAULT_MODEL from $JUDGES_DIR/judge_lib.sh; no judges will run and the exported run will lack verdicts"
+    ALL_JUDGES=()
+fi
+echo "Judges: ${ALL_JUDGES[*]} (defaults: model=$JUDGE_DEFAULT_MODEL effort=$JUDGE_DEFAULT_REASONING_EFFORT codex=${JUDGE_DEFAULT_CODEX_VERSION:-image})"
 
 if [ -z "${OPENAI_API_KEY:-}" ] && [ -z "${CODEX_API_KEY:-}" ]; then
     echo "WARNING: no OPENAI_API_KEY/CODEX_API_KEY in the verifier env — skipping all judges"
@@ -274,9 +284,10 @@ export CODEX_API_KEY="${CODEX_API_KEY:-$OPENAI_API_KEY}"
 
 for JUDGE_NAME in "${ALL_JUDGES[@]}"; do
     JUDGE_LABEL=""; JUDGE_OUTPUT_ID=""; JUDGE_PROMPT_FILE=""
-    JUDGE_MODEL="${JUDGE_DEFAULT_MODEL:-gpt-5.4}"
+    # Reset per judge, as judge_lib.sh's load_judge_conf does.
+    JUDGE_MODEL="$JUDGE_DEFAULT_MODEL"
     JUDGE_REASONING_EFFORT="${JUDGE_DEFAULT_REASONING_EFFORT:-xhigh}"
-    JUDGE_CODEX_VERSION=""
+    JUDGE_CODEX_VERSION="$JUDGE_DEFAULT_CODEX_VERSION"
     # judge.conf is plain KEY="value" lines (sourced by judge_lib.sh too)
     source "$JUDGES_DIR/$JUDGE_NAME/judge.conf"
     if [ -z "$JUDGE_LABEL" ] || [ -z "$JUDGE_OUTPUT_ID" ]; then
@@ -309,7 +320,6 @@ for JUDGE_NAME in "${ALL_JUDGES[@]}"; do
     # stdin MUST be closed: `codex exec` appends piped stdin to the prompt and
     # reads it to EOF, and under harbor's exec the verifier's stdin is an open
     # pipe that never closes — codex then hangs before its first API call.
-    set +e
     (
         cd "$JUDGE_HOME/task" && \
         timeout --signal=TERM --kill-after=60s "$JUDGE_TIMEOUT_SEC" \
@@ -319,7 +329,6 @@ for JUDGE_NAME in "${ALL_JUDGES[@]}"; do
             --skip-git-repo-check --yolo --model "$JUDGE_MODEL" "$JUDGE_PROMPT" 2>&1 < /dev/null
     ) | tee "$LOGS_DIR/judge_output_$JUDGE_OUTPUT_ID.json" > /dev/null
     JUDGE_EXIT=${PIPESTATUS[0]}
-    set -e
     echo "  exit code: $JUDGE_EXIT"
 
     python3 "$TRACE_PARSER" --agent codex "$LOGS_DIR/judge_output_$JUDGE_OUTPUT_ID.json" \
@@ -349,7 +358,8 @@ done
 echo ""
 echo "=== Running evaluation on final_model ==="
 
-cd "$TESTS"
+# evaluate.py imports evaluation_code/ relative to /tests.
+cd "$TESTS" || echo "ERROR: cannot cd to $TESTS; evaluation imports will fail"
 
 EVAL_COUNTER=0
 
@@ -375,7 +385,6 @@ run_evaluation() {
 
     kill_gpu_processes
 
-    set +e
     python3 "$TESTS/evaluate.py" \
         --model-path "$MODEL_DIR" \
         --json-output-file "$LOGS_DIR/metrics.json" \
@@ -383,9 +392,11 @@ run_evaluation() {
         --limit -1 \
         ${max_tokens_arg} \
         2>&1 | tee "$LOGS_DIR/final_eval_${eval_num}.txt"
-    local exit_code=$?
-    set -e
-    return $exit_code
+    # PIPESTATUS: `$?` of the pipeline would be tee's status, not evaluate.py's.
+    local exit_code=${PIPESTATUS[0]}
+    echo "evaluate.py exit code: $exit_code"
+    # Whether an attempt succeeded is decided by metrics.json, as in run_task.sh.
+    return 0
 }
 
 run_evaluation_with_retry() {
@@ -438,22 +449,26 @@ get_phase3_tokens() {
     esac
 }
 
+# A phase returns 1 once its attempts are exhausted; the next phase (lower token
+# limits, the point of the ladder) must still run. `|| true` keeps it that way
+# even if someone reintroduces `set -e`.
+
 # Phase 1: up to 4 attempts with default tokens
 echo ""
 echo "--- Phase 1: default token limits (up to 4 attempts) ---"
-run_evaluation_with_retry 4 ""
+run_evaluation_with_retry 4 "" || true
 
 # Phase 2: up to 3 attempts with reduced tokens
 PHASE2_TOKENS=$(get_phase2_tokens)
 echo ""
 echo "--- Phase 2: reduced tokens [${PHASE2_TOKENS}] (up to 3 attempts) ---"
-run_evaluation_with_retry 3 "$PHASE2_TOKENS"
+run_evaluation_with_retry 3 "$PHASE2_TOKENS" || true
 
 # Phase 3: up to 2 attempts with further reduced tokens
 PHASE3_TOKENS=$(get_phase3_tokens)
 echo ""
 echo "--- Phase 3: further reduced tokens [${PHASE3_TOKENS}] (up to 2 attempts) ---"
-run_evaluation_with_retry 2 "$PHASE3_TOKENS"
+run_evaluation_with_retry 2 "$PHASE3_TOKENS" || true
 
 # ============================================================
 # Extract accuracy and write reward
@@ -461,39 +476,43 @@ run_evaluation_with_retry 2 "$PHASE3_TOKENS"
 echo ""
 echo "=== Evaluation complete (${EVAL_COUNTER} total attempts) ==="
 
-if [ -f "$LOGS_DIR/metrics.json" ]; then
-    echo "metrics.json contents:"
-    cat "$LOGS_DIR/metrics.json"
+# Reward = metrics.json's `accuracy`, read as strictly as scripts/utils.py
+# load_metrics (every evaluate.py writes a float `accuracy`). Without a usable
+# accuracy the reward is the base model's zero-shot score, as scripts/collect.py's
+# baseline fallback does for broken runs; metrics.json is left as it is, so the
+# exported run takes the same fallback there. harbor parses reward.txt with
+# float() and rejects non-finite values, so only the number goes to stdout.
+[ -f "$LOGS_DIR/metrics.json" ] && { echo "metrics.json contents:"; cat "$LOGS_DIR/metrics.json"; echo; }
+REWARD=$(python3 - "$LOGS_DIR/metrics.json" "$TESTS/metadata.json" <<'PY'
+import json, math, sys
 
-    # Try to extract accuracy from the metrics JSON
-    ACCURACY=$(python3 -c "
-import json
+metrics_path, metadata_path = sys.argv[1:]
+
+def usable(x):
+    return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)
+
 try:
-    with open('$LOGS_DIR/metrics.json', 'r') as f:
-        metrics = json.load(f)
-    # Try common metric names
-    for key in ['accuracy', 'pass@1', 'score', 'exact_match']:
-        if key in metrics:
-            print(metrics[key])
-            break
-    else:
-        # If no known metric, use first numeric value
-        for v in metrics.values():
-            if isinstance(v, (int, float)):
-                print(v)
-                break
-        else:
-            print(0)
-except Exception as e:
-    print(f'Error parsing metrics: {e}', file=__import__('sys').stderr)
-    print(0)
-" 2>&1)
-
-    echo "Accuracy: $ACCURACY"
-    echo "$ACCURACY" > "$LOGS_DIR/reward.txt"
+    with open(metrics_path) as f:
+        accuracy = json.load(f).get("accuracy")
+    if usable(accuracy):
+        print(accuracy)
+        sys.exit(0)
+    reason = f"metrics.json has no finite numeric 'accuracy' (got {accuracy!r})"
+except FileNotFoundError:
+    reason = "metrics.json not created after all evaluation attempts"
+except Exception as e:  # malformed JSON, top level not an object, ...
+    reason = f"metrics.json unreadable ({type(e).__name__}: {e})"
+with open(metadata_path) as f:
+    baseline = json.load(f)["baseline_accuracy"]
+print(f"ERROR: {reason}; reward = baseline accuracy {baseline}", file=sys.stderr)
+print(baseline)
+PY
+)
+if [ -n "$REWARD" ]; then
+    echo "Reward: $REWARD"
+    echo "$REWARD" > "$LOGS_DIR/reward.txt"
 else
-    echo "ERROR: metrics.json not created after all evaluation attempts"
-    echo "0" > "$LOGS_DIR/reward.txt"
+    echo "ERROR: could not determine a reward (metadata.json has no usable baseline_accuracy?); reward.txt not written"
 fi
 
 echo ""
