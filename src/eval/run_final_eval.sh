@@ -8,7 +8,8 @@
 #   src/eval/run_final_eval.sh <task> <model_dir> <output_dir> <metrics_json> [<seed>...]
 #   src/eval/run_final_eval.sh --check <task>
 #
-# - Without seeds, it uses FINAL_EVAL_SEEDS below (only the first one for arenahardwriting and healthbench).
+# - Without seeds, it uses FINAL_EVAL_SEEDS below. It uses only the first one for arenahardwriting and healthbench,
+#   and for aime2025, gsm8k and humaneval when vLLM decodes the model greedily (see "Greedy models" below).
 # - <output_dir> gets each seed's metrics (metrics_seed<S>.json) and the log of each attempt
 #   (final_eval_seed<S>_<N>.txt). Neither it nor <metrics_json> may exist yet.
 # - <model_dir> is not checked. A missing model fails at every stage like any broken model, and collect.py
@@ -99,6 +100,17 @@ setup_task() {
             DEFAULT_SEEDS=("${FINAL_EVAL_SEEDS[@]}")
             ;;
     esac
+
+    # Whether the seed only drives sampling. gpqamain's seed also shuffles the answer choices, so its seeds give
+    # different results even when the model decodes greedily.
+    case "${task}" in
+        gpqamain)
+            SEED_ONLY_SAMPLES=0
+            ;;
+        *)
+            SEED_ONLY_SAMPLES=1
+            ;;
+    esac
 }
 
 if [ "$#" -ge 1 ] && [ "$1" = "--check" ]; then
@@ -117,8 +129,10 @@ OUTPUT_DIR="$(realpath -ms "$3")"
 METRICS_JSON="$(realpath -ms "$4")"
 shift 4
 if [ "$#" -gt 0 ]; then
+    SEEDS_GIVEN=1
     EVAL_SEEDS=("$@")
 else
+    SEEDS_GIVEN=0
     EVAL_SEEDS=("${DEFAULT_SEEDS[@]}")
 fi
 
@@ -153,6 +167,37 @@ cleanup() {
     rm -rf "${TMP_SUBDIR}"
 }
 trap cleanup EXIT
+
+# Greedy models. The inspect tasks set no temperature, so vLLM uses the model's default temperature from its generation
+# config (see src/utils/default_temperature.py). When that is 0, vLLM decodes greedily, and a seed that only drives
+# sampling does not change the result, apart from vLLM's small run-to-run noise. Such a model is evaluated with the
+# first default seed only. Seeds given on the command line are always used as given. A missing model is not checked:
+# it fails at the first seed, and the other seeds are skipped anyway.
+if [ "${SEEDS_GIVEN}" = 0 ] && [ "${SEED_ONLY_SAMPLES}" = 1 ] && [ "${#EVAL_SEEDS[@]}" -gt 1 ] && [ -d "${MODEL_DIR}" ]; then
+    if apptainer exec \
+            --env PYTHONNOUSERSITE="1" \
+            --bind "${REPO_ROOT}:${REPO_ROOT}" \
+            --pwd "${REPO_ROOT}" \
+            "${EVAL_CONTAINER}" python src/utils/default_temperature.py "${MODEL_DIR}" \
+                --output-file "${OUTPUT_DIR}/default_temperature.txt" > "${OUTPUT_DIR}/default_temperature_log.txt" 2>&1; then
+        read -r DECODING DEFAULT_TEMPERATURE < "${OUTPUT_DIR}/default_temperature.txt"
+        echo "vLLM's default temperature for this model: ${DEFAULT_TEMPERATURE} (${DECODING})"
+        case "${DECODING}" in
+            greedy)
+                EVAL_SEEDS=("${EVAL_SEEDS[0]}")
+                ;;
+            sampling)
+                ;;
+            *)
+                die "unexpected output of default_temperature.py: '${DECODING} ${DEFAULT_TEMPERATURE}'"
+                ;;
+        esac
+    else
+        # vLLM may still load the model, so evaluate with all seeds rather than lose the evaluation.
+        echo "WARNING: could not read vLLM's default temperature for ${MODEL_DIR}" \
+            "(see ${OUTPUT_DIR}/default_temperature_log.txt); evaluating with all seeds" >&2
+    fi
+fi
 
 echo "Final evaluation of ${MODEL_DIR} on ${EVALUATION_TASK} with ${FINAL_EVAL_SCRIPT}, seeds: ${EVAL_SEEDS[*]}"
 

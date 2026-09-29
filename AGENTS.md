@@ -330,13 +330,18 @@ results/{agent}_{agent_config}_{num_hours}h[_{num_gpus}gpu]{experiment_name}/
     ├── judgement_general.json           # general_judge structured verdict (archival; ignored by collect.py)
     ├── evaluation/                      # Per-seed final-evaluation outputs
     │   ├── final_eval_seed{S}_{N}.txt   # vLLM/inspect-ai evaluation logs (one per seed and retry)
-    │   └── metrics_seed{S}.json         # Benchmark scores of one evaluation seed
+    │   ├── metrics_seed{S}.json         # Benchmark scores of one evaluation seed
+    │   └── default_temperature{,_log}.txt # vLLM's default temperature for the model (aime2025/gsm8k/humaneval)
     └── metrics.json                     # Final benchmark scores: mean over the seeds that succeeded
 ```
 
 The final evaluation (`src/eval/run_final_eval.sh`) runs once for each fixed seed in
 `FINAL_EVAL_SEEDS`: 72332, 87681, 38992, 92201, 13818. arenahardwriting and healthbench use only the
-first seed, because each seed costs a full set of paid OpenAI grader calls. Earlier seeded runs
+first seed, because each seed costs a full set of paid OpenAI grader calls. aime2025, gsm8k and
+humaneval also use only the first seed when vLLM decodes the model greedily. Their tasks set no
+temperature, so vLLM uses the model's default temperature from its `generation_config.json`
+(`src/utils/default_temperature.py`), and at 0 the seed does not change the result. gpqamain always
+uses all seeds, because its seed also shuffles the answer choices. Earlier seeded runs
 used the seeds 0–4 (only 0 for those two benchmarks); `per_seed` in `metrics.json` shows the seeds
 of a run. The seed goes to
 `evaluate_final_eval.py` as `--seed`. Each seed runs the max-tokens retry cascade:
