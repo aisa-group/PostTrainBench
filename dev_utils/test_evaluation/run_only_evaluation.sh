@@ -79,9 +79,14 @@ run_evaluation() {
     local max_tokens_arg="$1"
     local seed="$2"
     local eval_num="$3"
+    # humaneval's scorer runs the model's answers in a separate container (see with_answer_sandbox.sh).
+    local answer_sandbox=()
+    if [ "${EVALUATION_TASK}" = "humaneval" ]; then
+        answer_sandbox=(bash src/eval/tasks/humaneval/with_answer_sandbox.sh "${POST_TRAIN_BENCH_CONTAINERS_DIR}/vllm_debug.sif")
+    fi
     nvidia-smi --query-compute-apps=pid --format=csv,noheader | xargs -r kill -9
     sleep 5
-    with_huggingface_overlay apptainer exec \
+    with_huggingface_overlay "${answer_sandbox[@]}" apptainer exec \
         --nv \
         --env "HF_HOME=${TMP_HF_CACHE}" \
         --env OPENAI_API_KEY="${OPENAI_API_KEY}" \

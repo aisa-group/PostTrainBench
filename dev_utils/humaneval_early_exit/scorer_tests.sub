@@ -1,0 +1,13 @@
+# Runs run_scorer_tests.sh (test_scorer.py, then compare_scorers.py on `logs`). Submit from the repo root:
+#   condor_submit_bid 30 -a "sif=/abs/vllm_debug.sif" -a "hf_home=/abs/huggingface" -a "out_dir=/abs/out" \
+#       -a "logs=/abs/a.json /abs/b.json" dev_utils/humaneval_early_exit/scorer_tests.sub
+executable = /bin/bash
+arguments = dev_utils/humaneval_early_exit/run_scorer_tests.sh $(sif) $(hf_home) $(out_dir) $(logs)
+environment = "HOME=$ENV(HOME)"
+error = logs/humaneval_scorer_tests_$(Cluster).err
+output = logs/humaneval_scorer_tests_$(Cluster).out
+log = logs/humaneval_scorer_tests_$(Cluster).log
+request_cpus = 8
+request_memory = 32768
++BypassLXCfs="true"
+queue

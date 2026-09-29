@@ -90,12 +90,18 @@ run_one() {
     local extra="$2"
     local log="$3"
 
+    # humaneval's scorer runs the model's answers in a separate container (see with_answer_sandbox.sh).
+    local answer_sandbox=()
+    if [ "${EVALUATION_TASK}" = "humaneval" ]; then
+        answer_sandbox=(bash src/eval/tasks/humaneval/with_answer_sandbox.sh "${POST_TRAIN_BENCH_CONTAINERS_DIR}/${POST_TRAIN_BENCH_CONTAINER_NAME}.sif")
+    fi
+
     nvidia-smi --query-compute-apps=pid --format=csv,noheader 2>/dev/null \
         | xargs -r kill -9 2>/dev/null || true
     sleep 5
 
     timeout --signal=TERM --kill-after=60s 28800s \
-    apptainer exec \
+    "${answer_sandbox[@]}" apptainer exec \
         --nv \
         --env "HF_HOME=${TMP_HF_CACHE}" \
         --env OPENAI_API_KEY="${OPENAI_API_KEY:-}" \

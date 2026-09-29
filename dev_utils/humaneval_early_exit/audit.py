@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Audit official HumanEval final-eval logs for samples scored correct only because the process exited before check().
 
-The upstream inspect_evals scorer counted any exit code 0 as correct (see verify() in
-src/eval/tasks/humaneval/evaluate_final_eval.py). This re-runs every sample that a log marks correct through the fixed
-verification program. A sample is flagged `early_exit` when that program exits 0 without printing the token that
-follows check(). `passes_without_exit` then says whether the answer passes check() once its own exits are swallowed:
-False means the logged score was inflated by that sample, True means it was untested but correct anyway.
+The upstream inspect_evals scorer counted any exit code 0 as correct. This re-runs every sample that a log marks
+correct through the upstream verification program plus a line that prints a random token after check(). A sample is
+flagged `early_exit` when that program exits 0 without printing the token. `passes_without_exit` then says whether
+the answer passes check() once its own exits are swallowed: False means the logged score was inflated by that sample,
+True means it was untested but correct anyway.
 
 Final-eval logs are the inspect logs of run_task.sh's official evaluation. They are written to
 <submitting checkout>/src/eval/tasks/humaneval/logs/ and named in the run dir's final_eval*.txt ("Log: logs/..."), or
@@ -26,10 +26,8 @@ import resource
 import secrets
 import signal
 import subprocess
-import sys
 import tempfile
 
-REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 VERIFY_TIMEOUT = 30
 FINAL_EVAL_LOG_RE = re.compile(r"Log: (logs/\S+\.json)")
 MISSING = "MISSING:"
@@ -66,8 +64,13 @@ def cmd_list(args: argparse.Namespace) -> None:
     print(f"wrote {args.out}")
 
 
+def build_verification_code(prompt: str, answer: str, test: str, entry_point: str, token: str) -> str:
+    """The upstream inspect_evals verification program, plus a line that prints `token` once check() has returned."""
+    return "".join([prompt, answer, "\n", test, "\n", f"check({entry_point})", "\n", f"print({token!r})", "\n"])
+
+
 def build_exit_neutralized_code(prompt: str, answer: str, test: str, entry_point: str, token: str) -> str:
-    """Like the fixed verification program, but exits raised while the answer's own module-level code runs
+    """Like build_verification_code(), but exits raised while the answer's own module-level code runs
     (unittest.main(), exit(), os._exit(), ...) are swallowed, so check() still runs."""
     return "".join([
         "import os as _ptb_os, sys as _ptb_sys\n",
@@ -110,9 +113,6 @@ def resolve(sample: dict, value: str) -> str:
 
 
 def check_log(path: str, cwd: str) -> dict:
-    # evaluate_final_eval.py needs inspect_ai/inspect_evals, which only the eval container has.
-    from evaluate_final_eval import build_verification_code
-
     with open(path) as f:
         log = json.load(f)
     summary = {"status": log["status"], "n_samples": 0, "n_correct": 0, "flagged": []}
@@ -143,7 +143,6 @@ def check_log(path: str, cwd: str) -> dict:
 
 
 def cmd_check(args: argparse.Namespace) -> None:
-    sys.path.insert(0, os.path.join(REPO_ROOT, "src", "eval", "tasks", "humaneval"))
     with open(args.log_list) as f:
         rows = [line.rstrip("\n").split("\t") for line in f if line.strip()]
     os.makedirs(args.out_dir, exist_ok=True)

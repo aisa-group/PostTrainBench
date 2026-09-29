@@ -145,10 +145,20 @@ alias in the CLI's `[models] default`.
      **never** copied into the agent sandbox, which only sees `evaluate.py`. It must accept `--seed` and
      use it for generation (the final evaluation runs once per fixed seed, see "Results Structure").
      `run_task.sh` and `run_only_evaluation.sh` exit at job start if it is missing. Also use it for
-     grading hardening the agent should not see (e.g. humaneval's scorer, where upstream counts an early
-     process exit as a pass). Keep it in sync with `evaluate.py` otherwise. A task with an
-     `evaluate_openrouter.py` also needs `evaluate_openrouter_final_eval.py`, the same variant of that
-     file, which `run_task.sh` runs when grading goes through OpenRouter.
+     grading hardening the agent should not see (e.g. humaneval's scorer, see below). Keep it in sync
+     with `evaluate.py` otherwise. A task with an `evaluate_openrouter.py` also needs
+     `evaluate_openrouter_final_eval.py`, the same variant of that file, which `run_task.sh` runs when
+     grading goes through OpenRouter.
+
+     humaneval's final-eval scorer never runs the model's code next to the tests. Upstream runs both in
+     one process, where the code can end the process early (counted as a pass) or return an object that
+     equals everything. Instead, the test runs in a checker process, and each call of the model's function
+     runs in a fresh process of an *answer sandbox*: a second apptainer container with no network, no host
+     filesystems and its own PID namespace (`src/eval/tasks/humaneval/answer_sandbox.py`). Results come
+     back as plain values only. Every script that runs humaneval's final evaluation therefore wraps its
+     `apptainer exec` in `src/eval/tasks/humaneval/with_answer_sandbox.sh`, which starts one sandbox per
+     evaluation run; `evaluate_final_eval.py` exits at startup without it. Regression tests:
+     `dev_utils/humaneval_early_exit/scorer_tests.sub`.
 3. Optional files:
    - `evaluation_code/` - Supporting evaluation code copied into the agent sandbox
    - `task_context/` - Additional context (e.g. dataset hints) copied into the agent sandbox

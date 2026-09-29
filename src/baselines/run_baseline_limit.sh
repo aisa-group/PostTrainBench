@@ -84,7 +84,12 @@ check_cuda() {
 }
 
 run_eval() {
-    apptainer exec \
+    # humaneval's scorer runs the model's answers in a separate container (see with_answer_sandbox.sh).
+    local answer_sandbox=()
+    if [ "${EVAL_NAME}" = "humaneval" ]; then
+        answer_sandbox=(bash src/eval/tasks/humaneval/with_answer_sandbox.sh "${POST_TRAIN_BENCH_CONTAINERS_DIR}/vllm_debug.sif")
+    fi
+    "${answer_sandbox[@]}" apptainer exec \
         --nv \
         --env HF_HOME="${TMP_HF_CACHE}" \
         --env OPENAI_API_KEY="${OPENAI_API_KEY}" \
