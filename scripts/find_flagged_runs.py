@@ -17,10 +17,13 @@ Roots pointing at the same directory are deduplicated, and a method directory
 appearing under more than one root is only scanned once (first root wins,
 mirroring collect.py).
 
-The verdict path is resolved via utils.optional_judgement_path, which prefers
+The verdict is resolved via utils.optional_judgement_path, which prefers
 judgement_<id>_rerun.json (rerun pipeline) over judgement_<id>.json (initial
-run_task.sh run). Run directories without either file are ignored — they
-predate the judge — and only show up as a count in the summary.
+run_task.sh run). The contamination judge is the exception: its effective
+verdict comes from utils.resolve_judgement (manual override > majority of the
+three multi-run slots > rerun > inline) — the same verdict collect.py scores
+by. Run directories without a verdict are ignored — they predate the judge —
+and only show up as a count in the summary.
 
 stdout carries the absolute paths of flagged run dirs, one per line, so the
 output can be piped. The summary (and, with --justification, the judge's
@@ -47,10 +50,15 @@ from utils import (
     get_extra_results_dirs,
     get_results_dir,
     optional_judgement_path,
+    resolve_judgement,
     walk_latest_runs,
 )
 
 JUDGES_DIR = os.path.join(PROJECT_ROOT, "src", "judges")
+
+# Its effective verdict is not a single judge file (manual override, or the
+# majority of three runs), so it is resolved via utils.resolve_judgement.
+CONTAMINATION_JUDGE = "data_contamination_judge"
 
 
 def available_judges() -> list[str]:
@@ -79,20 +87,35 @@ def get_judge_output_id(judge_name: str) -> str:
     raise ValueError(f"{conf_path}: JUDGE_OUTPUT_ID not set")
 
 
-def load_verdict(path: str) -> tuple[dict[str, bool], dict]:
-    """Load a judgement file; return (boolean verdict fields, full JSON).
+def resolve_verdict(
+    run_dir: str, judge_name: str, output_id: str
+) -> tuple[str, dict] | None:
+    """Return (source, full verdict JSON) of a run's verdict, or None if absent.
 
-    Raises when the file is not a JSON object or holds no boolean field at
-    all — then it is not a judge verdict.
+    ``source`` names where the verdict came from, relative to ``run_dir``.
     """
+    if judge_name == CONTAMINATION_JUDGE:
+        return resolve_judgement(run_dir)
+    path = optional_judgement_path(run_dir, output_id)
+    if path is None:
+        return None
     with open(path, "r") as f:
         data = json.load(f)
+    return os.path.basename(path), data
+
+
+def verdict_flags(source: str, data: dict) -> dict[str, bool]:
+    """Return the boolean verdict fields of a verdict JSON.
+
+    Raises when it is not a JSON object or holds no boolean field at all —
+    then it is not a judge verdict.
+    """
     if not isinstance(data, dict):
-        raise ValueError(f"{path}: top-level JSON is not an object")
+        raise ValueError(f"{source}: top-level JSON is not an object")
     flags = {k: v for k, v in data.items() if isinstance(v, bool)}
     if not flags:
-        raise ValueError(f"{path}: no boolean verdict field found")
-    return flags, data
+        raise ValueError(f"{source}: no boolean verdict field found")
+    return flags
 
 
 def get_all_roots() -> list[str]:
@@ -163,7 +186,7 @@ def main() -> None:
     output_id = get_judge_output_id(args.judge)
     roots = get_all_roots()
 
-    # (run_dir, verdict_file, {fired_field: justification})
+    # (run_dir, verdict_source, {fired_field: justification})
     flagged: list[tuple[str, str, dict[str, str]]] = []
     with_verdict = 0
     without_verdict = 0
@@ -171,12 +194,13 @@ def main() -> None:
     fired_counts: Counter[str] = Counter()
 
     for run_dir in iter_run_dirs(roots):
-        verdict_path = optional_judgement_path(run_dir, output_id)
-        if verdict_path is None:
+        resolved = resolve_verdict(run_dir, args.judge, output_id)
+        if resolved is None:
             without_verdict += 1
             continue
         with_verdict += 1
-        flags, data = load_verdict(verdict_path)
+        verdict_source, data = resolved
+        flags = verdict_flags(os.path.join(run_dir, verdict_source), data)
         field_names.update(flags)
         fired = [field for field, value in flags.items() if value]
         fired_counts.update(fired)
@@ -185,7 +209,7 @@ def main() -> None:
                 field: data.get(f"justification_{field}", "") for field in fired
             }
             flagged.append(
-                (os.path.realpath(run_dir), verdict_path, justifications)
+                (os.path.realpath(run_dir), verdict_source, justifications)
             )
 
     # stdout: pure absolute paths, one per line (pipeable).
@@ -211,9 +235,9 @@ def main() -> None:
 
     if args.justification and flagged:
         print("", file=sys.stderr)
-        for run_dir, verdict_path, justifications in flagged:
+        for run_dir, verdict_source, justifications in flagged:
             print(f"### {run_dir}", file=sys.stderr)
-            print(f"    verdict file: {os.path.basename(verdict_path)}", file=sys.stderr)
+            print(f"    verdict source: {verdict_source}", file=sys.stderr)
             for field, justification in justifications.items():
                 print(f"    [{field}]", file=sys.stderr)
                 print(justification, file=sys.stderr)

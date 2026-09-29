@@ -112,15 +112,15 @@ echo "  Benchmark: $BENCHMARK | Model: $MODEL_HF | Agent: $AGENT ($AGENT_CONFIG)
 echo "  Judges: ${JUDGES[*]} (outputs suffixed with _rerun)"
 
 # Create temporary working directory
-TMP_DIR=$(mktemp -d)
+TMP_DIR=$(make_judge_tmp_dir)
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 JOB_DIR="$TMP_DIR/job_dir"
 JOB_TMP="$TMP_DIR/tmp"
 mkdir -p "$JOB_DIR" "$JOB_TMP"
 
-# Copy task directory
-cp -r "$RESULT_DIR/task" "$JOB_DIR/task"
+# Copy task directory (without weights / optimizer state / caches)
+copy_task_for_judge "$RESULT_DIR/task" "$JOB_DIR/task"
 
 # Remove any pre-existing judgement file from the task dir so stale values
 # from earlier runs can't leak into this judge's output when the CLI crashes.

@@ -17,7 +17,6 @@ models=(
 evals=(
     "aime2025"
     "arenahardwriting"
-    "bfcl"
     "gpqamain"
     "gsm8k"
     "humaneval"
