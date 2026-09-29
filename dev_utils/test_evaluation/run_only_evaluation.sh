@@ -69,7 +69,14 @@ fi
 
 # Same seeds and aggregation as src/run_task.sh. The per-seed metrics and logs
 # go to their own folder, next to the evaluation/ folder of the original run.
-EVAL_SEEDS=(0 1 2 3 4)
+case "${EVALUATION_TASK}" in
+    arenahardwriting|healthbench)
+        EVAL_SEEDS=(0)
+        ;;
+    *)
+        EVAL_SEEDS=(0 1 2 3 4)
+        ;;
+esac
 export EVAL_OUTPUT_DIR="${EVAL_DIR}/z_new_${CLUSTER}_evaluation"
 mkdir -p "${EVAL_OUTPUT_DIR}"
 

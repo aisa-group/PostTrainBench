@@ -112,9 +112,10 @@ python scripts/verify.py \
 
 `rerun_eval_n_times.sh` re-evaluates a job's `final_model/` N times and writes
 mean / std / stderr / min / max per metric into `metrics_averaged.json`. A job's
-standard `metrics.json` is already the mean over 5 fixed seeds (see "Results
-Structure" in `AGENTS.md`). These reruns pass no `--seed`, so each one is a fresh
-unseeded decoding sample, e.g. to estimate the spread beyond those 5 seeds.
+standard `metrics.json` is already the mean over 5 fixed seeds (1 seed for
+arenahardwriting/healthbench; see "Results Structure" in `AGENTS.md`). These
+reruns pass no `--seed`, so each one is a fresh unseeded decoding sample, e.g. to
+estimate the spread beyond those fixed seeds.
 
 Apart from the seeds, it mirrors `src/run_task.sh`'s evaluation step:
 

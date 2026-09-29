@@ -318,8 +318,9 @@ results/{agent}_{agent_config}_{num_hours}h[_{num_gpus}gpu]{experiment_name}/
 ```
 
 The final evaluation runs once for each fixed seed in `EVAL_SEEDS` (`src/run_task.sh`, currently
-0–4). The seed goes to `evaluate_final_eval.py` as `--seed`. Each seed runs the max-tokens retry
-cascade:
+0–4). arenahardwriting and healthbench use only seed 0, because each seed costs a full set of paid
+OpenAI grader calls. The seed goes to `evaluate_final_eval.py` as `--seed`. Each seed runs the
+max-tokens retry cascade:
 - The first seed starts at stage 0. If it fails at every stage, the other seeds are skipped and
   no `metrics.json` is written, so `scripts/collect.py` uses the baseline.
 - The later seeds start at the stage where the first seed succeeded, so they use the same

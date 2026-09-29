@@ -414,8 +414,16 @@ export TMP_HF_CACHE="/tmp/hf_cache_90afd0"
 
 # The final model is evaluated once per fixed seed; metrics.json holds the mean
 # over the seeds that succeeded (see src/utils/aggregate_seed_metrics.py). The
-# per-seed metrics and logs go to EVAL_OUTPUT_DIR.
-EVAL_SEEDS=(0 1 2 3 4)
+# per-seed metrics and logs go to EVAL_OUTPUT_DIR. arenahardwriting and
+# healthbench are graded by paid OpenAI calls, so they use a single seed.
+case "${EVALUATION_TASK}" in
+    arenahardwriting|healthbench)
+        EVAL_SEEDS=(0)
+        ;;
+    *)
+        EVAL_SEEDS=(0 1 2 3 4)
+        ;;
+esac
 export EVAL_OUTPUT_DIR="${EVAL_DIR}/evaluation"
 mkdir -p "${EVAL_OUTPUT_DIR}"
 
