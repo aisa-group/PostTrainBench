@@ -89,18 +89,26 @@ def hms(seconds: int) -> str:
     return f"{seconds // 3600:02d}:{(seconds % 3600) // 60:02d}:{seconds % 60:02d}"
 
 
+def is_trial_dir(p: Path) -> bool:
+    """A harbor trial dir; job dirs also hold result.json + config.json, but only a
+    trial's config.json names the trial."""
+    if not ((p / "result.json").is_file() and (p / "config.json").is_file()):
+        return False
+    try:
+        return "trial_name" in json.loads((p / "config.json").read_text())
+    except (OSError, ValueError):
+        return False
+
+
 def find_trials(paths: list[Path]) -> list[Path]:
-    """Accept job dirs and/or trial dirs."""
-    trials = []
+    """Accept trial dirs, job dirs, and sweep dirs of run_modal_task.sh
+    (jobs/<sweep>/<task>/<trial>): every trial dir at or below each path."""
+    trials: list[Path] = []
     for p in paths:
         p = p.resolve()
-        if (p / "result.json").is_file() and (p / "config.json").is_file() and (p / "verifier").is_dir():
-            trials.append(p)
-            continue
-        for sub in sorted(p.iterdir()) if p.is_dir() else []:
-            if sub.is_dir() and (sub / "result.json").is_file() and (sub / "config.json").is_file():
-                trials.append(sub)
-    return trials
+        candidates = [p] + (sorted(c.parent for c in p.rglob("config.json")) if p.is_dir() else [])
+        trials += [c for c in candidates if is_trial_dir(c)]
+    return list(dict.fromkeys(trials))
 
 
 def resolve_task_dir(trial: Path, result: dict) -> Path | None:
@@ -263,7 +271,12 @@ def export_trial(trial: Path, results_dir: Path, *, experiment_name: str,
 
 
 def default_volume_name(trial: Path, result: dict) -> str:
-    """run_modal_task.sh convention: ptb-<job-name>-<task short name>."""
+    """The volume run_modal_task.sh passed (recorded in the trial's config.json);
+    else its old naming convention, ptb-<job-name>-<task short name>."""
+    config = json.loads((trial / "config.json").read_text())
+    volume = (((config.get("environment") or {}).get("kwargs") or {}).get("volumes") or {}).get("/mnt/ptb_final_model")
+    if volume:
+        return volume
     job = trial.parent.name
     short = re.sub(r"^posttrainbench-", "", result["task_name"])
     return re.sub(r"[^A-Za-z0-9._-]", "-", f"ptb-{job}-{short}")[:64]
