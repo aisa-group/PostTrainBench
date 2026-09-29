@@ -32,6 +32,21 @@ export CLAUDE_CODE_ATTRIBUTION_HEADER="0"
 export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC="1"
 export IS_SANDBOX="1"
 
+# glm-5.3 / glm-5.3-flash (2026-08 spec) need claude-code >= 2.1.207 with a
+# new env var to disable the client-side stream watchdog. Older glm configs
+# (glm-x-preview, glm-5.2) work against the container's pinned 2.1.157 and
+# don't set this var. Detect by AGENT_CONFIG prefix so this file stays
+# backward-compatible.
+if [[ "${AGENT_CONFIG}" == glm-5.3* ]]; then
+    export CLAUDE_ENABLE_STREAM_WATCHDOG=0
+    # Ask update_agent_cli.sh to install this exact version (a pin overrides
+    # the .env POST_TRAIN_BENCH_SKIP_CLI_UPDATE=1 opt-out and any
+    # CLAUDE_CLI_VERSION set in .env).
+    export CLAUDE_CLI_VERSION="2.1.207"
+fi
+
+bash /home/ben/update_agent_cli.sh claude || exit 1
+
 printf '%s' "$PROMPT" | claude --print --verbose --model "$AGENT_CONFIG" \
     --output-format stream-json \
     --thinking adaptive --effort max --thinking-display summarized \

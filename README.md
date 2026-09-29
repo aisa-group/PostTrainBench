@@ -14,15 +14,17 @@ Agents are run through one of 4 CLI scaffolds: Claude Code, Codex CLI, Gemini CL
 
 ## Evaluation Tasks
 
-PostTrainBench includes 7 benchmarks spanning reasoning, tool use, knowledge, math, health, and code:
+PostTrainBench includes 6 scored benchmarks spanning reasoning, knowledge, math, health, and code:
 
 1. **AIME 2025** — Math competition problems
 2. **Arena Hard Writing** — Creative writing benchmark adapted from ArenaHard v2
-3. **BFCL** — Berkeley Function Calling Leaderboard (tool use)
-4. **GPQA** — Graduate-level science questions
-5. **GSM8K** — Grade school math
-6. **HealthBench Easy** — Medical knowledge and reasoning
-7. **HumanEval** — Code generation
+3. **GPQA** — Graduate-level science questions
+4. **GSM8K** — Grade school math
+5. **HealthBench Easy** — Medical knowledge and reasoning
+6. **HumanEval** — Code generation
+
+BFCL (Berkeley Function Calling Leaderboard) was part of earlier releases and is still in
+`src/eval/tasks/bfcl/`, but it is no longer scored or included in the weighted average.
 
 ## Quick Start
 
@@ -88,7 +90,7 @@ Some models are only available through CLI subscriptions rather than API keys (e
    ```
 3. Copy the generated credentials:
    ```bash
-   cp ~/.codex/auth.json agents/codex_non_api/auth.json
+   cp ~/.codex/auth.json agents/codex_non_api/auth.json && chmod 600 agents/codex_non_api/auth.json  
    ```
 4. Submit jobs with `agent=codex_non_api`:
    ```bash
