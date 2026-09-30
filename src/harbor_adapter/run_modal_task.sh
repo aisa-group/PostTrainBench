@@ -4,9 +4,9 @@
 # Task selection (exactly one):
 #   --task DIR                     an already generated task (run_adapter.py)
 #   --benchmark B --base-model M   generate the tasks first, into tasks/<job-name>/.
-#                                  Comma-separated lists, or `all` for every benchmark
-#                                  (src/eval/tasks/*/info.json) / base model (adapter.py
-#                                  MODELS). --num-hours H sets the agent budget (default 10).
+#                                  Comma-separated lists, or `all`: every benchmark
+#                                  condor scores (scripts/utils.py HARDCODED_BENCHMARKS;
+#                                  bfcl is retired) / every base model (adapter.py MODELS). --num-hours H sets the agent budget (default 10).
 #
 # Every task gets its own Modal volume, ptb-<job-name>-<task>, which hands the trained
 # model from the agent sandbox to the separate verifier sandbox (see
@@ -256,18 +256,20 @@ else
 import contextlib, sys
 from pathlib import Path
 sys.path.insert(0, sys.argv[1])
-from adapter import BENCHMARKS, MODELS, PostTrainBenchAdapter
+from adapter import BENCHMARKS, DEFAULT_BENCHMARKS, MODELS, PostTrainBenchAdapter
 
 out, bench_spec, model_spec, hours, agent = Path(sys.argv[2]), sys.argv[3], sys.argv[4], int(sys.argv[5]), sys.argv[6]
 
-def pick(spec, known, what):
-    names = list(known) if spec == "all" else [s.strip() for s in spec.split(",") if s.strip()]
+def pick(spec, known, what, default):
+    names = list(default) if spec == "all" else [s.strip() for s in spec.split(",") if s.strip()]
     unknown = [n for n in names if n not in known]
     if unknown or not names:
         sys.exit(f"unknown {what}: {', '.join(unknown) or repr(spec)} (known: {', '.join(known)})")
     return names
 
-benches, models = pick(bench_spec, BENCHMARKS, "benchmark"), pick(model_spec, MODELS, "base model")
+# `all` = the scored benchmarks (DEFAULT_BENCHMARKS: bfcl is retired); any benchmark by name.
+benches = pick(bench_spec, BENCHMARKS, "benchmark", DEFAULT_BENCHMARKS)
+models = pick(model_spec, MODELS, "base model", MODELS)
 adapter = PostTrainBenchAdapter(output_dir=out, num_hours=hours, agent_name=agent)
 for b in benches:
     for m in models:

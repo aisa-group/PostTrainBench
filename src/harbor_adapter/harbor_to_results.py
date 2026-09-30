@@ -55,7 +55,7 @@ ADAPTER_DIR = Path(__file__).resolve().parent
 REPO_ROOT = ADAPTER_DIR.parent.parent
 PARSE_TRACE = REPO_ROOT / "src" / "trace_parsing" / "parse_trace.py"
 
-JUDGE_OUTPUT_IDS = ("gpt5_4", "api", "ptb_lookup", "general")
+MULTI_RUN_DIRNAME = "judgement_multi_runs"   # scripts/utils.py MULTI_RUN_DIRNAME
 
 
 # --------------------------------------------------------------------------- helpers
@@ -204,12 +204,19 @@ def export_trial(trial: Path, results_dir: Path, *, experiment_name: str,
     for name in ["metrics.json", "reward.txt"]:
         if (v / name).is_file():
             shutil.copy(v / name, out / name)
-    for jid in JUDGE_OUTPUT_IDS:
-        for name in [f"judgement_{jid}.json", f"judge_output_{jid}.json"]:
-            if (v / name).is_file():
-                shutil.copy(v / name, out / name)
-        if (out / f"judge_output_{jid}.json").is_file():
-            run_parse_trace("codex", out / f"judge_output_{jid}.json", out / f"judge_output_{jid}.txt")
+    # Every verdict and raw judge trace the verifier wrote, whatever the judge
+    # set (src/judges/judge_lib.sh ALL_JUDGES), incl. the best-of-3 contamination
+    # slots in judgement_multi_runs/ that scripts/utils.py takes the majority of.
+    for sub in ("", MULTI_RUN_DIRNAME):
+        if not (v / sub).is_dir():
+            continue
+        (out / sub).mkdir(parents=True, exist_ok=True)
+        for f in sorted((v / sub).glob("judgement_*.json")) + sorted((v / sub).glob("judge_output_*.json")):
+            if f.name.endswith("_sanitized.json"):
+                continue
+            shutil.copy(f, out / sub / f.name)
+            if f.name.startswith("judge_output_"):
+                run_parse_trace("codex", out / sub / f.name, out / sub / f"{f.stem}.txt")
     for f in sorted(v.glob("final_eval_*.txt")):
         shutil.copy(f, out / f.name)
 

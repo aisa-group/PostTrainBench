@@ -48,7 +48,8 @@ retries = 3
 # tests/Dockerfile). test.sh + evaluate.py + templates/ +
 # contamination_judge.py + metadata.json are baked INTO the image at
 # build time; harbor does not upload tests/ at runtime for separate envs.
-# 5h: four codex judges at xhigh reasoning (src/judges) + the 3-phase eval retry.
+# timeout_sec is set by adapter.py: judge runs (judge_lib.sh: every judge once,
+# the contamination judge best-of-3) x PTB_JUDGE_TIMEOUT_SEC + the eval budget.
 [verifier]
 timeout_sec = 18000.0
 environment_mode = "separate"
@@ -57,6 +58,8 @@ environment_mode = "separate"
 OPENAI_API_KEY = "${OPENAI_API_KEY}"
 CODEX_API_KEY = "${OPENAI_API_KEY}"
 HF_TOKEN = "${HF_TOKEN}"
+# Per judge run (tests/test.sh); set by adapter.py.
+PTB_JUDGE_TIMEOUT_SEC = "3000"
 # The verifier reads the trained model from the shared Modal volume (see the
 # [[verifier.collect]] hook below), not from the transferred workspace.
 # tests/test.sh falls back to $WORKSPACE/final_model when this is unset.

@@ -28,6 +28,7 @@ RUN apt-get update && apt-get install -y \
     wget \
     curl \
     build-essential \
+    jq \
     && rm -rf /var/lib/apt/lists/*
 
 # Python symlinks

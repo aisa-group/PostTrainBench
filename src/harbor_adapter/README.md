@@ -16,7 +16,9 @@ gsm8k, healthbench, humaneval. arenahardwriting and healthbench grade with an Op
 | smollm3-3b | HuggingFaceTB/SmolLM3-3B-Base |
 | gemma3-4b | google/gemma-3-4b-pt |
 
-7 benchmarks x 4 models = **28 tasks** (`python run_adapter.py --list`).
+`all` (`run_modal_task.sh --benchmark all`, `run_adapter.py --all`) means the benchmarks condor
+scores, `HARDCODED_BENCHMARKS` in `scripts/utils.py`: 6 benchmarks x 4 models = **24 tasks**. bfcl is
+retired from scoring but can still be run by name (`--benchmark bfcl`).
 
 ## Quick start
 
@@ -54,8 +56,9 @@ bash run_modal_task.sh --benchmark all --base-model all \
     --agent claude-code --model anthropic/claude-opus-4-8 --job-name sweep1
 ```
 
-- `--benchmark` / `--base-model` take `all` or comma-separated lists (`--benchmark gsm8k,humaneval
-  --base-model qwen3-1.7b`). `--num-hours H` sets the agent budget (default 10).
+- `--benchmark` / `--base-model` take `all` (the scored benchmarks, see above) or comma-separated
+  lists (`--benchmark gsm8k,humaneval --base-model qwen3-1.7b`). `--num-hours H` sets the agent
+  budget (default 10).
 - Tasks are generated into `tasks/<job-name>/`. All of them launch at once (`--parallel N` caps
   it), each as its own `harbor run` with its own Modal volume `ptb-<job-name>-<task>`, results in
   `jobs/<job-name>/<task>/` and launcher log `jobs/<job-name>/<task>.log`. The command waits and
@@ -213,22 +216,25 @@ write off the volume.
 
 ### Verifier: judges, evaluation, reward
 
-`tests/test.sh` first runs the four reward-hacking judges from `src/judges/` (set and order from
-`ALL_JUDGES` in `judge_lib.sh`), then the evaluation, the same order as `run_task.sh`:
+`tests/test.sh` runs condor's own judge phase, `run_all_judges` from `src/judges/judge_lib.sh`
+(the same function `run_task.sh` calls), then the evaluation, in `run_task.sh`'s order. The judge
+tree, `src/trace_parsing/` and the benchmark's `info.json` and test set are baked into the verifier
+image under `/tests/ptb/`, so judge changes on condor arrive when tasks are regenerated.
 
-| Judge | Output id | Verdict | Model / CLI |
+| Judge | Output id | Verdict | Runs |
 |---|---|---|---|
-| `data_contamination_judge` | `gpt5_4` | `contamination`, `disallowed_model` | gpt-5.4, xhigh |
-| `api_usage_judge` | `api` | `disallowed_api_usage` | gpt-5.4, xhigh |
-| `ptb_lookup_judge` | `ptb_lookup` | `disallowed_ptb_lookup` | gpt-5.4, xhigh |
-| `general_judge` | `general` | `general_anomaly` | gpt-5.6-terra on codex 0.144.5 (installed at judge time) |
+| `data_contamination_judge` | `gpt5_4` | `contamination`, `disallowed_model` | 3 (best-of-3: slots 2 and 3 in `judgement_multi_runs/`; scoring takes the per-field majority) |
+| `api_usage_judge` | `api` | `disallowed_api_usage` | 1 |
+| `ptb_lookup_judge` | `ptb_lookup` | `disallowed_ptb_lookup` | 1 |
+| `general_judge` | `general` | `general_anomaly` | 1 |
 
-The judge tree, `src/trace_parsing/` and the benchmark's `info.json` are baked into the verifier
-image under `/tests/ptb/`, so judge changes are picked up when tasks are regenerated. Each judge
-gets the condor sandbox layout: the code snapshot as its task dir (with `final_model` symlinked to
-the volume), `../solve_out.txt` / `../solve_parsed.txt` (the harbor transcript), `../test_data.json`,
-the checker tools and `../final_model_config.json`. A judge that produces no verdict is a warning,
-not a failure.
+All run gpt-5.6-terra at `xhigh` on codex 0.144.5 (defaults in `judge_lib.sh`, overridable per
+`judge.conf`). The only Harbor-specific part is `JUDGE_RUNTIME=local`: codex runs directly in the
+verifier image, authenticated by `OPENAI_API_KEY`, each run bounded by `PTB_JUDGE_TIMEOUT_SEC`
+(3000 s). Each judge gets the condor sandbox layout: the code snapshot as its task dir (with
+`final_model` symlinked to the volume), `../solve_out.txt` / `../solve_parsed.txt` (the harbor
+transcript), `../test_data.json`, the checker tools and `../final_model_config.json`. A judge that
+produces no verdict is a warning, not a failure.
 
 The evaluation is `run_task.sh`'s: up to 4, 3 and 2 attempts at its per-benchmark token limits,
 killing GPU processes between attempts. The reward is the accuracy from `metrics.json`. Outputs in
@@ -250,9 +256,9 @@ uses the base model's zero-shot score (`scripts/baselines.json`, baked into the 
 | RAM | 128 GB, hard cap | `memory_mb = 131072` is a reservation only; `-- --memory guarantee` also caps it |
 | Disk | `request_disk = 400G` | `storage_mb` is ignored by Modal; the host disk is effectively unbounded |
 | Agent time | `num_hours` + 5 min, timer starts at job setup | exactly `num_hours`, timer starts right before the agent |
-| Verifier time | no limit | 5 h (`[verifier] timeout_sec`), `PTB_JUDGE_TIMEOUT_SEC` = 3000 s per judge |
+| Verifier time | no limit (eval: 8 h per attempt) | judge runs (6) x 3000 s + 4 h for the eval = 9 h, derived from `judge_lib.sh` by `adapter.py` |
 | HF cache | pre-filled `HF_HOME` overlay | none: the base model downloads inside the agent's budget |
-| Judge auth | ChatGPT subscription `auth.json` | `OPENAI_API_KEY` |
+| Judge auth | ChatGPT subscription `auth.json` in `gpt_5_5.sif` | `OPENAI_API_KEY`, directly in the verifier image (`JUDGE_RUNTIME=local`) |
 | CLI pins | also per-model pins in `agents/claude_non_api_max`, `agents/glmx` `solve.sh` | not mirrored |
 | Code the judges see | the whole `task/` dir, minus every dir that looks like a HF model (`containers/delete_hf_models.py`) | a snapshot: files <= 512 MiB, <= 2 GiB total, smallest first, no weight formats or caches |
 | Record of what was dropped | `output.log` | `.ptb_workspace_sizes.txt` in the snapshot |

@@ -186,7 +186,9 @@ PTB="$TESTS/ptb"                      # mini repo layout: src/judges, src/trace_
 JUDGES_DIR="$PTB/src/judges"
 TRACE_PARSER="$PTB/src/trace_parsing/parse_trace.py"
 JUDGE_HOME="${PTB_JUDGE_HOME:-/tmp/ptb_judge}"
-JUDGE_TIMEOUT_SEC="${PTB_JUDGE_TIMEOUT_SEC:-3000}"   # per judge; verifier budget is 5h incl. eval
+# Per judge run; task.toml sets it and derives the verifier timeout from it
+# (adapter.py: judge runs x this + the eval budget).
+JUDGE_TIMEOUT_SEC="${PTB_JUDGE_TIMEOUT_SEC:-3000}"
 
 # PostTrainBench agent name (selects the trace parser in src/trace_parsing and
 # the harness clause in the api judge). Derived from harbor's agent transcript
@@ -218,11 +220,6 @@ cp -a "$CODE_DIR/." "$JUDGE_HOME/task/"
 rm -rf "$JUDGE_HOME/task/judgement.json" "$JUDGE_HOME/task/final_model"
 [ -d "$MODEL_DIR" ] && ln -s "$MODEL_DIR" "$JUDGE_HOME/task/final_model"
 
-cp "$JUDGES_DIR/judge_tools/contamination_check.py" "$JUDGES_DIR/judge_tools/model_identity_check.py" "$JUDGE_HOME/"
-cp -r "$JUDGES_DIR/judge_tools/reference_configs" "$JUDGE_HOME/reference_configs"
-[ -f "$TESTS/test_data.json" ] && cp "$TESTS/test_data.json" "$JUDGE_HOME/test_data.json"
-[ -f "$MODEL_DIR/config.json" ] && cp "$MODEL_DIR/config.json" "$JUDGE_HOME/final_model_config.json"
-
 # ---- traces -------------------------------------------------------------
 # ptb_collect.sh stages harbor's agent logs under /logs/artifacts/agent_logs/.
 # The agent's own transcript is <harbor-agent-name>.txt; pick the largest
@@ -251,99 +248,26 @@ if [ -z "$AGENT_CONFIG" ] && [ -f "$JUDGE_HOME/solve_parsed.txt" ]; then
 fi
 echo "Judge context: benchmark=$BENCHMARK_ID model=$MODEL_ID agent=$AGENT_NAME agent_config=${AGENT_CONFIG:-<unknown>}"
 
-# ---- codex config (condor: containers/other_home_data/.codex) -------------
-export CODEX_HOME="$JUDGE_HOME/.codex"
-mkdir -p "$CODEX_HOME"
-cat > "$CODEX_HOME/config.toml" <<EOF_CODEX
-[projects."$JUDGE_HOME/task"]
-trust_level = "trusted"
-
-[shell_environment_policy]
-inherit = "all"
-EOF_CODEX
-
-# ---- judge set, order and defaults: straight from judge_lib.sh -------------
-# Sourced in a subshell (at top level it only assigns variables and defines
-# functions), so a reformatted ALL_JUDGES or a new default such as
-# JUDGE_DEFAULT_CODEX_VERSION upstream is picked up rather than silently missed.
-JUDGE_LIB_VALUES=$(bash -c 'source "$1" > /dev/null 2>&1 && printf "%s\n" "${ALL_JUDGES[*]}" "${JUDGE_DEFAULT_MODEL:-}" "${JUDGE_DEFAULT_REASONING_EFFORT:-}" "${JUDGE_DEFAULT_CODEX_VERSION:-}"' _ "$JUDGES_DIR/judge_lib.sh")
-{ read -r JUDGE_LIST; read -r JUDGE_DEFAULT_MODEL; read -r JUDGE_DEFAULT_REASONING_EFFORT; read -r JUDGE_DEFAULT_CODEX_VERSION; } <<< "$JUDGE_LIB_VALUES"
-read -r -a ALL_JUDGES <<< "$JUDGE_LIST"
-if [ "${#ALL_JUDGES[@]}" -eq 0 ] || [ -z "$JUDGE_DEFAULT_MODEL" ]; then
-    echo "ERROR: could not read ALL_JUDGES / JUDGE_DEFAULT_MODEL from $JUDGES_DIR/judge_lib.sh; no judges will run and the exported run will lack verdicts"
-    ALL_JUDGES=()
-fi
-echo "Judges: ${ALL_JUDGES[*]} (defaults: model=$JUDGE_DEFAULT_MODEL effort=$JUDGE_DEFAULT_REASONING_EFFORT codex=${JUDGE_DEFAULT_CODEX_VERSION:-image})"
-
-if [ -z "${OPENAI_API_KEY:-}" ] && [ -z "${CODEX_API_KEY:-}" ]; then
-    echo "WARNING: no OPENAI_API_KEY/CODEX_API_KEY in the verifier env — skipping all judges"
-    ALL_JUDGES=()
-fi
-export OPENAI_API_KEY="${OPENAI_API_KEY:-$CODEX_API_KEY}"
-export CODEX_API_KEY="${CODEX_API_KEY:-$OPENAI_API_KEY}"
-
-for JUDGE_NAME in "${ALL_JUDGES[@]}"; do
-    JUDGE_LABEL=""; JUDGE_OUTPUT_ID=""; JUDGE_PROMPT_FILE=""
-    # Reset per judge, as judge_lib.sh's load_judge_conf does.
-    JUDGE_MODEL="$JUDGE_DEFAULT_MODEL"
-    JUDGE_REASONING_EFFORT="${JUDGE_DEFAULT_REASONING_EFFORT:-xhigh}"
-    JUDGE_CODEX_VERSION="$JUDGE_DEFAULT_CODEX_VERSION"
-    # judge.conf is plain KEY="value" lines (sourced by judge_lib.sh too)
-    source "$JUDGES_DIR/$JUDGE_NAME/judge.conf"
-    if [ -z "$JUDGE_LABEL" ] || [ -z "$JUDGE_OUTPUT_ID" ]; then
-        echo "WARNING: $JUDGE_NAME/judge.conf incomplete, skipping"; continue
-    fi
-    echo ""
-    echo "--- Judge: $JUDGE_LABEL (model=$JUDGE_MODEL effort=$JUDGE_REASONING_EFFORT codex=${JUDGE_CODEX_VERSION:-image}) ---"
-
-    # Per-judge codex CLI pin (judge_lib.sh installs it into the sandbox home)
-    CODEX_BIN="codex"
-    if [ -n "$JUDGE_CODEX_VERSION" ]; then
-        PIN_PREFIX="$JUDGE_HOME/.codex-cli-$JUDGE_CODEX_VERSION"
-        if [ ! -x "$PIN_PREFIX/bin/codex" ]; then
-            echo "  installing @openai/codex@$JUDGE_CODEX_VERSION ..."
-            npm install -g --prefix "$PIN_PREFIX" --no-fund --no-audit "@openai/codex@$JUDGE_CODEX_VERSION" > "$LOGS_DIR/codex_install_$JUDGE_CODEX_VERSION.log" 2>&1 || true
-        fi
-        if [ -x "$PIN_PREFIX/bin/codex" ]; then
-            CODEX_BIN="$PIN_PREFIX/bin/codex"
-        else
-            echo "  WARNING: pinned codex install failed, using the image's codex ($(codex --version 2>/dev/null))"
-        fi
-    fi
-
-    JUDGE_PROMPT=$(python3 "$JUDGES_DIR/get_judge_prompt.py" --judge "$JUDGE_NAME" \
-        --benchmark-id "$BENCHMARK_ID" --model "$MODEL_ID" \
-        --agent "$AGENT_NAME" ${AGENT_CONFIG:+--agent-config "$AGENT_CONFIG"}) || {
-        echo "WARNING: prompt generation failed for $JUDGE_NAME, skipping"; continue; }
-
-    rm -f "$JUDGE_HOME/task/judgement.json"
-    # stdin MUST be closed: `codex exec` appends piped stdin to the prompt and
-    # reads it to EOF, and under harbor's exec the verifier's stdin is an open
-    # pipe that never closes — codex then hangs before its first API call.
-    (
-        cd "$JUDGE_HOME/task" && \
-        timeout --signal=TERM --kill-after=60s "$JUDGE_TIMEOUT_SEC" \
-        "$CODEX_BIN" --search -a never exec --json \
-            -c model_reasoning_summary=detailed \
-            -c model_reasoning_effort="$JUDGE_REASONING_EFFORT" \
-            --skip-git-repo-check --yolo --model "$JUDGE_MODEL" "$JUDGE_PROMPT" 2>&1 < /dev/null
-    ) | tee "$LOGS_DIR/judge_output_$JUDGE_OUTPUT_ID.json" > /dev/null
-    JUDGE_EXIT=${PIPESTATUS[0]}
-    echo "  exit code: $JUDGE_EXIT"
-
-    python3 "$TRACE_PARSER" --agent codex "$LOGS_DIR/judge_output_$JUDGE_OUTPUT_ID.json" \
-        -o "$LOGS_DIR/judge_output_$JUDGE_OUTPUT_ID.txt" > /dev/null 2>&1 || true
-    # parse_trace.py also writes *_sanitized companions; with the empty .env
+# ---- judges: condor's own judge phase (src/judges/judge_lib.sh) ------------
+# run_all_judges is the loop src/run_task.sh runs — judge set and order,
+# best-of-N contamination slots (judgement_multi_runs/), codex flags and
+# version pins, output names, _meta tagging — with JUDGE_RUNTIME=local: codex
+# runs directly in this image, authenticated by OPENAI_API_KEY, each run
+# bounded by JUDGE_TIMEOUT_SEC. Judge tooling, the test set and the model's
+# config reach the sandbox via prepare_judge_sandbox, as on condor.
+export JUDGE_RUNTIME=local JUDGE_TIMEOUT_SEC
+source "$JUDGES_DIR/judge_lib.sh"
+prepare_judge_sandbox "$JUDGE_HOME" "$BENCHMARK_ID" "$MODEL_DIR/config.json"
+if setup_judge_codex_auth "$JUDGE_HOME"; then
+    echo "Judges: ${ALL_JUDGES[*]} (defaults: model=$JUDGE_DEFAULT_MODEL effort=$JUDGE_DEFAULT_REASONING_EFFORT codex=${JUDGE_DEFAULT_CODEX_VERSION:-image}; contamination x$CONTAMINATION_JUDGE_SLOTS; ${JUDGE_TIMEOUT_SEC}s per run)"
+    run_all_judges "$JUDGE_HOME" "" "$LOGS_DIR" "$BENCHMARK_ID" "$MODEL_ID" "$AGENT_NAME" "$AGENT_CONFIG" \
+        || echo "ERROR: a judge.conf could not be loaded; the remaining judges did not run"
+    # parse_trace.py writes *_sanitized companions; with the image's empty .env
     # they are byte-identical copies, so drop them to keep /logs/verifier lean.
-    rm -f "$LOGS_DIR"/judge_output_"$JUDGE_OUTPUT_ID"_sanitized.*
-
-    if [ -f "$JUDGE_HOME/task/judgement.json" ]; then
-        cp "$JUDGE_HOME/task/judgement.json" "$LOGS_DIR/judgement_$JUDGE_OUTPUT_ID.json"
-        echo "  $JUDGE_LABEL judgement: $(cat "$LOGS_DIR/judgement_$JUDGE_OUTPUT_ID.json")"
-    else
-        echo "  WARNING: judgement.json not created by $JUDGE_LABEL (see judge_output_$JUDGE_OUTPUT_ID.txt); continuing"
-    fi
-done
+    rm -f "$LOGS_DIR"/judge_output_*_sanitized.* "$LOGS_DIR"/judgement_multi_runs/judge_output_*_sanitized.*
+else
+    echo "WARNING: no OpenAI key in the verifier env — skipping all judges; the exported run will lack verdicts"
+fi
 
 # ============================================================
 # Evaluation with 3-phase retry logic
