@@ -1,0 +1,14 @@
+# One CPU job per cell of scripts/rescore_exact_match.py (gsm8k logs are ~50 MB per seed, too much for the login node).
+# Submit from the repo root:
+#   condor_submit_bid 50 -a "sif=$POST_TRAIN_BENCH_CONTAINERS_DIR/vllm_debug.sif" -a "cell_list=<file>" \
+#       scripts/rescore_exact_match.sub        (<file>: one cell dir per line)
+executable = /usr/bin/apptainer
+arguments = exec --bind $ENV(PWD):$ENV(PWD) --pwd $ENV(PWD) $(sif) python scripts/rescore_exact_match.py $(cell)
+environment = "HOME=$ENV(HOME)"
+error = logs/rescore_exact/$(Cluster).$(Process).err
+output = logs/rescore_exact/$(Cluster).$(Process).out
+log = logs/rescore_exact/$(Cluster).log
+request_cpus = 1
+request_memory = 16384
+request_disk = 1G
+queue cell from $(cell_list)
