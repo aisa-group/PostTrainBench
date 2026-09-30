@@ -38,6 +38,10 @@ source src/commit_utils/set_env_vars.sh
 EVAL_BASENAME="$(basename "$EVAL_DIR")"
 EVALUATION_TASK="${EVAL_BASENAME%%_*}"
 
+# On exit, give the users in POST_TRAIN_BENCH_USERS_ACCESS access to what this wrote (src/utils/grant_access.py).
+GRANT_ACCESS="$(pwd)/src/utils/grant_access.py"
+trap 'python3 "${GRANT_ACCESS}" "${EVAL_DIR}"' EXIT
+
 bash src/eval/run_final_eval.sh "${EVALUATION_TASK}" "${EVAL_DIR}/final_model" "${EVAL_DIR}/reruns" \
     "${EVAL_DIR}/metrics_averaged.json" "${SEEDS[@]}"
 

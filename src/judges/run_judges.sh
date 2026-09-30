@@ -113,7 +113,9 @@ echo "  Judges: ${JUDGES[*]} (outputs suffixed with _rerun)"
 
 # Create temporary working directory
 TMP_DIR=$(make_judge_tmp_dir)
-trap 'rm -rf "$TMP_DIR"' EXIT
+# On exit, also give the users in POST_TRAIN_BENCH_USERS_ACCESS access to the files written here
+# (src/utils/grant_access.py).
+trap 'rm -rf "$TMP_DIR"; python3 "$JUDGES_REPO_ROOT/src/utils/grant_access.py" "$RESULT_DIR"' EXIT
 
 JOB_DIR="$TMP_DIR/job_dir"
 JOB_TMP="$TMP_DIR/tmp"

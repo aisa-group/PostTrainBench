@@ -9,6 +9,10 @@ source src/commit_utils/set_env_vars.sh
 exec 1>${EVAL_DIR}/z_new_${CLUSTER}_output.log
 exec 2>${EVAL_DIR}/z_new_${CLUSTER}_error.log
 
+# On exit, give the users in POST_TRAIN_BENCH_USERS_ACCESS access to what this wrote (src/utils/grant_access.py).
+GRANT_ACCESS="$(pwd)/src/utils/grant_access.py"
+trap 'python3 "${GRANT_ACCESS}" "${EVAL_DIR}"' EXIT
+
 if [ "${POST_TRAIN_BENCH_JOB_SCHEDULER}" = "htcondor_mpi-is" ]; then
     SAVE_PATH="$PATH"
     module load cuda/12.1

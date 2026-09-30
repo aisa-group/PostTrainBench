@@ -46,6 +46,7 @@ PostTrainBench/
 | `src/utils/update_agent_cli.sh` | Auto-updates an agent's CLI harness to latest and records its version |
 | `src/judges/run_judges.sh` | Runs judges on an existing result dir (`--judges` to select a subset); each writes its own per-judge JSON |
 | `src/eval/per_sample_seed.py` | Per-sample generation seeds for every `evaluate_final_eval.py` (never one seed for all requests) |
+| `src/utils/grant_access.py` | Gives the users in `POST_TRAIN_BENCH_USERS_ACCESS` ACL access to result dirs (run on exit by `run_task.sh`) |
 | `src/judges/get_judge_prompt.py` | Generates judge prompts (`--judge <judge_name>`) |
 | `containers/standard.def` | Main container definition (other `.def` files exist per-agent) |
 | `scripts/constants.py` | Agent/benchmark mappings |
@@ -395,6 +396,13 @@ Common ones (defined in `.env`; also sourced via `src/commit_utils/set_env_vars.
 - `POST_TRAIN_BENCH_EXPERIMENT_NAME` — suffix added to the result directory name
 - `POST_TRAIN_BENCH_JOB_SCHEDULER` — controls which scheduler branch in `commit.sh` runs
 - `HF_HOME` — host-side Hugging Face cache that gets overlay-mounted into the sandbox
+- `POST_TRAIN_BENCH_USERS_ACCESS` — colon-separated users (e.g. `brank:hbhatnagar`) who get read/write ACL access to
+  every result dir: `run_task.sh` runs `src/utils/grant_access.py` on its result dir when it exits, and so do
+  `run_judges.sh`, `scripts/rerun_eval_n_times.sh` and `run_only_evaluation.sh`. It keeps everyone else's access as it
+  was (a plain `setfacl -R -m` would open mode-600 files such as safetensors weights to the owning group). It changes
+  only files the running user owns, so every user who writes into shared result dirs should set it. A job that condor
+  kills exits without it; run `python3 src/utils/grant_access.py <dir>...` by hand then, e.g. on existing results.
+  Unset means no grant. Regression test: `dev_utils/grant_access/test_grant_access.py` (on `/fast`).
 
 ## Co-Authorship
 
