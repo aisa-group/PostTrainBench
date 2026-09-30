@@ -105,8 +105,12 @@ def model_problem(model_dir: str) -> str | None:
         return f"no weight files in final_model/ ({', '.join(sorted(names)[:3])})"
     for root, _, files in os.walk(model_dir):
         for name in files:
-            if not os.access(os.path.join(root, name), os.R_OK):
-                return f"unreadable: {os.path.join(root, name)}"
+            path = os.path.join(root, name)
+            if os.path.islink(path) and not os.path.exists(path):
+                # e.g. a final_model the agent symlinked into its sandbox (/home/ben/task/...): gone on the host
+                return f"dangling symlink: {path} -> {os.readlink(path)}"
+            if not os.access(path, os.R_OK):
+                return f"unreadable: {path}"
     return None
 
 
