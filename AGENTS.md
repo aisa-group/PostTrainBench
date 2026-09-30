@@ -339,15 +339,16 @@ results/{agent}_{agent_config}_{num_hours}h[_{num_gpus}gpu]{experiment_name}/
     └── metrics.json                     # Final benchmark scores: mean over the seeds that succeeded
 ```
 
-The final evaluation (`src/eval/run_final_eval.sh`) runs once for each fixed seed in
-`FINAL_EVAL_SEEDS`: 72332, 87681, 38992, 92201, 13818. arenahardwriting and healthbench use only the
-first seed, because each seed costs a full set of paid OpenAI grader calls. aime2025, gsm8k and
-humaneval also use only the first seed when vLLM decodes the model greedily. Their tasks set no
-temperature, so vLLM uses the model's default temperature from its `generation_config.json`
-(`src/utils/default_temperature.py`), and at 0 the seed does not change the result. gpqamain always
-uses all seeds, because its seed also shuffles the answer choices. Earlier seeded runs
-used the seeds 0–4 (only 0 for those two benchmarks); `per_seed` in `metrics.json` shows the seeds
-of a run. The seed goes to
+The final evaluation (`src/eval/run_final_eval.sh`) runs once for each of the task's fixed seeds,
+a prefix of `FINAL_EVAL_SEEDS` (72332, 87681, 38992, 92201, 13818): all 5 for aime2025 (30 problems,
+the noisiest), the first 3 for gpqamain, gsm8k and humaneval, and only the first for
+arenahardwriting and healthbench, because each seed costs a full set of paid OpenAI grader calls.
+aime2025, gsm8k and humaneval also use only the first seed when vLLM decodes the model greedily.
+Their tasks set no temperature, so vLLM uses the model's default temperature from its
+`generation_config.json` (`src/utils/default_temperature.py`), and at 0 the seed does not change the
+result. gpqamain always uses its 3 seeds, because its seed also shuffles the answer choices. Earlier
+seeded runs used the seeds 0–4 (only 0 for those two benchmarks), and until 2026-09-30 all 5 seeds
+for gpqamain, gsm8k and humaneval too; `per_seed` in `metrics.json` shows the seeds of a run. The seed goes to
 `evaluate_final_eval.py` as `--seed`, which gives every sample its own generation seed derived from it
 (`src/eval/per_sample_seed.py`: a hash of the seed, the sample id, the epoch and the call index; for inspect tasks a
 solver wrapper around `generate()`, for arenahardwriting/healthbench the vLLM payload). The same seed on every request

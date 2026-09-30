@@ -10,8 +10,9 @@
 #   src/eval/run_final_eval.sh --check <task>
 #   src/eval/run_final_eval.sh --default-seeds <task>
 #
-# - Without seeds, it uses FINAL_EVAL_SEEDS below. It uses only the first one for arenahardwriting and healthbench,
-#   and for aime2025, gsm8k and humaneval when vLLM decodes the model greedily (see "Greedy models" below).
+# - Without seeds, it uses the task's default seeds (DEFAULT_SEEDS in setup_task): all 5 of FINAL_EVAL_SEEDS for
+#   aime2025, the first 3 for gpqamain, gsm8k and humaneval, and only the first for arenahardwriting and healthbench;
+#   and only the first for aime2025, gsm8k and humaneval when vLLM decodes the model greedily (see "Greedy models").
 # - <output_dir> gets each seed's metrics (metrics_seed<S>.json) and the log of each attempt
 #   (final_eval_seed<S>_<N>.txt). Neither it nor <metrics_json> may exist yet.
 # - <model_dir> is not checked. A missing model fails at every stage like any broken model, and collect.py
@@ -33,8 +34,7 @@
 # scorer). It is never copied into the agent sandbox, which only gets evaluate.py.
 set -euo pipefail
 
-# The fixed seeds of the final evaluation. arenahardwriting and healthbench are graded by paid API calls, so they use
-# only the first seed.
+# The fixed seeds of the final evaluation. Each task uses a prefix of them (DEFAULT_SEEDS in setup_task).
 FINAL_EVAL_SEEDS=(72332 87681 38992 92201 13818)
 
 # Attempts per stage of the retry cascade: stage 0 uses the final-eval script's default max-tokens, stages 1 and 2
@@ -102,12 +102,20 @@ setup_task() {
             ;;
     esac
 
+    # aime2025 has only 30 problems, so one run is the noisiest: 5 seeds. gpqamain, gsm8k and humaneval: 3 seeds.
+    # arenahardwriting and healthbench are graded by paid API calls: 1 seed.
     case "${task}" in
+        aime2025)
+            DEFAULT_SEEDS=("${FINAL_EVAL_SEEDS[@]}")
+            ;;
+        gpqamain|gsm8k|humaneval)
+            DEFAULT_SEEDS=("${FINAL_EVAL_SEEDS[@]:0:3}")
+            ;;
         arenahardwriting|healthbench)
             DEFAULT_SEEDS=("${FINAL_EVAL_SEEDS[0]}")
             ;;
         *)
-            DEFAULT_SEEDS=("${FINAL_EVAL_SEEDS[@]}")
+            die "no default seeds for task '${task}': add it to DEFAULT_SEEDS in $0"
             ;;
     esac
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Reruns the final evaluation of many result dirs in parallel: one GPU job per (run, seed) instead of one job per run
-that evaluates its seeds one after the other (scripts/rerun_eval_n_times.sh). The slowest evaluations (5 seeds of a
-sampling gsm8k model) take about 2 h instead of 10 h.
+that evaluates its seeds one after the other (scripts/rerun_eval_n_times.sh). The slowest evaluations (the seeds of a
+sampling gsm8k model) take about 2 h instead of 6 h.
 
 Each seed runs `src/eval/run_final_eval.sh --single-seed` (job: scripts/rerun_final_eval_seed.sh), i.e. its own full
 max-tokens cascade from stage 0; unlike run_task.sh's sequential evaluation, a later seed does not start at the stage
