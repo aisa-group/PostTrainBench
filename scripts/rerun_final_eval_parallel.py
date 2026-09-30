@@ -27,7 +27,8 @@ SELECTION is run dirs as arguments and/or --results-root ROOT with --methods MET
 scripts/collect.py aggregates. --benchmarks B... restricts either. retry resubmits the seeds whose job died without a
 result (and seeds planned but never submitted), after moving their files to reruns/failed_attempts/.
 
-The jobs run the code of this checkout when they start: do not edit it while jobs are queued (or run from a copy).
+The jobs run the code of this checkout when they start: do not edit it while jobs are queued, or run from a copy
+(e.g. `git archive`; a copy that is no git checkout needs a GIT_STATE.txt saying what it is, recorded in plan.json).
 """
 from __future__ import annotations
 
@@ -214,6 +215,13 @@ def cell_state(run: str, cell: str, queued: dict[tuple[str, int], str]) -> tuple
 # ---------------------------------------------------------------------------
 
 def git_state() -> dict[str, object]:
+    """The code the jobs run: the commit, or for a copy that is no git checkout (e.g. a `git archive` export), the
+    GIT_STATE.txt it must hold (what it was made from)."""
+    if not os.path.exists(os.path.join(REPO_ROOT, ".git")):
+        state_file = os.path.join(REPO_ROOT, "GIT_STATE.txt")
+        if not os.path.exists(state_file):
+            raise FileNotFoundError(f"{REPO_ROOT} is no git checkout and has no GIT_STATE.txt saying what code it is")
+        return {"export": open(state_file).read().strip(), "uncommitted_changes": False}
     commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, check=True, capture_output=True,
                             text=True).stdout.strip()
     dirty = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=REPO_ROOT, check=True,
