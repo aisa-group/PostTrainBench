@@ -3,11 +3,13 @@
 # sandbox only ever gets evaluate.py. The differences are the scorer: verify() below replaces inspect_evals' humaneval
 # scorer, which runs the model's code in the same process as the test, so that code could end the process early or
 # fake passing results; and --seed: the final evaluation runs once per fixed seed and averages the results.
+# Each sample gets its own generation seed derived from --seed (src/eval/per_sample_seed.py).
 # It needs an answer sandbox: run it through with_answer_sandbox.sh.
 from __future__ import annotations
 import os
 
 import argparse
+import sys
 import json
 
 from inspect_ai.log._log import EvalLog, EvalMetric, EvalSample
@@ -21,6 +23,10 @@ import inspect_evals.humaneval # noqa: F401, E402  (registers task definitions)
 from inspect_evals.humaneval.humaneval import VERIFY_TIMEOUT, find_code
 
 from answer_sandbox import HARNESS_ERROR_EXIT_CODE
+
+# Per-sample generation seeds, see src/eval/per_sample_seed.py.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+from per_sample_seed import per_sample_seed  # noqa: E402
 
 ANSWER_SANDBOX_MODULE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "answer_sandbox.py")
 ANSWER_SANDBOX_SOCKET_ENV = "ANSWER_SANDBOX_SOCKET"
@@ -155,6 +161,7 @@ def main() -> None:
         sandbox="local",
         scorer=verify(),
     )
+    solver = None if args.seed is None else per_sample_seed(task.solver, args.seed)
     model_args = {
         'gpu_memory_utilization': args.gpu_memory_utilization,
     }
@@ -171,7 +178,7 @@ def main() -> None:
         attempt_timeout=18000000,
         max_tokens=args.max_tokens,
         max_connections=args.max_connections,
-        seed=args.seed,
+        solver=solver,
         **other_kwargs,
     )
 

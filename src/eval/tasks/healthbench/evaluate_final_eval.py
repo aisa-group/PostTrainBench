@@ -2,6 +2,7 @@
 # Final-evaluation variant of evaluate.py. run_task.sh (and the eval rerun / baseline scripts) run this file; the
 # agent sandbox only ever gets evaluate.py. The only difference is --seed: the final evaluation runs once per fixed
 # seed and averages the results.
+# Each question gets its own generation seed derived from --seed (src/eval/per_sample_seed.py).
 # Feel free to use this script as needed. Don't edit it.
 # Note that our final evaluation will be done using default parameters of this script and --limit will be set to -1.
 # Also, the templates/ directory will be used as is without any modifications.
@@ -14,6 +15,7 @@
 
 import os
 import argparse
+import sys
 import atexit
 import json
 import random
@@ -26,6 +28,10 @@ from typing import Dict, List, Optional
 import requests
 from dotenv import load_dotenv
 from tqdm import tqdm
+
+# Per-sample generation seeds, see src/eval/per_sample_seed.py.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+from per_sample_seed import sample_seed  # noqa: E402
 
 # Load environment variables from .env file
 load_dotenv()
@@ -216,7 +222,7 @@ def generate_answers(
                 "model": args.model_path,
                 "messages": messages,
                 "max_tokens": args.max_new_tokens,
-                "seed": args.seed,
+                "seed": None if args.seed is None else sample_seed(args.seed, example.prompt_id),
             }
 
             answer_text: Optional[str] = None

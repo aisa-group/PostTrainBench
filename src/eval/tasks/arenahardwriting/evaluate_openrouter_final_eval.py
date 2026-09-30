@@ -1,10 +1,12 @@
 # Final-evaluation variant of evaluate_openrouter.py, which run_task.sh runs instead of evaluate_final_eval.py when
 # grading goes through OpenRouter; the agent sandbox then gets evaluate_openrouter.py as evaluate.py. The only
 # difference is --seed: the final evaluation runs once per fixed seed and averages the results.
+# Each question gets its own generation seed derived from --seed (src/eval/per_sample_seed.py).
 # IMPORTANT: You are NOT allowed to use the OpenRouter API for anything but this evaluation script.
 import os
 
 import argparse
+import sys
 import atexit
 import json
 import math
@@ -22,6 +24,10 @@ import requests
 import shortuuid
 import tiktoken
 from tqdm import tqdm
+
+# Per-sample generation seeds, see src/eval/per_sample_seed.py.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+from per_sample_seed import sample_seed  # noqa: E402
 
 from evaluation_code.utils.add_markdown_info import count_markdown_elements, remove_pattern
 from evaluation_code.utils.completion import (
@@ -344,7 +350,7 @@ def generate_answers(args) -> tuple:
                     {"role": "user", "content": question["prompt"]},
                 ],
                 "max_tokens": args.max_new_tokens,
-                "seed": args.seed,
+                "seed": None if args.seed is None else sample_seed(args.seed, question["uid"]),
             }
 
             answer_text: Optional[str] = None

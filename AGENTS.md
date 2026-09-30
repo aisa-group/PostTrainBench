@@ -45,6 +45,7 @@ PostTrainBench/
 | `src/trace_parsing/parse_trace.py` | Dispatches to per-agent parser to produce human-readable trace |
 | `src/utils/update_agent_cli.sh` | Auto-updates an agent's CLI harness to latest and records its version |
 | `src/judges/run_judges.sh` | Runs judges on an existing result dir (`--judges` to select a subset); each writes its own per-judge JSON |
+| `src/eval/per_sample_seed.py` | Per-sample generation seeds for every `evaluate_final_eval.py` (never one seed for all requests) |
 | `src/judges/get_judge_prompt.py` | Generates judge prompts (`--judge <judge_name>`) |
 | `containers/standard.def` | Main container definition (other `.def` files exist per-agent) |
 | `scripts/constants.py` | Agent/benchmark mappings |
@@ -151,7 +152,8 @@ alias in the CLI's `[models] default`.
    - `evaluate_final_eval.py` - Variant of `evaluate.py` that the final evaluation runs instead
      (`src/eval/run_final_eval.sh`, and the baselines). It is
      **never** copied into the agent sandbox, which only sees `evaluate.py`. It must accept `--seed` and
-     use it for generation (the final evaluation runs once per fixed seed, see "Results Structure").
+     use it for generation (the final evaluation runs once per fixed seed, see "Results Structure"),
+     through `src/eval/per_sample_seed.py`: never send `--seed` itself with every request (see below).
      `run_final_eval.sh` exits before it evaluates anything if it is missing, and `run_task.sh` runs
      `run_final_eval.sh --check` at job start. Also use it for
      grading hardening the agent should not see (e.g. humaneval's scorer, see below). Keep it in sync
@@ -344,7 +346,13 @@ temperature, so vLLM uses the model's default temperature from its `generation_c
 uses all seeds, because its seed also shuffles the answer choices. Earlier seeded runs
 used the seeds 0–4 (only 0 for those two benchmarks); `per_seed` in `metrics.json` shows the seeds
 of a run. The seed goes to
-`evaluate_final_eval.py` as `--seed`. Each seed runs the max-tokens retry cascade:
+`evaluate_final_eval.py` as `--seed`, which gives every sample its own generation seed derived from it
+(`src/eval/per_sample_seed.py`: a hash of the seed, the sample id, the epoch and the call index; for inspect tasks a
+solver wrapper around `generate()`, for arenahardwriting/healthbench the vLLM payload). The same seed on every request
+would give every sample the same sampling noise, because vLLM seeds one generator per request: a run's outputs then
+collapse into one mode (one gsm8k seed had all 1319 completions `<think>\n\n`, accuracy 0.0, next to 0.64 for other
+seeds). Regression tests: `dev_utils/per_sample_seed/test_per_sample_seed.py` (no GPU) and `smoke_test.sub` (GPU, all
+tasks). Each seed runs the max-tokens retry cascade:
 - The first seed starts at stage 0. If it fails at every stage, the other seeds are skipped and
   no `metrics.json` is written, so `scripts/collect.py` uses the baseline.
 - The later seeds start at the stage where the first seed succeeded, so they use the same

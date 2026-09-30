@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # Final-evaluation variant of evaluate.py. run_task.sh (and the eval rerun / baseline scripts) run this file; the
 # agent sandbox only ever gets evaluate.py. The only difference is --seed, which fixes sampling and the answer-choice
-# order: the final evaluation runs once per fixed seed and averages the results.
+# order: the final evaluation runs once per fixed seed and averages the results. Each sample gets its own generation
+# seed derived from --seed (src/eval/per_sample_seed.py); the choice order is shuffled with --seed itself.
 """
 GPQA: A Graduate-Level Google-Proof Q&A Benchmark
 
@@ -17,6 +18,7 @@ import os
 from typing import Any
 
 import argparse
+import sys
 import json
 
 from inspect_ai import Task, task
@@ -26,6 +28,10 @@ from inspect_ai.solver import multiple_choice
 from inspect_ai.log._log import EvalLog, EvalMetric, EvalSample
 from inspect_ai import eval as inspect_eval  # type: ignore  # noqa: E402
 from inspect_ai.util._display import init_display_type  # noqa: E402
+
+# Per-sample generation seeds, see src/eval/per_sample_seed.py.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+from per_sample_seed import per_sample_seed  # noqa: E402
 
 DEFAULT_EPOCHS = 1
 
@@ -90,6 +96,7 @@ def main() -> None:
         other_kwargs["limit"] = args.limit
 
     task = gpqa_main(shuffle_seed=args.seed)
+    solver = None if args.seed is None else per_sample_seed(task.solver, args.seed)
     model_args = {
         'gpu_memory_utilization': args.gpu_memory_utilization,
     }
@@ -106,7 +113,7 @@ def main() -> None:
         log_format='json',
         max_tokens=args.max_tokens,
         max_connections=args.max_connections,
-        seed=args.seed,
+        solver=solver,
         **other_kwargs,
     )
 
