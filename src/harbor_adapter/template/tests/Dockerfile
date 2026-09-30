@@ -18,6 +18,9 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PATH="/root/.local/bin:$PATH"
 ENV NO_PROXY="localhost,127.0.0.1"
 ENV no_proxy="localhost,127.0.0.1"
+# What src/run_task.sh passes to its eval and judge containers.
+ENV VLLM_API_KEY="inspectai"
+ENV PYTHONNOUSERSITE="1"
 
 # System dependencies
 RUN apt-get update && apt-get install -y \
@@ -43,8 +46,9 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
 # uv
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# vllm with cu128 explicit (Modal build VM has no GPU).
-RUN uv pip install --system --no-cache vllm==0.11.0 --torch-backend=cu128
+# vllm with cu129 explicit: Modal's build VM has no GPU for `auto` to detect;
+# cu129 is what `auto` resolves to on condor's build hosts (torch 2.8.0+cu129).
+RUN uv pip install --system --no-cache vllm==0.11.0 --torch-backend=cu129
 
 # Pinned ML deps (adapter copies containers/requirements-direct.txt
 # into the tests/ build context).

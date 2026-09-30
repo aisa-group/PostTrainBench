@@ -97,6 +97,10 @@ DEFAULT_BENCHMARKS: list[str] = [b for b in BENCHMARKS if b in _scored_benchmark
 # src/judges/judge_lib.sh, so a new judge or best-of-N change resizes it.
 JUDGE_TIMEOUT_SEC = 3000       # per judge run (tests/test.sh PTB_JUDGE_TIMEOUT_SEC)
 EVAL_BUDGET_SEC = 4 * 3600     # the 3-phase evaluation after the judges
+# Per evaluate.py attempt (tests/test.sh PTB_EVAL_ATTEMPT_TIMEOUT_SEC). condor
+# allows 8 h per attempt with no overall cap; here it must leave room inside
+# EVAL_BUDGET_SEC for the reduced-token retries after a hung attempt.
+EVAL_ATTEMPT_TIMEOUT_SEC = 2 * 3600
 
 
 def judge_runs() -> int:
@@ -175,6 +179,7 @@ class PostTrainBenchAdapter:
             ("timeout_sec = 36000.0", f"timeout_sec = {float(agent_timeout)}"),
             ("timeout_sec = 18000.0", f"timeout_sec = {float(verifier_timeout)}"),
             ('PTB_JUDGE_TIMEOUT_SEC = "3000"', f'PTB_JUDGE_TIMEOUT_SEC = "{JUDGE_TIMEOUT_SEC}"'),
+            ('PTB_EVAL_ATTEMPT_TIMEOUT_SEC = "7200"', f'PTB_EVAL_ATTEMPT_TIMEOUT_SEC = "{EVAL_ATTEMPT_TIMEOUT_SEC}"'),
         ):
             if content.count(old) != 1:
                 raise RuntimeError(f"template/task.toml: expected exactly one {old!r}")

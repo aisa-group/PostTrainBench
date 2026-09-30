@@ -256,7 +256,7 @@ uses the base model's zero-shot score (`scripts/baselines.json`, baked into the 
 | RAM | 128 GB, hard cap | `memory_mb = 131072` is a reservation only; `-- --memory guarantee` also caps it |
 | Disk | `request_disk = 400G` | `storage_mb` is ignored by Modal; the host disk is effectively unbounded |
 | Agent time | `num_hours` + 5 min, timer starts at job setup | exactly `num_hours`, timer starts right before the agent |
-| Verifier time | no limit (eval: 8 h per attempt) | judge runs (6) x 3000 s + 4 h for the eval = 9 h, derived from `judge_lib.sh` by `adapter.py` |
+| Verifier time | no limit (eval: 8 h per attempt) | judge runs (6) x 3000 s + 4 h for the eval = 9 h, derived from `judge_lib.sh` by `adapter.py`; 2 h per eval attempt, so a hung attempt still leaves time for the retries |
 | HF cache | pre-filled `HF_HOME` overlay | none: the base model downloads inside the agent's budget |
 | Judge auth | ChatGPT subscription `auth.json` in `gpt_5_5.sif` | `OPENAI_API_KEY`, directly in the verifier image (`JUDGE_RUNTIME=local`) |
 | CLI pins | also per-model pins in `agents/claude_non_api_max`, `agents/glmx` `solve.sh` | not mirrored |

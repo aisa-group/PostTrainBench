@@ -58,8 +58,9 @@ environment_mode = "separate"
 OPENAI_API_KEY = "${OPENAI_API_KEY}"
 CODEX_API_KEY = "${OPENAI_API_KEY}"
 HF_TOKEN = "${HF_TOKEN}"
-# Per judge run (tests/test.sh); set by adapter.py.
+# Per judge run and per evaluate.py attempt (tests/test.sh); set by adapter.py.
 PTB_JUDGE_TIMEOUT_SEC = "3000"
+PTB_EVAL_ATTEMPT_TIMEOUT_SEC = "7200"
 # The verifier reads the trained model from the shared Modal volume (see the
 # [[verifier.collect]] hook below), not from the transferred workspace.
 # tests/test.sh falls back to $WORKSPACE/final_model when this is unset.

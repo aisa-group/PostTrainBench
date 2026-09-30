@@ -3,9 +3,11 @@ FROM nvidia/cuda:12.9.1-cudnn-devel-ubuntu22.04
 # This Dockerfile mirrors containers/opus_5.def (the PostTrainBench v1.1
 # apptainer image used by the HTCondor pipeline) for cross-environment parity.
 # Differences vs. apptainer build:
-#   - --torch-backend=cu128 is explicit. Modal's build VM has no
+#   - --torch-backend=cu129 is explicit. Modal's build VM has no
 #     nvidia-smi/CUDA driver, so --torch-backend=auto would resolve to CPU
-#     torch and fail to satisfy vllm's CUDA-only xformers dependency.
+#     torch and fail to satisfy vllm's CUDA-only xformers dependency. cu129
+#     is what `auto` resolves to on condor's build hosts (the .sif files ship
+#     torch 2.8.0+cu129).
 #   - ENTRYPOINT streams /logs/agent/*.txt to PID 1 stdout so Modal's
 #     dashboard shows live agent output (apptainer doesn't need this).
 
@@ -13,6 +15,11 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PATH="/root/.local/bin:$PATH"
 ENV NO_PROXY="localhost,127.0.0.1"
 ENV no_proxy="localhost,127.0.0.1"
+# What src/run_task.sh passes into the agent sandbox (apptainer --env): the local
+# vLLM server key evaluate.py uses, no user site-packages, the GPU count.
+ENV VLLM_API_KEY="inspectai"
+ENV PYTHONNOUSERSITE="1"
+ENV NUM_GPUS="1"
 
 # System dependencies
 RUN apt-get update && apt-get install -y \
@@ -36,10 +43,10 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
 # uv
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# vllm. Pin torch backend to CUDA 12.8 wheels explicitly (Modal build VM
+# vllm. Pin torch backend to CUDA 12.9 wheels explicitly (Modal build VM
 # has no GPU/nvidia-smi, so --torch-backend=auto falls back to CPU and
 # breaks the CUDA-only xformers requirement).
-RUN uv pip install --system --no-cache vllm==0.11.0 --torch-backend=cu128
+RUN uv pip install --system --no-cache vllm==0.11.0 --torch-backend=cu129
 
 # Pinned ML deps (synced from containers/requirements-direct.txt; adapter
 # copies that file into the build context).

@@ -309,6 +309,10 @@ run_evaluation() {
 
     kill_gpu_processes
 
+    # Bounded like run_task.sh's attempts (which get 8 h each), but short enough
+    # that a hung attempt leaves verifier time for the reduced-token retries; a
+    # leftover vLLM server is killed by kill_gpu_processes before the next one.
+    timeout --signal=TERM --kill-after=60s "${PTB_EVAL_ATTEMPT_TIMEOUT_SEC:-7200}" \
     python3 "$TESTS/evaluate.py" \
         --model-path "$MODEL_DIR" \
         --json-output-file "$LOGS_DIR/metrics.json" \
@@ -319,6 +323,7 @@ run_evaluation() {
     # PIPESTATUS: `$?` of the pipeline would be tee's status, not evaluate.py's.
     local exit_code=${PIPESTATUS[0]}
     echo "evaluate.py exit code: $exit_code"
+    [ "$exit_code" = 124 ] && echo "evaluate.py hit the ${PTB_EVAL_ATTEMPT_TIMEOUT_SEC:-7200}s per-attempt timeout"
     # Whether an attempt succeeded is decided by metrics.json, as in run_task.sh.
     return 0
 }
