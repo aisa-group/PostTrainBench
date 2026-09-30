@@ -6,7 +6,9 @@
 #
 # Usage, from the repo root, with the .env variables set (src/commit_utils/set_env_vars.sh):
 #   src/eval/run_final_eval.sh <task> <model_dir> <output_dir> <metrics_json> [<seed>...]
+#   src/eval/run_final_eval.sh --single-seed <task> <model_dir> <output_dir> <seed>
 #   src/eval/run_final_eval.sh --check <task>
+#   src/eval/run_final_eval.sh --default-seeds <task>
 #
 # - Without seeds, it uses FINAL_EVAL_SEEDS below. It uses only the first one for arenahardwriting and healthbench,
 #   and for aime2025, gsm8k and humaneval when vLLM decodes the model greedily (see "Greedy models" below).
@@ -18,6 +20,12 @@
 #   result, not an error (collect.py then uses the baseline), so the script exits 0. Every error exits non-zero.
 # - --check only checks that <task> can be evaluated and prints the final-eval script it would run. run_task.sh calls
 #   it at job start, so a missing file fails before the agent's run and not after it.
+# - --single-seed runs one seed's full cascade from stage 0 into an existing <output_dir> that other seeds' jobs may
+#   share, writes result_seed<S>.txt ("stage <N>" or "failed") and does not aggregate: the seeds run in parallel as
+#   separate jobs (scripts/rerun_final_eval_parallel.py, which aggregates). Unlike the default mode, a later seed does
+#   not start at the first seed's stage. No greedy check: the caller picks the seeds.
+# - --default-seeds prints the task's default seeds (first line) and whether its seed only drives sampling (second
+#   line, 1 or 0; 1 means a greedy model needs only the first seed, see "Greedy models" below).
 #
 # The final-eval script is the task's evaluate_final_eval.py, or evaluate_openrouter_final_eval.py when .env gives
 # arenahardwriting/healthbench an OPENROUTER_API_KEY but no OPENAI_API_KEY (the same rule as JUDGE_BACKEND in
@@ -43,7 +51,9 @@ die() {
 
 usage() {
     echo "usage: $0 <task> <model_dir> <output_dir> <metrics_json> [<seed>...]" >&2
+    echo "       $0 --single-seed <task> <model_dir> <output_dir> <seed>" >&2
     echo "       $0 --check <task>" >&2
+    echo "       $0 --default-seeds <task>" >&2
     exit 1
 }
 
@@ -120,20 +130,41 @@ if [ "$#" -ge 1 ] && [ "$1" = "--check" ]; then
     exit 0
 fi
 
+if [ "$#" -ge 1 ] && [ "$1" = "--default-seeds" ]; then
+    [ "$#" -eq 2 ] || usage
+    setup_task "$2"
+    echo "${DEFAULT_SEEDS[*]}"
+    echo "${SEED_ONLY_SAMPLES}"
+    exit 0
+fi
+
+SINGLE_SEED=0
+if [ "$#" -ge 1 ] && [ "$1" = "--single-seed" ]; then
+    [ "$#" -eq 5 ] || usage
+    SINGLE_SEED=1
+    shift
+fi
+
 [ "$#" -ge 4 ] || usage
 EVALUATION_TASK="$1"
 setup_task "${EVALUATION_TASK}"
 # Absolute paths, because the evaluation runs in the task's directory inside the container.
 MODEL_DIR="$(realpath -ms "$2")"
 OUTPUT_DIR="$(realpath -ms "$3")"
-METRICS_JSON="$(realpath -ms "$4")"
-shift 4
-if [ "$#" -gt 0 ]; then
+if [ "${SINGLE_SEED}" = 1 ]; then
     SEEDS_GIVEN=1
-    EVAL_SEEDS=("$@")
+    EVAL_SEEDS=("$4")
+    shift 4
 else
-    SEEDS_GIVEN=0
-    EVAL_SEEDS=("${DEFAULT_SEEDS[@]}")
+    METRICS_JSON="$(realpath -ms "$4")"
+    shift 4
+    if [ "$#" -gt 0 ]; then
+        SEEDS_GIVEN=1
+        EVAL_SEEDS=("$@")
+    else
+        SEEDS_GIVEN=0
+        EVAL_SEEDS=("${DEFAULT_SEEDS[@]}")
+    fi
 fi
 
 for seed in "${EVAL_SEEDS[@]}"; do
@@ -142,12 +173,20 @@ done
 DUPLICATE_SEEDS="$(printf '%s\n' "${EVAL_SEEDS[@]}" | sort | uniq -d)"
 [ -z "${DUPLICATE_SEEDS}" ] || die "seeds given more than once: ${DUPLICATE_SEEDS//$'\n'/ }"
 
-# A leftover metrics_seed<S>.json would count as a success, so both outputs must be new.
-[ ! -e "${OUTPUT_DIR}" ] || die "${OUTPUT_DIR} already exists; move it away before evaluating"
-[ ! -e "${METRICS_JSON}" ] || die "${METRICS_JSON} already exists; move it away before evaluating"
-[ -d "$(dirname "${OUTPUT_DIR}")" ] || die "parent directory of ${OUTPUT_DIR} not found"
-[ -d "$(dirname "${METRICS_JSON}")" ] || die "parent directory of ${METRICS_JSON} not found"
-mkdir "${OUTPUT_DIR}"
+# A leftover metrics_seed<S>.json would count as a success, so both outputs must be new. In --single-seed mode the
+# other seeds' jobs share <output_dir>, so only this seed's files must be new.
+if [ "${SINGLE_SEED}" = 1 ]; then
+    [ -d "${OUTPUT_DIR}" ] || die "${OUTPUT_DIR} not found"
+    if compgen -G "${OUTPUT_DIR}/*_seed${EVAL_SEEDS[0]}[._]*" > /dev/null; then
+        die "${OUTPUT_DIR} already has files of seed ${EVAL_SEEDS[0]}; move them away before evaluating"
+    fi
+else
+    [ ! -e "${OUTPUT_DIR}" ] || die "${OUTPUT_DIR} already exists; move it away before evaluating"
+    [ ! -e "${METRICS_JSON}" ] || die "${METRICS_JSON} already exists; move it away before evaluating"
+    [ -d "$(dirname "${OUTPUT_DIR}")" ] || die "parent directory of ${OUTPUT_DIR} not found"
+    [ -d "$(dirname "${METRICS_JSON}")" ] || die "parent directory of ${METRICS_JSON} not found"
+    mkdir "${OUTPUT_DIR}"
+fi
 
 REPO_ROOT="$(pwd)"
 TMP_SUBDIR="$(mktemp -d /tmp/ptb_final_eval.XXXXXX)"
@@ -299,6 +338,23 @@ run_seed_evaluation() {
 
     return 1
 }
+
+# --single-seed: this seed's full cascade from stage 0, independent of the other seeds; result_seed<S>.txt records its
+# outcome ("stage <N>" or "failed"), and the caller aggregates once every seed has one.
+if [ "${SINGLE_SEED}" = 1 ]; then
+    seed="${EVAL_SEEDS[0]}"
+    EVAL_COUNTER=0
+    echo "=== Seed ${seed}: evaluating from stage 0 (single-seed mode) ==="
+    if run_seed_evaluation "$seed" 0; then
+        echo "Seed ${seed}: succeeded at stage ${SEED_STAGE}"
+        echo "stage ${SEED_STAGE}" > "${OUTPUT_DIR}/result_seed${seed}.txt"
+    else
+        echo "Seed ${seed}: failed at every stage"
+        echo "failed" > "${OUTPUT_DIR}/result_seed${seed}.txt"
+    fi
+    echo $(cat "${OUTPUT_DIR}/final_eval_seed${seed}_${EVAL_COUNTER}.txt")
+    exit 0
+fi
 
 # The first seed runs the full cascade. If it fails at every stage, the other seeds are skipped. The later seeds start
 # at the stage where the first seed succeeded, so they share its max-tokens setting; a later seed that fails at every

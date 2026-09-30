@@ -35,7 +35,8 @@ PostTrainBench/
 | File | Purpose |
 |------|---------|
 | `src/run_task.sh` | Main task execution orchestrator (runs agent, then 4 judges, then evaluation) |
-| `src/eval/run_final_eval.sh` | The final evaluation (seeds, max-tokens retry cascade, mean into `metrics.json`); used by `run_task.sh`, `dev_utils/test_evaluation/run_only_evaluation.sh` and `scripts/rerun_eval_n_times.sh` |
+| `src/eval/run_final_eval.sh` | The final evaluation (seeds, max-tokens retry cascade, mean into `metrics.json`); used by `run_task.sh`, `dev_utils/test_evaluation/run_only_evaluation.sh` and `scripts/rerun_eval_n_times.sh`; `--single-seed` runs one seed (`scripts/rerun_final_eval_parallel.py`) |
+| `scripts/rerun_final_eval_parallel.py` | Reruns the final evaluation of many result dirs, one GPU job per (run, seed); submit/status/retry |
 | `src/commit_utils/commit.sh` | Batch job submission across agents × benchmarks × models |
 | `src/commit_utils/set_env_vars.sh` | Sources `.env` and exports `POST_TRAIN_BENCH_*` env vars |
 | `src/commit_utils/single_task.sub` | HTCondor submission template |
@@ -366,6 +367,9 @@ no `evaluation/` folder: they have one `final_eval_{N}.txt` series in the run di
 `metrics.json`. `dev_utils/test_evaluation/run_only_evaluation.sh` writes its per-seed files to
 `z_new_{cluster_id}_evaluation/` instead. `scripts/rerun_eval_n_times.sh` writes them to `reruns/`
 and the mean to `metrics_averaged.json`, and it can use other seeds (`--seeds`).
+`scripts/rerun_final_eval_parallel.py` reruns many result dirs with one GPU job per (run, seed)
+(`run_final_eval.sh --single-seed`: each seed runs its own cascade from stage 0), in place or into a
+mirror tree (`--out-root`), and writes the same `reruns/` + `metrics_averaged.json` (see `scripts/README.md`).
 
 Result directories with the `_rerun` suffix on `judgement_*.json` come from the rerun-judge
 pipeline; original files are kept side-by-side. The canonical contamination verdict is
