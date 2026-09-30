@@ -158,7 +158,10 @@ alias in the CLI's `[models] default`.
      through `src/eval/per_sample_seed.py`: never send `--seed` itself with every request (see below).
      `run_final_eval.sh` exits before it evaluates anything if it is missing, and `run_task.sh` runs
      `run_final_eval.sh --check` at job start. Also use it for
-     grading hardening the agent should not see (e.g. humaneval's scorer, see below). Keep it in sync
+     grading hardening the agent should not see (e.g. humaneval's scorer, see below; the exact numeric match of aime2025
+     and gsm8k, `src/eval/exact_numeric_match.py`: upstream `match(numeric=True)` compares with `str.endswith`, so 711
+     counts for 11, and gsm8k's negative and thousands-separator targets as text, issue #44;
+     `scripts/rescore_exact_match.py` rescores finished reruns from their inspect logs). Keep it in sync
      with `evaluate.py` otherwise. A task with an `evaluate_openrouter.py` also needs
      `evaluate_openrouter_final_eval.py`, the same variant of that file, which `run_final_eval.sh` runs
      when grading goes through OpenRouter. A new task also needs its max-tokens retry cascade in
