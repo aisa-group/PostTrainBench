@@ -18,6 +18,7 @@ PostTrainBench/
 ├── src/
 │   ├── baselines/             # Baseline score computation
 │   ├── commit_utils/          # HTCondor job submission utilities (incl. set_env_vars.sh)
+│   ├── harbor_adapter/        # Runs the benchmark on Modal via Harbor, for external users (see "Harbor Adapter")
 │   ├── judges/                # Reward-hacking judges (one folder per judge; see Safety)
 │   ├── eval/
 │   │   ├── general/           # Prompt generation (get_prompt.py, prompt.txt)
@@ -271,7 +272,10 @@ preserved.
 
 The judge tooling itself lives in:
 - `src/judges/judge_lib.sh` — shared bash helpers used by both `run_task.sh` and
-  `run_judges.sh` (sandbox prep, codex invocation, output collection)
+  `run_judges.sh` (sandbox prep, codex invocation, output collection). `run_all_judges` is the
+  inline judge phase itself (judge order, best-of-3 contamination slots); the Harbor verifier
+  calls the same function with `JUDGE_RUNTIME=local`, so keep apptainer- and
+  subscription-specific code behind the default `JUDGE_RUNTIME=apptainer`.
 - `src/judges/judge_tools/` — `contamination_check.py`,
   `model_identity_check.py`, and `reference_configs/` (copied into the judge sandbox so the
   judge can run them as tools). `contamination_check.py` (with the benchmark's
@@ -314,6 +318,40 @@ pipeline; original files are kept side-by-side. The canonical contamination verd
 resolved by `scripts/utils.py::resolve_judgement` (manual override > majority of the three
 judge runs > `judgement_gpt5_4_rerun.json` > `judgement_gpt5_4.json`); the canonical
 API-usage verdict is `judgement_api.json` (or `judgement_api_rerun.json`).
+
+## Harbor Adapter
+
+`src/harbor_adapter/` runs the same benchmark on Modal through [Harbor](https://harborframework.com),
+so external users can run it without the cluster. Condor is the reference implementation; the
+adapter must stay in step with it. Most of it is read straight from condor at task generation
+(prompt, benchmarks, `evaluate.py`, test sets, judge code and prompts, trace parsers, baselines),
+and its verifier runs condor's own judge phase (`run_all_judges`). The rest it mirrors, and
+`src/harbor_adapter/check_parity.py` compares every mirror with its condor source. CI
+(`.github/workflows/harbor-parity.yml`) runs it on every change to the condor files involved.
+
+When you change condor code, run the check and keep it green:
+
+```bash
+uv run --no-project --python 3.12 python src/harbor_adapter/check_parity.py
+```
+
+A failure names the condor file and the Harbor file that disagree. The mirrored pairs:
+
+| condor | Harbor |
+|---|---|
+| `containers/opus_5.def` (agent image) | `src/harbor_adapter/template/environment/Dockerfile` |
+| eval container `.def` (`run_task.sh`) and judge container `.def` (`judge_lib.sh` `JUDGE_CONTAINER`) | `src/harbor_adapter/template/tests/Dockerfile` |
+| constant `--env` values in `run_task.sh` / `judge_lib.sh` | `ENV` lines in both Dockerfiles |
+| eval retry ladder in `run_task.sh` | `src/harbor_adapter/template/tests/test.sh` |
+| `agents/claude/solve.sh` settings and flags, `src/utils/update_agent_cli.sh` packages | `src/harbor_adapter/run_modal_task.sh` |
+| `src/utils/create_timer.sh` | `generate_timer_sh` in `src/harbor_adapter/adapter.py` |
+| judge verdict fields (`src/judges/*/prompt.md`) | `write_no_model_results` in `test.sh` |
+
+A `.def` with `--torch-backend=auto` must be mirrored by the explicit backend of its CUDA base
+image (e.g. `cuda:12.9.1` -> `cu129`): Modal builds without a GPU, so `auto` would give CPU
+torch. Change judge behaviour only in `src/judges/`, never in `test.sh`. If a difference is
+intended, update the check and record it in `src/harbor_adapter/README.md` ("Differences from
+condor").
 
 ## Code Style
 

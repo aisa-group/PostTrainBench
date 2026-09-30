@@ -249,6 +249,12 @@ uses the base model's zero-shot score (`scripts/baselines.json`, baked into the 
 
 ## Differences from condor
 
+Everything the adapter mirrors from condor instead of reading it (container pins, sandbox env,
+eval retry ladder, claude launch settings, CLI packages, timer, verdict fields) is compared by
+`check_parity.py`, which CI (`.github/workflows/harbor-parity.yml`) runs on every change to those
+condor files. Run it locally with `uv run --no-project --python 3.12 python check_parity.py`. The
+differences below are intended; the check allows exactly these.
+
 | | condor (`single_task.sub`, `run_task.sh`) | Harbor |
 |---|---|---|
 | GPU | 1x `NVIDIA H100 80GB HBM3` | `gpu_types = ["H100!"]`: the `!` stops Modal from upgrading to an H200 |

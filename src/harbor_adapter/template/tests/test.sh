@@ -23,8 +23,8 @@
 #     and live at /tests/.
 #   - The agent's code arrives as a size-filtered snapshot in
 #     /logs/artifacts/workspace (staged by ptb_collect.sh, transferred by
-#     harbor's conventional artifact dir); the contamination judge reads it
-#     there (cd $CODE_DIR && codex exec ...).
+#     harbor's conventional artifact dir); the judges get a copy of it as
+#     their task dir (run_all_judges, src/judges/judge_lib.sh).
 #   - The agent's final_model is the only file the verifier executes
 #     code against (via vllm). Bad weights are penalized by the eval
 #     score, not by tampering.

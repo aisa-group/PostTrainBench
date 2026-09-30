@@ -1,0 +1,48 @@
+# Keeps the Harbor adapter (src/harbor_adapter) in step with the condor pipeline.
+# Runs src/harbor_adapter/check_parity.py whenever a condor file the adapter
+# mirrors or reads changes, or the adapter itself does. No GPU, keys or network.
+name: harbor-parity
+
+on:
+  pull_request:
+    paths:
+      - "src/run_task.sh"
+      - "src/judges/**"
+      - "src/eval/**"
+      - "src/trace_parsing/**"
+      - "src/utils/**"
+      - "containers/*.def"
+      - "containers/requirements-direct.txt"
+      - "agents/*/solve.sh"
+      - "scripts/utils.py"
+      - "scripts/baselines.json"
+      - "src/harbor_adapter/**"
+      - ".github/workflows/harbor-parity.yml"
+  push:
+    branches: [main]
+    paths:
+      - "src/run_task.sh"
+      - "src/judges/**"
+      - "src/eval/**"
+      - "src/trace_parsing/**"
+      - "src/utils/**"
+      - "containers/*.def"
+      - "containers/requirements-direct.txt"
+      - "agents/*/solve.sh"
+      - "scripts/utils.py"
+      - "scripts/baselines.json"
+      - "src/harbor_adapter/**"
+      - ".github/workflows/harbor-parity.yml"
+  workflow_dispatch:
+
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: condor <-> Harbor parity
+        run: python src/harbor_adapter/check_parity.py
