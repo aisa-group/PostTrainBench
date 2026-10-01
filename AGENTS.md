@@ -348,7 +348,8 @@ results/{agent}_{agent_config}_{num_hours}h[_{num_gpus}gpu]{experiment_name}/
 `metrics_averaged_exact_match.json` (aime2025/gsm8k rescored with the exact numeric match,
 `scripts/rescore_exact_match.py`), else its `metrics_averaged.json` (format of `aggregate_seed_metrics.py`; an older
 `n_runs` variance study is passed over), else the run's own `metrics.json`, which then only keeps the original
-evaluation's numbers. A rerun can thus score a run whose original evaluation failed; such a run needs judge verdicts.
+evaluation's numbers. A rerun can thus score a run whose original evaluation failed; if such a run was never judged,
+its rerun score is not used and it keeps the baseline.
 
 The final evaluation (`src/eval/run_final_eval.sh`) runs once for each of the task's fixed seeds,
 a prefix of `FINAL_EVAL_SEEDS` (72332, 87681, 38992, 92201, 13818): all 5 for aime2025 (30 problems,

@@ -129,6 +129,14 @@ def collect_method(
             run_id = latest_runs[key]["run_id"]
 
             try:
+                # A final-eval rerun can score a run whose original evaluation failed (no metrics.json). If that
+                # run was never judged, its rerun score does not count: it keeps the baseline, as before the rerun.
+                if (not os.path.exists(os.path.join(run_dir, "metrics.json"))
+                        and missing_required_judgements(run_dir, run_id)):
+                    raise FileNotFoundError(
+                        f"{run_dir}: original evaluation failed and the run was never judged; "
+                        f"its rerun score is not used"
+                    )
                 metrics_grid[model][bench] = load_metrics(run_metrics_path(run_dir))
                 # A scored run must carry every judge verdict required for
                 # its era; one that doesn't makes main() skip this whole
