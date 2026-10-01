@@ -327,7 +327,7 @@ results/{agent}_{agent_config}_{num_hours}h[_{num_gpus}gpu]{experiment_name}/
     ├── solve_out.txt            # Raw agent trace (stdout+stderr from the agent CLI)
     ├── solve_parsed.txt         # Human-readable trace from src/trace_parsing/parse_trace.py
     ├── cli_version.txt          # Auto-updated agent CLI harness version (src/utils/update_agent_cli.sh)
-    ├── task/                    # Snapshot of the agent's working directory (post-cleanup)
+    ├── task/                    # Snapshot of the agent's working directory (post-cleanup; weights/optimizer state/caches excluded, see JUDGE_TASK_COPY_EXCLUDES)
     ├── final_model/             # Trained model checkpoint
     ├── system_monitor.log       # GPU/CPU/RAM samples from src/utils/system_monitor.sh
     ├── judge_output_gpt5_4.{json,txt}   # data_contamination_judge raw + parsed trace
