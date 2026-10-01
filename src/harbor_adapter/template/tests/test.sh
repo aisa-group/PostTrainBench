@@ -162,7 +162,9 @@ fi
 # Sandbox layout (condor: /home/ben/{task,solve_parsed.txt,...}; here
 # $JUDGE_HOME), exactly what the prompts reference relative to the task dir:
 #   task/                    writable copy of the agent's code snapshot, with
-#                            final_model -> $MODEL_DIR (read-only volume)
+#                            final_model -> $MODEL_DIR (the model volume; its
+#                            files are root-owned, and the judge's codex runs
+#                            as nobody — judge_lib.sh run_judge_exec_local)
 #   solve_out.txt            raw agent trace (harbor's /logs/agent/<agent>.txt,
 #                            shipped via ptb_collect.sh)
 #   solve_parsed.txt         human-readable trace (src/trace_parsing)

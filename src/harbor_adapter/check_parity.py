@@ -243,6 +243,21 @@ def check_judges() -> None:
     if "run_all_judges " not in RUN_TASK.read_text():
         fail("judges", f"{rel(RUN_TASK)} no longer calls run_all_judges; the Harbor verifier relies on it")
 
+    # The local judge runner must drop root before codex runs: the verifier
+    # container is root, and a prompt-injected judge with root could write the
+    # verifier's metrics.json, the baked eval scripts or the model volume's
+    # files (condor's apptainer sandbox rules that out structurally).
+    lib = JUDGE_LIB.read_text()
+    local_exec = lib[lib.index("run_judge_exec_local()"):]
+    for needed in ("drop_privs=(setpriv --reuid=65534 --regid=65534 --clear-groups --inh-caps=-all)",
+                   'chown -R -h 65534:65534 "$job_dir"',
+                   'cannot drop root'):
+        if needed not in local_exec:
+            fail("judges", f"{rel(JUDGE_LIB)} run_judge_exec_local no longer drops root (`{needed}` missing); "
+                           "a root judge could overwrite the verifier's metrics, eval scripts or model volume")
+    if local_exec.index("drop_privs=(setpriv") > local_exec.index('"${JUDGE_CODEX_ARGS[@]}"'):
+        fail("judges", f"{rel(JUDGE_LIB)} run_judge_exec_local: the privilege drop must come before the codex call")
+
     # verdict fields test.sh writes when no model is submitted vs the judge prompts
     written = {jid: set(re.findall(r'"(\w+)"', fields))
                for jid, fields in re.findall(r'"(\w+)": \(([^)]*)\)', ts)}

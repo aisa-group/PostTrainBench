@@ -263,10 +263,11 @@ run_judge_exec() {
 
 # run_judge_exec_local <job_dir> <output_json> <prompt>
 # JUDGE_RUNTIME=local: same codex invocation and version pin, run directly with
-# the task dir as cwd and $job_dir/.codex as CODEX_HOME. The trace goes to
-# <output_json> only (not stdout). stdin is closed: `codex exec` appends piped
-# stdin to the prompt and waits for EOF, and a harness's exec stdin may never
-# close.
+# the task dir as cwd and $job_dir/.codex as CODEX_HOME — but as nobody when the
+# caller is root, so the judge can write nothing outside $job_dir (see below).
+# The trace goes to <output_json> only (not stdout). stdin is closed: `codex
+# exec` appends piped stdin to the prompt and waits for EOF, and a harness's
+# exec stdin may never close.
 run_judge_exec_local() {
     local job_dir="$1" output_json="$2" prompt="$3"
 
@@ -284,11 +285,27 @@ run_judge_exec_local() {
         codex_bin="$pin_prefix/bin/codex"
     fi
 
+    # Run codex unprivileged. The caller's container (the Harbor verifier) runs as
+    # root, and codex runs with approvals and its own sandbox off, so as root a
+    # judge that followed instructions planted in the agent's code or trace could
+    # write the verifier's metrics.json, edit the baked eval scripts or the model
+    # volume's files. As nobody it can write only $job_dir (chowned here); those
+    # stay root-owned. condor needs none of this: run_judge_exec's apptainer
+    # sandbox (--containall) only sees $job_dir in the first place.
+    local drop_privs=()
+    if [ "$(id -u)" = 0 ]; then
+        command -v setpriv > /dev/null || { echo "ERROR: setpriv not found; cannot drop root for ${JUDGE_LABEL}" >&2; return 1; }
+        # -h: never follow symlinks (task/final_model points at the model volume,
+        # whose files must stay root-owned).
+        chown -R -h 65534:65534 "$job_dir"
+        drop_privs=(setpriv --reuid=65534 --regid=65534 --clear-groups --inh-caps=-all)
+    fi
+
     local timeout_cmd=()
     [ -n "${JUDGE_TIMEOUT_SEC:-}" ] && timeout_cmd=(timeout --signal=TERM --kill-after=60s "$JUDGE_TIMEOUT_SEC")
     judge_codex_args "$prompt"
-    ( cd "$job_dir/task" && CODEX_HOME="$job_dir/.codex" \
-        "${timeout_cmd[@]}" "$codex_bin" "${JUDGE_CODEX_ARGS[@]}" < /dev/null ) > "$output_json" 2>&1
+    ( cd "$job_dir/task" && CODEX_HOME="$job_dir/.codex" HOME="$job_dir" \
+        "${timeout_cmd[@]}" ${drop_privs[@]+"${drop_privs[@]}"} "$codex_bin" "${JUDGE_CODEX_ARGS[@]}" < /dev/null ) > "$output_json" 2>&1
     echo "  codex exit code: $?"
 }
 
