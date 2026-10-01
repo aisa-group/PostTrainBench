@@ -66,21 +66,17 @@ def load_dotenv() -> dict[str, str]:
     return values
 
 
-# Named API-key variables read from .env; their literal values are redacted
-# from copied traces. Supplemented at runtime by the secrets file pointed to by
-# POST_TRAIN_BENCH_SANITIZATION_SECRETS (see get_api_keys). Names absent from
-# .env are skipped — this machine simply doesn't use that provider.
-API_KEY_ENV_VARS = [
-    "OPENAI_API_KEY",
-    "ANTHROPIC_API_KEY",
-    "GEMINI_API_KEY",
-    "BEN_HF_TOKEN",
-    "HARDIK_HF_TOKEN",
-    "OPENCODE_API_KEY",
-    "ZAI_API_KEY",
-    "DASHSCOPE_API_KEY"
-
-]
+# Which .env entries are secrets: every variable whose name ends in one of these
+# suffixes (the same rule as src/trace_parsing/sanitize_trace.py for *_API_KEY,
+# widened to tokens: HF_TOKEN, CLAUDE_CODE_OAUTH_TOKEN, ...). Their literal values
+# are redacted from copied traces, supplemented at runtime by the secrets file
+# pointed to by POST_TRAIN_BENCH_SANITIZATION_SECRETS (see get_api_keys).
+SECRET_NAME_SUFFIXES = ("_API_KEY", "_TOKEN")
+# Values that cannot be real secrets, as in sanitize_trace.py: example.env
+# placeholders (`your-...`, `hf_...`) and short values that would redact
+# ordinary text.
+PLACEHOLDER_PREFIX = "your-"
+MIN_SECRET_LEN = 8
 
 API_KEY_PATTERNS = [
     "sk-proj",      # OpenAI project keys
@@ -186,20 +182,21 @@ def get_api_keys(dotenv: dict[str, str]) -> list[str]:
     """Collect the literal secret strings to redact from copied traces.
 
     Two sources, both resolved from .env (never the ambient environment):
-      1. The named variables in API_KEY_ENV_VARS, for those present and
-         non-empty in .env. Absent names are skipped (reported, not silently
-         dropped) since not every machine uses every provider.
+      1. Every .env variable named *_API_KEY or *_TOKEN (SECRET_NAME_SUFFIXES)
+         with a real value; placeholders and values shorter than MIN_SECRET_LEN
+         are skipped (reported, not silently dropped).
       2. The newline-delimited file named by POST_TRAIN_BENCH_SANITIZATION_SECRETS.
     Duplicates are removed while preserving order."""
     keys: list[str] = []
-    present, absent = [], []
-    for var in API_KEY_ENV_VARS:
-        value = dotenv.get(var, "")
-        if value:
-            keys.append(value)
-            present.append(var)
-        else:
-            absent.append(var)
+    present, skipped = [], []
+    for var, value in dotenv.items():
+        if not var.endswith(SECRET_NAME_SUFFIXES):
+            continue
+        if not value or value.startswith(PLACEHOLDER_PREFIX) or len(value) < MIN_SECRET_LEN:
+            skipped.append(var)
+            continue
+        keys.append(value)
+        present.append(var)
 
     file_secrets = load_sanitization_secrets(dotenv)
     keys.extend(file_secrets)
@@ -211,9 +208,9 @@ def get_api_keys(dotenv: dict[str, str]) -> list[str]:
             seen.add(k)
             deduped.append(k)
 
-    summary = f"Redaction secrets: {len(present)} named .env var(s)"
-    if absent:
-        summary += f" ({len(absent)} absent: {', '.join(absent)})"
+    summary = f"Redaction secrets: {len(present)} .env var(s) ({', '.join(present) or 'none'})"
+    if skipped:
+        summary += f", skipped as empty/placeholder: {', '.join(skipped)}"
     summary += (
         f", {len(file_secrets)} from "
         f"{dotenv.get('POST_TRAIN_BENCH_SANITIZATION_SECRETS') or '<no secrets file>'}"

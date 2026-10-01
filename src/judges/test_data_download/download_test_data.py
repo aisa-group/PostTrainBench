@@ -22,6 +22,20 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 TASKS_DIR = REPO_ROOT / "src" / "eval" / "tasks"
 
+
+def hf_token() -> str:
+    """HF_TOKEN from the repo-root .env (PTB_ENV_FILE overrides the path), else the
+    environment: the same precedence as src/harbor_adapter/run_modal_task.sh."""
+    env_file = Path(os.environ.get("PTB_ENV_FILE") or REPO_ROOT / ".env")
+    if env_file.is_file():
+        for line in env_file.read_text(encoding="utf-8").splitlines():
+            key, sep, value = line.strip().partition("=")
+            if sep and key == "HF_TOKEN":
+                value = value.strip().strip('"').strip("'")
+                if value:
+                    return value
+    return os.environ.get("HF_TOKEN", "")
+
 ALL_TASKS = [
     "aime2025",
     "arenahardwriting",
@@ -97,12 +111,12 @@ def download_arenahardwriting():
 
 def download_gpqamain():
     log("Downloading gpqamain from HuggingFace (Idavidrein/gpqa, gpqa_main)...")
-    hf_token = os.environ.get("MY_HF_TOKEN")
-    if not hf_token:
-        raise RuntimeError("MY_HF_TOKEN environment variable not set (required for gated GPQA dataset)")
+    token = hf_token()
+    if not token:
+        raise RuntimeError("HF_TOKEN not set in .env or the environment (required for the gated GPQA dataset)")
 
     from datasets import load_dataset
-    ds = load_dataset("Idavidrein/gpqa", "gpqa_main", split="train", token=hf_token, streaming=True)
+    ds = load_dataset("Idavidrein/gpqa", "gpqa_main", split="train", token=token, streaming=True)
     data = [{"question": row["Question"], "answer": row["Correct Answer"]} for row in ds]
     save_test_data("gpqamain", data)
 

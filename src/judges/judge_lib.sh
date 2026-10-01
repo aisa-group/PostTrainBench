@@ -4,9 +4,13 @@
 #
 # Used by:
 #   - src/run_task.sh           inline judges right after the agent run
-#                               (output files without suffix)
+#                               (output files without suffix), via run_all_judges
 #   - src/judges/run_judges.sh  standalone/rerun runs (output files with the
 #                               _rerun suffix)
+#   - src/harbor_adapter/template/tests/test.sh
+#                               the Harbor verifier, via run_all_judges with
+#                               JUDGE_RUNTIME=local (baked into the verifier
+#                               image as /tests/ptb/src/judges/judge_lib.sh)
 #
 # Each judge lives in src/judges/<judge_name>/ with a judge.conf (see
 # load_judge_conf) and a prompt template. ALL_JUDGES defines the full set and
@@ -19,10 +23,21 @@
 #   build_judge_prompt <judge_name> <benchmark_id> <model_hf> <agent> <agent_config>
 #   run_judge_exec <job_dir> <job_tmp> <output_json> <prompt>
 #   collect_judge_output <job_dir> <out_dir> <name_suffix> <missing_fatal>
+#   run_all_judges <job_dir> <job_tmp> <out_dir> <benchmark_id> <model_hf> <agent> <agent_config>
 #
 # run_judge_exec additionally reads the caller-provided array
 # JUDGE_EXTRA_APPTAINER_ARGS (e.g. --nv + HF cache binds during run_task.sh;
 # empty for standalone reruns).
+#
+# JUDGE_RUNTIME selects how codex is launched:
+#   apptainer (default)  condor: codex runs in $JUDGE_CONTAINER with the
+#                        ChatGPT-subscription auth.json bind-mounted.
+#   local                the caller is already inside the judge image (the
+#                        Harbor verifier): codex runs directly, authenticated by
+#                        OPENAI_API_KEY / CODEX_API_KEY; JUDGE_TIMEOUT_SEC, if
+#                        set, bounds each judge run.
+# Everything else (judge set and order, best-of-N contamination slots, prompts,
+# codex flags and version pins, output names, _meta tagging) is shared.
 
 JUDGES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JUDGES_REPO_ROOT="$(cd "$JUDGES_DIR/../.." && pwd)"
@@ -42,6 +57,13 @@ JUDGE_DEFAULT_MODEL="gpt-5.6-terra"
 JUDGE_DEFAULT_REASONING_EFFORT="xhigh"
 JUDGE_DEFAULT_CODEX_VERSION="0.144.5"
 JUDGE_CONTAINER="gpt_5_5.sif"
+
+JUDGE_RUNTIME="${JUDGE_RUNTIME:-apptainer}"
+
+# The contamination judge runs this many times (best-of-N);
+# scripts/utils.py::resolve_judgement takes the per-field majority of slot 1
+# (judgement_gpt5_4.json) and slots 2..N (judgement_multi_runs/).
+CONTAMINATION_JUDGE_SLOTS=3
 
 # load_judge_conf <judge_name>
 # Loads src/judges/<judge_name>/judge.conf into the JUDGE_* variables,
@@ -135,6 +157,22 @@ prepare_judge_sandbox() {
 setup_judge_codex_auth() {
     local job_dir="$1"
 
+    if [ "$JUDGE_RUNTIME" = "local" ]; then
+        # API-key auth. condor's containers/other_home_data/.codex config
+        # hardcodes the apptainer sandbox layout (/home/ben, HF_HOME, ...), so
+        # write a minimal one: trust the task dir, inherit the environment.
+        export CODEX_API_KEY="${CODEX_API_KEY:-${OPENAI_API_KEY:-}}"
+        export OPENAI_API_KEY="${OPENAI_API_KEY:-$CODEX_API_KEY}"
+        if [ -z "$CODEX_API_KEY" ]; then
+            echo "ERROR: JUDGE_RUNTIME=local needs OPENAI_API_KEY or CODEX_API_KEY" >&2
+            return 1
+        fi
+        mkdir -p "$job_dir/.codex"
+        printf '[projects."%s/task"]\ntrust_level = "trusted"\n\n[shell_environment_policy]\ninherit = "all"\n' \
+            "$job_dir" > "$job_dir/.codex/config.toml"
+        return 0
+    fi
+
     JUDGE_CODEX_AUTH_SRC="$JUDGES_REPO_ROOT/agents/codex_non_api/auth.json"
     if [ ! -f "$JUDGE_CODEX_AUTH_SRC" ]; then
         echo "ERROR: agents/codex_non_api/auth.json not found — the judges need subscription auth" >&2
@@ -168,8 +206,22 @@ build_judge_prompt() {
 # is npm-installed into a version-specific prefix in the sandbox home
 # (idempotent across judges sharing the sandbox) and used instead of the
 # container's codex.
+# judge_codex_args <prompt>
+# Sets JUDGE_CODEX_ARGS to the codex arguments for the loaded judge — the one
+# definition both runtimes use.
+judge_codex_args() {
+    JUDGE_CODEX_ARGS=(--search -a never exec --json -c model_reasoning_summary=detailed
+        -c model_reasoning_effort="${JUDGE_REASONING_EFFORT}" --skip-git-repo-check --yolo
+        --model "${JUDGE_MODEL}" "$1")
+}
+
 run_judge_exec() {
     local job_dir="$1" job_tmp="$2" output_json="$3" prompt="$4"
+
+    if [ "$JUDGE_RUNTIME" = "local" ]; then
+        run_judge_exec_local "$job_dir" "$output_json" "$prompt"
+        return
+    fi
 
     local codex_bin="codex"
     if [ -n "$JUDGE_CODEX_VERSION" ]; then
@@ -192,6 +244,7 @@ run_judge_exec() {
         codex_bin="/home/ben/${pin_prefix}/bin/codex"
     fi
 
+    judge_codex_args "$prompt"
     apptainer exec \
         --containall \
         "${JUDGE_EXTRA_APPTAINER_ARGS[@]}" \
@@ -205,7 +258,55 @@ run_judge_exec() {
         --pwd "/home/ben/task" \
         --writable-tmpfs \
         "${POST_TRAIN_BENCH_CONTAINERS_DIR}/${JUDGE_CONTAINER}" \
-        "$codex_bin" --search -a never exec --json -c model_reasoning_summary=detailed -c model_reasoning_effort="${JUDGE_REASONING_EFFORT}" --skip-git-repo-check --yolo --model "${JUDGE_MODEL}" "$prompt" 2>&1 | tee "$output_json"
+        "$codex_bin" "${JUDGE_CODEX_ARGS[@]}" 2>&1 | tee "$output_json"
+}
+
+# run_judge_exec_local <job_dir> <output_json> <prompt>
+# JUDGE_RUNTIME=local: same codex invocation and version pin, run directly with
+# the task dir as cwd and $job_dir/.codex as CODEX_HOME — but as nobody when the
+# caller is root, so the judge can write nothing outside $job_dir (see below).
+# The trace goes to <output_json> only (not stdout). stdin is closed: `codex
+# exec` appends piped stdin to the prompt and waits for EOF, and a harness's
+# exec stdin may never close.
+run_judge_exec_local() {
+    local job_dir="$1" output_json="$2" prompt="$3"
+
+    local codex_bin="codex"
+    if [ -n "$JUDGE_CODEX_VERSION" ]; then
+        local pin_prefix="$job_dir/.codex-cli-${JUDGE_CODEX_VERSION}"
+        if [ ! -x "$pin_prefix/bin/codex" ]; then
+            echo "  installing pinned codex CLI @openai/codex@${JUDGE_CODEX_VERSION} for ${JUDGE_LABEL} ..."
+            npm install -g --prefix "$pin_prefix" --no-fund --no-audit "@openai/codex@${JUDGE_CODEX_VERSION}" > "$job_dir/codex_install_${JUDGE_CODEX_VERSION}.log" 2>&1
+        fi
+        if [ ! -x "$pin_prefix/bin/codex" ]; then
+            echo "ERROR: install of pinned @openai/codex@${JUDGE_CODEX_VERSION} failed (see $job_dir/codex_install_${JUDGE_CODEX_VERSION}.log) — ${JUDGE_LABEL} cannot run" >&2
+            return 1
+        fi
+        codex_bin="$pin_prefix/bin/codex"
+    fi
+
+    # Run codex unprivileged. The caller's container (the Harbor verifier) runs as
+    # root, and codex runs with approvals and its own sandbox off, so as root a
+    # judge that followed instructions planted in the agent's code or trace could
+    # write the verifier's metrics.json, edit the baked eval scripts or the model
+    # volume's files. As nobody it can write only $job_dir (chowned here); those
+    # stay root-owned. condor needs none of this: run_judge_exec's apptainer
+    # sandbox (--containall) only sees $job_dir in the first place.
+    local drop_privs=()
+    if [ "$(id -u)" = 0 ]; then
+        command -v setpriv > /dev/null || { echo "ERROR: setpriv not found; cannot drop root for ${JUDGE_LABEL}" >&2; return 1; }
+        # -h: never follow symlinks (task/final_model points at the model volume,
+        # whose files must stay root-owned).
+        chown -R -h 65534:65534 "$job_dir"
+        drop_privs=(setpriv --reuid=65534 --regid=65534 --clear-groups --inh-caps=-all)
+    fi
+
+    local timeout_cmd=()
+    [ -n "${JUDGE_TIMEOUT_SEC:-}" ] && timeout_cmd=(timeout --signal=TERM --kill-after=60s "$JUDGE_TIMEOUT_SEC")
+    judge_codex_args "$prompt"
+    ( cd "$job_dir/task" && CODEX_HOME="$job_dir/.codex" HOME="$job_dir" \
+        "${timeout_cmd[@]}" ${drop_privs[@]+"${drop_privs[@]}"} "$codex_bin" "${JUDGE_CODEX_ARGS[@]}" < /dev/null ) > "$output_json" 2>&1
+    echo "  codex exit code: $?"
 }
 
 # collect_judge_output <job_dir> <out_dir> <name_suffix> <missing_fatal>
@@ -309,4 +410,46 @@ run_contamination_judge_slot() {
     collect_judge_output "$job_dir" "$slot_out_dir" "$suffix" "$missing_fatal"
 
     tag_judgement_meta "$slot_out_dir/judgement_${JUDGE_OUTPUT_ID}${suffix}.json" "$slot"
+}
+
+# run_all_judges <job_dir> <job_tmp> <out_dir> <benchmark_id> <model_hf> <agent> <agent_config>
+# The inline judge phase: every judge in ALL_JUDGES order, the contamination
+# judge CONTAMINATION_JUDGE_SLOTS times (best-of-N). Verdicts land in <out_dir>
+# (slots 2..N under judgement_multi_runs/). Each judge run goes through the
+# optional caller-provided command prefix JUDGE_EXEC_WRAPPER (run_task.sh:
+# with_huggingface_overlay). Requires prepare_judge_sandbox and
+# setup_judge_codex_auth to have run. missing_fatal=0 throughout: a judge that
+# produces no verdict warns and moves on — the agent's work must still be
+# evaluated, and the rerun pipeline can supply the missing verdict afterwards.
+# Returns 1 only if a judge.conf cannot be loaded.
+run_all_judges() {
+    local job_dir="$1" job_tmp="$2" out_dir="$3" benchmark="$4" model_hf="$5" agent="$6" agent_config="$7"
+    local judge_name slot prompt
+
+    for judge_name in "${ALL_JUDGES[@]}"; do
+        load_judge_conf "$judge_name" || return 1
+
+        echo "=== Judge: ${JUDGE_LABEL} ==="
+
+        if [ "$judge_name" = "data_contamination_judge" ]; then
+            # Each slot cleans its own sandbox judgement.json AFTER the previous
+            # slot has been safely copied out by collect_judge_output.
+            for ((slot = 1; slot <= CONTAMINATION_JUDGE_SLOTS; slot++)); do
+                echo "  --- slot ${slot} of ${CONTAMINATION_JUDGE_SLOTS} ---"
+                ${JUDGE_EXEC_WRAPPER[@]+"${JUDGE_EXEC_WRAPPER[@]}"} run_contamination_judge_slot \
+                    "$job_dir" "$job_tmp" "$out_dir" "$slot" \
+                    "$benchmark" "$model_hf" "$agent" "$agent_config" 0
+            done
+        else
+            # Single-run judges (api_usage, ptb_lookup, general). Cleaning the
+            # sandbox judgement.json is safe: the previous judge/slot's
+            # collect_judge_output has already copied it out.
+            rm -f "$job_dir/task/judgement.json"
+            prompt=$(build_judge_prompt "$judge_name" "$benchmark" "$model_hf" "$agent" "$agent_config")
+            ${JUDGE_EXEC_WRAPPER[@]+"${JUDGE_EXEC_WRAPPER[@]}"} run_judge_exec \
+                "$job_dir" "$job_tmp" "$out_dir/judge_output_${JUDGE_OUTPUT_ID}.json" "$prompt"
+            collect_judge_output "$job_dir" "$out_dir" "" 0
+        fi
+    done
+    return 0
 }

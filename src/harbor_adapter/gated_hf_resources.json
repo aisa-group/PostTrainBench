@@ -1,0 +1,9 @@
+{
+  "_generated_by": "check_hf_token.py --refresh on 2026-09-07, then curated by hand: the gated/private entries of containers/download_hf_cache/resources.json a harbor agent must reach (value = gating mode)",
+  "models": {
+    "google/gemma-3-4b-pt": "manual"
+  },
+  "datasets": {
+    "Idavidrein/gpqa": "auto"
+  }
+}

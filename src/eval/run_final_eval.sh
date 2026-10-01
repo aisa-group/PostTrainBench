@@ -32,6 +32,14 @@
 # arenahardwriting/healthbench an OPENROUTER_API_KEY but no OPENAI_API_KEY (the same rule as JUDGE_BACKEND in
 # run_task.sh). It is evaluate.py plus --seed and any grading hardening the agent should not see (e.g. humaneval's
 # scorer). It is never copied into the agent sandbox, which only gets evaluate.py.
+#
+# EVAL_RUNTIME selects where the evaluation runs:
+#   apptainer (default)  condor: the eval container (vllm_debug.sif) with the HF cache overlay.
+#   local                the caller is already inside the eval image (the Harbor verifier, which bakes this
+#                        script and the task files into its image): Python runs directly, with the
+#                        environment's HF_HOME. humaneval's answer sandbox is then with_answer_sandbox_local.sh
+#                        (namespaces instead of a second apptainer container), or ANSWER_SANDBOX_LAUNCHER if set.
+# EVAL_ATTEMPT_TIMEOUT_SEC bounds each evaluation attempt (default 28800, 8 h).
 set -euo pipefail
 
 # The fixed seeds of the final evaluation. Each task uses a prefix of them (DEFAULT_SEEDS in setup_task).
@@ -40,6 +48,14 @@ FINAL_EVAL_SEEDS=(72332 87681 38992 92201 13818)
 # Attempts per stage of the retry cascade: stage 0 uses the final-eval script's default max-tokens, stages 1 and 2
 # lower it (STAGE_MAX_TOKENS_ARGS, set per task in setup_task).
 STAGE_MAX_RETRIES=(4 3 2)
+
+EVAL_RUNTIME="${EVAL_RUNTIME:-apptainer}"
+case "${EVAL_RUNTIME}" in
+    apptainer|local) ;;
+    *) echo "ERROR: EVAL_RUNTIME must be apptainer or local, not '${EVAL_RUNTIME}'" >&2; exit 1 ;;
+esac
+EVAL_ATTEMPT_TIMEOUT_SEC="${EVAL_ATTEMPT_TIMEOUT_SEC:-28800}"
+ANSWER_SANDBOX_LAUNCHER="${ANSWER_SANDBOX_LAUNCHER:-}"
 
 # The HF cache overlay's path inside the eval container.
 TMP_HF_CACHE="/tmp/hf_cache_90afd0"
@@ -64,12 +80,21 @@ setup_task() {
 
     [ -f "src/eval/run_final_eval.sh" ] || die "run $0 from the repo root"
     [ -d "src/eval/tasks/${task}" ] || die "unknown task '${task}': src/eval/tasks/${task} not found"
-    [ -n "${POST_TRAIN_BENCH_CONTAINERS_DIR:-}" ] || die "POST_TRAIN_BENCH_CONTAINERS_DIR is not set"
-    [ -n "${HF_HOME:-}" ] || die "HF_HOME is not set"
+    if [ "${EVAL_RUNTIME}" = "apptainer" ]; then
+        [ -n "${POST_TRAIN_BENCH_CONTAINERS_DIR:-}" ] || die "POST_TRAIN_BENCH_CONTAINERS_DIR is not set"
+        [ -n "${HF_HOME:-}" ] || die "HF_HOME is not set"
 
-    # All evaluation runs in this container, and so does humaneval's answer sandbox.
-    EVAL_CONTAINER="${POST_TRAIN_BENCH_CONTAINERS_DIR}/vllm_debug.sif"
-    [ -f "${EVAL_CONTAINER}" ] || die "container ${EVAL_CONTAINER} not found"
+        # All evaluation runs in this container, and so does humaneval's answer sandbox.
+        EVAL_CONTAINER="${POST_TRAIN_BENCH_CONTAINERS_DIR}/vllm_debug.sif"
+        [ -f "${EVAL_CONTAINER}" ] || die "container ${EVAL_CONTAINER} not found"
+    else
+        EVAL_CONTAINER=""
+        # Never run humaneval's answers without their sandbox.
+        if [ "${task}" = "humaneval" ] && [ -z "${ANSWER_SANDBOX_LAUNCHER}" ] \
+            && [ ! -f "src/eval/tasks/humaneval/with_answer_sandbox_local.sh" ]; then
+            die "humaneval with EVAL_RUNTIME=local needs its answer sandbox (src/eval/tasks/humaneval/with_answer_sandbox_local.sh)"
+        fi
+    fi
 
     FINAL_EVAL_SCRIPT="evaluate_final_eval.py"
     GRADER_API_KEY_NAME=""
@@ -207,7 +232,7 @@ export VLLM_CACHE_ROOT="${TMP_SUBDIR}/vllm_cache"
 export XDG_DATA_HOME="${TMP_SUBDIR}/xdg_data"
 # run_evaluation runs in its own bash and sees only exported variables.
 export EVALUATION_TASK MODEL_DIR OUTPUT_DIR EVAL_CONTAINER FINAL_EVAL_SCRIPT GRADER_API_KEY_NAME TMP_HF_CACHE HF_HOME \
-    REPO_ROOT TMP_SUBDIR HF_MERGED
+    REPO_ROOT TMP_SUBDIR HF_MERGED EVAL_RUNTIME ANSWER_SANDBOX_LAUNCHER
 if [ -n "${GRADER_API_KEY_NAME}" ]; then
     export "${GRADER_API_KEY_NAME}"
 fi
@@ -226,13 +251,23 @@ trap cleanup EXIT
 # sampling does not change the result, apart from vLLM's small run-to-run noise. Such a model is evaluated with the
 # first default seed only. Seeds given on the command line are always used as given. A missing model is not checked:
 # it fails at the first seed, and the other seeds are skipped anyway.
+# Writes "<greedy|sampling> <temperature>" for the model to default_temperature.txt, in the eval container.
+probe_default_temperature() {
+    if [ "${EVAL_RUNTIME}" = "local" ]; then
+        PYTHONNOUSERSITE="1" python src/utils/default_temperature.py "${MODEL_DIR}" \
+            --output-file "${OUTPUT_DIR}/default_temperature.txt"
+        return
+    fi
+    apptainer exec \
+        --env PYTHONNOUSERSITE="1" \
+        --bind "${REPO_ROOT}:${REPO_ROOT}" \
+        --pwd "${REPO_ROOT}" \
+        "${EVAL_CONTAINER}" python src/utils/default_temperature.py "${MODEL_DIR}" \
+            --output-file "${OUTPUT_DIR}/default_temperature.txt"
+}
+
 if [ "${SEEDS_GIVEN}" = 0 ] && [ "${SEED_ONLY_SAMPLES}" = 1 ] && [ "${#EVAL_SEEDS[@]}" -gt 1 ] && [ -d "${MODEL_DIR}" ]; then
-    if apptainer exec \
-            --env PYTHONNOUSERSITE="1" \
-            --bind "${REPO_ROOT}:${REPO_ROOT}" \
-            --pwd "${REPO_ROOT}" \
-            "${EVAL_CONTAINER}" python src/utils/default_temperature.py "${MODEL_DIR}" \
-                --output-file "${OUTPUT_DIR}/default_temperature.txt" > "${OUTPUT_DIR}/default_temperature_log.txt" 2>&1; then
+    if probe_default_temperature > "${OUTPUT_DIR}/default_temperature_log.txt" 2>&1; then
         read -r DECODING DEFAULT_TEMPERATURE < "${OUTPUT_DIR}/default_temperature.txt"
         echo "vLLM's default temperature for this model: ${DEFAULT_TEMPERATURE} (${DECODING})"
         case "${DECODING}" in
@@ -288,6 +323,28 @@ run_evaluation() {
     nvidia-smi --query-compute-apps=pid --format=csv,noheader | xargs -r kill -9
     sleep 5
     # The inspect logs go next to the seed's metrics, not to the task directory of the checkout (inspect's default).
+    if [ "${EVAL_RUNTIME}" = "local" ]; then
+        # Already in the eval image: the same script and arguments, run directly (the grader key is in the
+        # environment); humaneval's answers run in with_answer_sandbox_local.sh's sandbox.
+        if [ "${EVALUATION_TASK}" = "humaneval" ]; then
+            if [ -n "${ANSWER_SANDBOX_LAUNCHER}" ]; then
+                read -r -a answer_sandbox <<< "${ANSWER_SANDBOX_LAUNCHER}"
+            else
+                answer_sandbox=(bash "${REPO_ROOT}/src/eval/tasks/humaneval/with_answer_sandbox_local.sh")
+            fi
+        fi
+        ( cd "${REPO_ROOT}/src/eval/tasks/${EVALUATION_TASK}" \
+            && ${answer_sandbox[@]+"${answer_sandbox[@]}"} env VLLM_API_KEY="inspectai" PYTHONNOUSERSITE="1" \
+                INSPECT_LOG_DIR="${OUTPUT_DIR}/inspect_logs/seed${seed}" \
+                python "${FINAL_EVAL_SCRIPT}" \
+                    --model-path "${MODEL_DIR}" \
+                    --templates-dir ../../../../src/eval/templates \
+                    --limit -1 \
+                    --seed "${seed}" \
+                    ${max_tokens_arg} \
+                    --json-output-file "${OUTPUT_DIR}/metrics_seed${seed}.json" ) > "${OUTPUT_DIR}/final_eval_seed${seed}_${eval_num}.txt"
+        return
+    fi
     with_huggingface_overlay "${answer_sandbox[@]}" apptainer exec \
         --nv \
         --env "HF_HOME=${TMP_HF_CACHE}" \
@@ -326,7 +383,7 @@ run_evaluation_with_retry() {
         echo "Seed ${seed}: evaluation attempt $EVAL_COUNTER (phase attempt $attempt of $max_retries)"
 
         status=0
-        timeout --signal=TERM --kill-after=60s 28800s bash -c "$(declare -f run_evaluation with_huggingface_overlay); run_evaluation \"$max_tokens_arg\" \"$seed\" \"$EVAL_COUNTER\"" \
+        timeout --signal=TERM --kill-after=60s "${EVAL_ATTEMPT_TIMEOUT_SEC}s" bash -c "$(declare -f run_evaluation with_huggingface_overlay); run_evaluation \"$max_tokens_arg\" \"$seed\" \"$EVAL_COUNTER\"" \
             || status=$?
 
         if [ -f "${metrics_file}" ]; then
