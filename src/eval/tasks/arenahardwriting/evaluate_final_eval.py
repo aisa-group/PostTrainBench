@@ -271,7 +271,6 @@ class VLLMServer:
             self.model_path,
             "--port",
             str(port),
-            "--trust-remote-code",
             "--api-key",
             os.environ.get("VLLM_API_KEY", ""),
         ]
