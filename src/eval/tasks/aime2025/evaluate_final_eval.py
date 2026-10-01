@@ -1,19 +1,50 @@
 #!/usr/bin/env python3
 # Final-evaluation variant of evaluate.py. run_task.sh (and the eval rerun / baseline scripts) run this file; the
-# agent sandbox only ever gets evaluate.py. The only difference is --seed: the final evaluation runs once per fixed
-# seed and averages the results.
+# agent sandbox only ever gets evaluate.py. The differences are --seed: the final evaluation runs once per fixed seed
+# and averages the results, each sample with its own generation seed derived from --seed (src/eval/per_sample_seed.py);
+# and the scorer: aime_scorer_exact() below compares the extracted answer with == instead of inspect_ai's str.endswith
+# (upstream scores "ANSWER: 711" correct for 11; src/eval/exact_numeric_match.py, PostTrainBench issue #44).
 from __future__ import annotations
 
 import os
 
 import argparse
+import sys
 import json
 
 from inspect_ai.log._log import EvalLog, EvalMetric, EvalSample
 from inspect_ai import eval as inspect_eval  # type: ignore  # noqa: E402
+from inspect_ai import task_with
+from inspect_ai.scorer import CORRECT, INCORRECT, Score, Scorer, Target, accuracy, scorer, stderr
+from inspect_ai.solver import TaskState
 from inspect_ai.util._display import init_display_type  # noqa: E402
 
 import inspect_evals.aime2025  # noqa: F401, E402  (registers task definitions)
+from inspect_evals.aime2025.aime2025 import remove_boxed_from_ans  # noqa: E402
+
+# Per-sample generation seeds, see src/eval/per_sample_seed.py.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+from per_sample_seed import per_sample_seed  # noqa: E402
+from exact_numeric_match import last_number_exact  # noqa: E402
+
+
+@scorer(metrics=[accuracy(), stderr()])
+def aime_scorer_exact() -> Scorer:
+    """inspect_evals' aime_scorer (strips \\boxed{...}, scores the last number) with an exact comparison."""
+
+    async def score(state: TaskState, target: Target) -> Score:
+        raw = state.output.completion
+        cleaned = remove_boxed_from_ans(raw)
+        answer = None
+        matched = False
+        for value in target:
+            answer, matched = last_number_exact(cleaned, value)
+            if matched:
+                break
+        return Score(value=CORRECT if matched else INCORRECT, answer=answer, explanation=cleaned,
+                     metadata={"unprocessed_answer": raw, "cleaned_answer": cleaned})
+
+    return score
 
 
 def parse_args() -> argparse.Namespace:
@@ -76,7 +107,8 @@ def main() -> None:
     if (args.limit is not None) and (args.limit != -1):
         other_kwargs["limit"] = args.limit
 
-    task = "inspect_evals/aime2025"  
+    task = task_with(inspect_evals.aime2025.aime2025(), scorer=aime_scorer_exact())
+    solver = None if args.seed is None else per_sample_seed(task.solver, args.seed)
     model_args = {
         'gpu_memory_utilization': args.gpu_memory_utilization,
     }
@@ -93,7 +125,7 @@ def main() -> None:
         log_format='json',
         max_tokens=args.max_tokens,
         max_connections=args.max_connections,
-        seed=args.seed,
+        solver=solver,
         **other_kwargs,
     )
     

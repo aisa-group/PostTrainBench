@@ -36,7 +36,8 @@ PostTrainBench/
 | File | Purpose |
 |------|---------|
 | `src/run_task.sh` | Main task execution orchestrator (runs agent, then 4 judges, then evaluation) |
-| `src/eval/run_final_eval.sh` | The final evaluation (seeds, max-tokens retry cascade, mean into `metrics.json`); used by `run_task.sh`, `dev_utils/test_evaluation/run_only_evaluation.sh` and `scripts/rerun_eval_n_times.sh` |
+| `src/eval/run_final_eval.sh` | The final evaluation (seeds, max-tokens retry cascade, mean into `metrics.json`); used by `run_task.sh`, `dev_utils/test_evaluation/run_only_evaluation.sh` and `scripts/rerun_eval_n_times.sh`; `--single-seed` runs one seed (`scripts/rerun_final_eval_parallel.py`) |
+| `scripts/rerun_final_eval_parallel.py` | Reruns the final evaluation of many result dirs, one GPU job per (run, seed); submit/status/retry |
 | `src/commit_utils/commit.sh` | Batch job submission across agents × benchmarks × models |
 | `src/commit_utils/set_env_vars.sh` | Sources `.env` and exports `POST_TRAIN_BENCH_*` env vars |
 | `src/commit_utils/single_task.sub` | HTCondor submission template |
@@ -46,6 +47,8 @@ PostTrainBench/
 | `src/trace_parsing/parse_trace.py` | Dispatches to per-agent parser to produce human-readable trace |
 | `src/utils/update_agent_cli.sh` | Auto-updates an agent's CLI harness to latest and records its version |
 | `src/judges/run_judges.sh` | Runs judges on an existing result dir (`--judges` to select a subset); each writes its own per-judge JSON |
+| `src/eval/per_sample_seed.py` | Per-sample generation seeds for every `evaluate_final_eval.py` (never one seed for all requests) |
+| `src/utils/grant_access.py` | Gives the users in `POST_TRAIN_BENCH_USERS_ACCESS` ACL access to result dirs (run on exit by `run_task.sh`) |
 | `src/judges/get_judge_prompt.py` | Generates judge prompts (`--judge <judge_name>`) |
 | `containers/standard.def` | Main container definition (other `.def` files exist per-agent) |
 | `scripts/constants.py` | Agent/benchmark mappings |
@@ -152,10 +155,15 @@ alias in the CLI's `[models] default`.
    - `evaluate_final_eval.py` - Variant of `evaluate.py` that the final evaluation runs instead
      (`src/eval/run_final_eval.sh`, and the baselines). It is
      **never** copied into the agent sandbox, which only sees `evaluate.py`. It must accept `--seed` and
-     use it for generation (the final evaluation runs once per fixed seed, see "Results Structure").
+     use it for generation (the final evaluation runs once per fixed seed, see "Results Structure"),
+     through `src/eval/per_sample_seed.py`: never send `--seed` itself with every request (see below).
      `run_final_eval.sh` exits before it evaluates anything if it is missing, and `run_task.sh` runs
      `run_final_eval.sh --check` at job start. Also use it for
-     grading hardening the agent should not see (e.g. humaneval's scorer, see below). Keep it in sync
+     grading hardening the agent should not see (e.g. humaneval's scorer, see below; the exact numeric match of aime2025
+     and gsm8k, `src/eval/exact_numeric_match.py`: upstream `match(numeric=True)` compares with `str.endswith`, so 711
+     counts for 11, and gsm8k's negative and thousands-separator targets as text, issue #44; a last number upstream
+     cannot parse, such as `35²13` from `3*5²*13`, crashes its scorer and so the attempt, and is wrong here;
+     `scripts/rescore_exact_match.py` rescores finished reruns from their inspect logs). Keep it in sync
      with `evaluate.py` otherwise. A task with an `evaluate_openrouter.py` also needs
      `evaluate_openrouter_final_eval.py`, the same variant of that file, which `run_final_eval.sh` runs
      when grading goes through OpenRouter. A new task also needs its max-tokens retry cascade in
@@ -281,8 +289,8 @@ resolved by `scripts/utils.py::resolve_judgement`: a manual override
 wins; else the per-field majority of the three contamination-judge runs (slot 1 =
 `judgement_gpt5_4_rerun.json` or `judgement_gpt5_4.json`, slots 2/3 =
 `judgement_multi_runs/judgement_gpt5_4_run{2,3}.json`); else the single slot-1 verdict. Never
-flip a judge's own verdict file — record a manual override instead. `scripts/collect.py` enforces judge coverage: every scored run (metrics.json
-present) must carry a contamination and an API verdict, and runs with ids >=
+flip a judge's own verdict file — record a manual override instead. `scripts/collect.py` enforces judge coverage: every scored run (a score file
+present, see `run_metrics_path` below) must carry a contamination and an API verdict, and runs with ids >=
 `NEWER_JUDGES_MIN_RUN_ID` (`scripts/utils.py`) a PTB-lookup verdict too; a method containing a
 scored run without a required verdict is skipped (warning, no CSVs) instead of aggregated.
 Runs below that id may legitimately lack the PTB-lookup file (they predate the judge) — a
@@ -335,20 +343,35 @@ results/{agent}_{agent_config}_{num_hours}h[_{num_gpus}gpu]{experiment_name}/
     ├── evaluation/                      # Per-seed final-evaluation outputs
     │   ├── final_eval_seed{S}_{N}.txt   # vLLM/inspect-ai evaluation logs (one per seed and retry)
     │   ├── metrics_seed{S}.json         # Benchmark scores of one evaluation seed
+    │   ├── inspect_logs/seed{S}/        # Inspect logs of the seed's attempts (before 2026-10-01: in the submitting checkout)
     │   └── default_temperature{,_log}.txt # vLLM's default temperature for the model (aime2025/gsm8k/humaneval)
     └── metrics.json                     # Final benchmark scores: mean over the seeds that succeeded
 ```
 
-The final evaluation (`src/eval/run_final_eval.sh`) runs once for each fixed seed in
-`FINAL_EVAL_SEEDS`: 72332, 87681, 38992, 92201, 13818. arenahardwriting and healthbench use only the
-first seed, because each seed costs a full set of paid OpenAI grader calls. aime2025, gsm8k and
-humaneval also use only the first seed when vLLM decodes the model greedily. Their tasks set no
-temperature, so vLLM uses the model's default temperature from its `generation_config.json`
-(`src/utils/default_temperature.py`), and at 0 the seed does not change the result. gpqamain always
-uses all seeds, because its seed also shuffles the answer choices. Earlier seeded runs
-used the seeds 0–4 (only 0 for those two benchmarks); `per_seed` in `metrics.json` shows the seeds
-of a run. The seed goes to
-`evaluate_final_eval.py` as `--seed`. Each seed runs the max-tokens retry cascade:
+`scripts/collect.py` takes a run's score from `utils.run_metrics_path`: a final-eval rerun's
+`metrics_averaged_exact_match.json` (aime2025/gsm8k rescored with the exact numeric match,
+`scripts/rescore_exact_match.py`), else its `metrics_averaged.json` (format of `aggregate_seed_metrics.py`; an older
+`n_runs` variance study is passed over), else the run's own `metrics.json`, which then only keeps the original
+evaluation's numbers. A rerun can thus score a run whose original evaluation failed; if such a run was never judged,
+its rerun score is not used and it keeps the baseline.
+
+The final evaluation (`src/eval/run_final_eval.sh`) runs once for each of the task's fixed seeds,
+a prefix of `FINAL_EVAL_SEEDS` (72332, 87681, 38992, 92201, 13818): all 5 for aime2025 (30 problems,
+the noisiest), the first 3 for gpqamain, gsm8k and humaneval, and only the first for
+arenahardwriting and healthbench, because each seed costs a full set of paid OpenAI grader calls.
+aime2025, gsm8k and humaneval also use only the first seed when vLLM decodes the model greedily.
+Their tasks set no temperature, so vLLM uses the model's default temperature from its
+`generation_config.json` (`src/utils/default_temperature.py`), and at 0 the seed does not change the
+result. gpqamain always uses its 3 seeds, because its seed also shuffles the answer choices. Earlier
+seeded runs used the seeds 0–4 (only 0 for those two benchmarks), and until 2026-09-30 all 5 seeds
+for gpqamain, gsm8k and humaneval too; `per_seed` in `metrics.json` shows the seeds of a run. The seed goes to
+`evaluate_final_eval.py` as `--seed`, which gives every sample its own generation seed derived from it
+(`src/eval/per_sample_seed.py`: a hash of the seed, the sample id, the epoch and the call index; for inspect tasks a
+solver wrapper around `generate()`, for arenahardwriting/healthbench the vLLM payload). The same seed on every request
+would give every sample the same sampling noise, because vLLM seeds one generator per request: a run's outputs then
+collapse into one mode (one gsm8k seed had all 1319 completions `<think>\n\n`, accuracy 0.0, next to 0.64 for other
+seeds). Regression tests: `dev_utils/per_sample_seed/test_per_sample_seed.py` (no GPU) and `smoke_test.sub` (GPU, all
+tasks). Each seed runs the max-tokens retry cascade:
 - The first seed starts at stage 0. If it fails at every stage, the other seeds are skipped and
   no `metrics.json` is written, so `scripts/collect.py` uses the baseline.
 - The later seeds start at the stage where the first seed succeeded, so they use the same
@@ -361,6 +384,9 @@ no `evaluation/` folder: they have one `final_eval_{N}.txt` series in the run di
 `metrics.json`. `dev_utils/test_evaluation/run_only_evaluation.sh` writes its per-seed files to
 `z_new_{cluster_id}_evaluation/` instead. `scripts/rerun_eval_n_times.sh` writes them to `reruns/`
 and the mean to `metrics_averaged.json`, and it can use other seeds (`--seeds`).
+`scripts/rerun_final_eval_parallel.py` reruns many result dirs with one GPU job per (run, seed)
+(`run_final_eval.sh --single-seed`: each seed runs its own cascade from stage 0), in place or into a
+mirror tree (`--out-root`), and writes the same `reruns/` + `metrics_averaged.json` (see `scripts/README.md`).
 
 Result directories with the `_rerun` suffix on `judgement_*.json` come from the rerun-judge
 pipeline; original files are kept side-by-side. The canonical contamination verdict is
@@ -429,6 +455,13 @@ Common ones (defined in `.env`; also sourced via `src/commit_utils/set_env_vars.
 - `POST_TRAIN_BENCH_EXPERIMENT_NAME` — suffix added to the result directory name
 - `POST_TRAIN_BENCH_JOB_SCHEDULER` — controls which scheduler branch in `commit.sh` runs
 - `HF_HOME` — host-side Hugging Face cache that gets overlay-mounted into the sandbox
+- `POST_TRAIN_BENCH_USERS_ACCESS` — colon-separated users (e.g. `brank:hbhatnagar`) who get read/write ACL access to
+  every result dir: `run_task.sh` runs `src/utils/grant_access.py` on its result dir when it exits, and so do
+  `run_judges.sh`, `scripts/rerun_eval_n_times.sh` and `run_only_evaluation.sh`. It keeps everyone else's access as it
+  was (a plain `setfacl -R -m` would open mode-600 files such as safetensors weights to the owning group). It changes
+  only files the running user owns, so every user who writes into shared result dirs should set it. A job that condor
+  kills exits without it; run `python3 src/utils/grant_access.py <dir>...` by hand then, e.g. on existing results.
+  Unset means no grant. Regression test: `dev_utils/grant_access/test_grant_access.py` (on `/fast`).
 
 ## Co-Authorship
 

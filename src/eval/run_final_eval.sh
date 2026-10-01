@@ -6,18 +6,27 @@
 #
 # Usage, from the repo root, with the .env variables set (src/commit_utils/set_env_vars.sh):
 #   src/eval/run_final_eval.sh <task> <model_dir> <output_dir> <metrics_json> [<seed>...]
+#   src/eval/run_final_eval.sh --single-seed <task> <model_dir> <output_dir> <seed>
 #   src/eval/run_final_eval.sh --check <task>
+#   src/eval/run_final_eval.sh --default-seeds <task>
 #
-# - Without seeds, it uses FINAL_EVAL_SEEDS below. It uses only the first one for arenahardwriting and healthbench,
-#   and for aime2025, gsm8k and humaneval when vLLM decodes the model greedily (see "Greedy models" below).
-# - <output_dir> gets each seed's metrics (metrics_seed<S>.json) and the log of each attempt
-#   (final_eval_seed<S>_<N>.txt). Neither it nor <metrics_json> may exist yet.
+# - Without seeds, it uses the task's default seeds (DEFAULT_SEEDS in setup_task): all 5 of FINAL_EVAL_SEEDS for
+#   aime2025, the first 3 for gpqamain, gsm8k and humaneval, and only the first for arenahardwriting and healthbench;
+#   and only the first for aime2025, gsm8k and humaneval when vLLM decodes the model greedily (see "Greedy models").
+# - <output_dir> gets each seed's metrics (metrics_seed<S>.json), the log of each attempt (final_eval_seed<S>_<N>.txt)
+#   and the inspect logs of the seed's attempts (inspect_logs/seed<S>/). Neither it nor <metrics_json> may exist yet.
 # - <model_dir> is not checked. A missing model fails at every stage like any broken model, and collect.py
 #   recognizes that case by the final_eval_seed<S>_9.txt log.
 # - If the first seed fails at every stage, the other seeds are skipped and no <metrics_json> is written. That is a
 #   result, not an error (collect.py then uses the baseline), so the script exits 0. Every error exits non-zero.
 # - --check only checks that <task> can be evaluated and prints the final-eval script it would run. run_task.sh calls
 #   it at job start, so a missing file fails before the agent's run and not after it.
+# - --single-seed runs one seed's full cascade from stage 0 into an existing <output_dir> that other seeds' jobs may
+#   share, writes result_seed<S>.txt ("stage <N>" or "failed") and does not aggregate: the seeds run in parallel as
+#   separate jobs (scripts/rerun_final_eval_parallel.py, which aggregates). Unlike the default mode, a later seed does
+#   not start at the first seed's stage. No greedy check: the caller picks the seeds.
+# - --default-seeds prints the task's default seeds (first line) and whether its seed only drives sampling (second
+#   line, 1 or 0; 1 means a greedy model needs only the first seed, see "Greedy models" below).
 #
 # The final-eval script is the task's evaluate_final_eval.py, or evaluate_openrouter_final_eval.py when .env gives
 # arenahardwriting/healthbench an OPENROUTER_API_KEY but no OPENAI_API_KEY (the same rule as JUDGE_BACKEND in
@@ -33,8 +42,7 @@
 # EVAL_ATTEMPT_TIMEOUT_SEC bounds each evaluation attempt (default 28800, 8 h).
 set -euo pipefail
 
-# The fixed seeds of the final evaluation. arenahardwriting and healthbench are graded by paid API calls, so they use
-# only the first seed.
+# The fixed seeds of the final evaluation. Each task uses a prefix of them (DEFAULT_SEEDS in setup_task).
 FINAL_EVAL_SEEDS=(72332 87681 38992 92201 13818)
 
 # Attempts per stage of the retry cascade: stage 0 uses the final-eval script's default max-tokens, stages 1 and 2
@@ -59,7 +67,9 @@ die() {
 
 usage() {
     echo "usage: $0 <task> <model_dir> <output_dir> <metrics_json> [<seed>...]" >&2
+    echo "       $0 --single-seed <task> <model_dir> <output_dir> <seed>" >&2
     echo "       $0 --check <task>" >&2
+    echo "       $0 --default-seeds <task>" >&2
     exit 1
 }
 
@@ -117,12 +127,20 @@ setup_task() {
             ;;
     esac
 
+    # aime2025 has only 30 problems, so one run is the noisiest: 5 seeds. gpqamain, gsm8k and humaneval: 3 seeds.
+    # arenahardwriting and healthbench are graded by paid API calls: 1 seed.
     case "${task}" in
+        aime2025)
+            DEFAULT_SEEDS=("${FINAL_EVAL_SEEDS[@]}")
+            ;;
+        gpqamain|gsm8k|humaneval)
+            DEFAULT_SEEDS=("${FINAL_EVAL_SEEDS[@]:0:3}")
+            ;;
         arenahardwriting|healthbench)
             DEFAULT_SEEDS=("${FINAL_EVAL_SEEDS[0]}")
             ;;
         *)
-            DEFAULT_SEEDS=("${FINAL_EVAL_SEEDS[@]}")
+            die "no default seeds for task '${task}': add it to DEFAULT_SEEDS in $0"
             ;;
     esac
 
@@ -145,20 +163,41 @@ if [ "$#" -ge 1 ] && [ "$1" = "--check" ]; then
     exit 0
 fi
 
+if [ "$#" -ge 1 ] && [ "$1" = "--default-seeds" ]; then
+    [ "$#" -eq 2 ] || usage
+    setup_task "$2"
+    echo "${DEFAULT_SEEDS[*]}"
+    echo "${SEED_ONLY_SAMPLES}"
+    exit 0
+fi
+
+SINGLE_SEED=0
+if [ "$#" -ge 1 ] && [ "$1" = "--single-seed" ]; then
+    [ "$#" -eq 5 ] || usage
+    SINGLE_SEED=1
+    shift
+fi
+
 [ "$#" -ge 4 ] || usage
 EVALUATION_TASK="$1"
 setup_task "${EVALUATION_TASK}"
 # Absolute paths, because the evaluation runs in the task's directory inside the container.
 MODEL_DIR="$(realpath -ms "$2")"
 OUTPUT_DIR="$(realpath -ms "$3")"
-METRICS_JSON="$(realpath -ms "$4")"
-shift 4
-if [ "$#" -gt 0 ]; then
+if [ "${SINGLE_SEED}" = 1 ]; then
     SEEDS_GIVEN=1
-    EVAL_SEEDS=("$@")
+    EVAL_SEEDS=("$4")
+    shift 4
 else
-    SEEDS_GIVEN=0
-    EVAL_SEEDS=("${DEFAULT_SEEDS[@]}")
+    METRICS_JSON="$(realpath -ms "$4")"
+    shift 4
+    if [ "$#" -gt 0 ]; then
+        SEEDS_GIVEN=1
+        EVAL_SEEDS=("$@")
+    else
+        SEEDS_GIVEN=0
+        EVAL_SEEDS=("${DEFAULT_SEEDS[@]}")
+    fi
 fi
 
 for seed in "${EVAL_SEEDS[@]}"; do
@@ -167,16 +206,30 @@ done
 DUPLICATE_SEEDS="$(printf '%s\n' "${EVAL_SEEDS[@]}" | sort | uniq -d)"
 [ -z "${DUPLICATE_SEEDS}" ] || die "seeds given more than once: ${DUPLICATE_SEEDS//$'\n'/ }"
 
-# A leftover metrics_seed<S>.json would count as a success, so both outputs must be new.
-[ ! -e "${OUTPUT_DIR}" ] || die "${OUTPUT_DIR} already exists; move it away before evaluating"
-[ ! -e "${METRICS_JSON}" ] || die "${METRICS_JSON} already exists; move it away before evaluating"
-[ -d "$(dirname "${OUTPUT_DIR}")" ] || die "parent directory of ${OUTPUT_DIR} not found"
-[ -d "$(dirname "${METRICS_JSON}")" ] || die "parent directory of ${METRICS_JSON} not found"
-mkdir "${OUTPUT_DIR}"
+# A leftover metrics_seed<S>.json would count as a success, so both outputs must be new. In --single-seed mode the
+# other seeds' jobs share <output_dir>, so only this seed's files must be new.
+if [ "${SINGLE_SEED}" = 1 ]; then
+    [ -d "${OUTPUT_DIR}" ] || die "${OUTPUT_DIR} not found"
+    if compgen -G "${OUTPUT_DIR}/*_seed${EVAL_SEEDS[0]}[._]*" > /dev/null \
+            || [ -e "${OUTPUT_DIR}/inspect_logs/seed${EVAL_SEEDS[0]}" ]; then
+        die "${OUTPUT_DIR} already has files of seed ${EVAL_SEEDS[0]}; move them away before evaluating"
+    fi
+else
+    [ ! -e "${OUTPUT_DIR}" ] || die "${OUTPUT_DIR} already exists; move it away before evaluating"
+    [ ! -e "${METRICS_JSON}" ] || die "${METRICS_JSON} already exists; move it away before evaluating"
+    [ -d "$(dirname "${OUTPUT_DIR}")" ] || die "parent directory of ${OUTPUT_DIR} not found"
+    [ -d "$(dirname "${METRICS_JSON}")" ] || die "parent directory of ${METRICS_JSON} not found"
+    mkdir "${OUTPUT_DIR}"
+fi
 
 REPO_ROOT="$(pwd)"
 TMP_SUBDIR="$(mktemp -d /tmp/ptb_final_eval.XXXXXX)"
 HF_MERGED="${TMP_SUBDIR}/merged_huggingface"
+# Caches local to this evaluation, which the eval container inherits: ~/.cache/vllm (vLLM's compile cache) would grow
+# in the home quota, and inspect's trace dir under ~/.local/share is shared by all concurrent evaluations, which then
+# delete each other's trace files ("Stale file handle" tracebacks in every log call).
+export VLLM_CACHE_ROOT="${TMP_SUBDIR}/vllm_cache"
+export XDG_DATA_HOME="${TMP_SUBDIR}/xdg_data"
 # run_evaluation runs in its own bash and sees only exported variables.
 export EVALUATION_TASK MODEL_DIR OUTPUT_DIR EVAL_CONTAINER FINAL_EVAL_SCRIPT GRADER_API_KEY_NAME TMP_HF_CACHE HF_HOME \
     REPO_ROOT TMP_SUBDIR HF_MERGED EVAL_RUNTIME ANSWER_SANDBOX_LAUNCHER
@@ -269,6 +322,7 @@ run_evaluation() {
     fi
     nvidia-smi --query-compute-apps=pid --format=csv,noheader | xargs -r kill -9
     sleep 5
+    # The inspect logs go next to the seed's metrics, not to the task directory of the checkout (inspect's default).
     if [ "${EVAL_RUNTIME}" = "local" ]; then
         # Already in the eval image: the same script and arguments, run directly (the grader key is in the
         # environment); humaneval's answers run in with_answer_sandbox_local.sh's sandbox.
@@ -281,6 +335,7 @@ run_evaluation() {
         fi
         ( cd "${REPO_ROOT}/src/eval/tasks/${EVALUATION_TASK}" \
             && ${answer_sandbox[@]+"${answer_sandbox[@]}"} env VLLM_API_KEY="inspectai" PYTHONNOUSERSITE="1" \
+                INSPECT_LOG_DIR="${OUTPUT_DIR}/inspect_logs/seed${seed}" \
                 python "${FINAL_EVAL_SCRIPT}" \
                     --model-path "${MODEL_DIR}" \
                     --templates-dir ../../../../src/eval/templates \
@@ -293,6 +348,7 @@ run_evaluation() {
     with_huggingface_overlay "${answer_sandbox[@]}" apptainer exec \
         --nv \
         --env "HF_HOME=${TMP_HF_CACHE}" \
+        --env "INSPECT_LOG_DIR=${OUTPUT_DIR}/inspect_logs/seed${seed}" \
         "${grader_key_env[@]}" \
         --env VLLM_API_KEY="inspectai" \
         --env PYTHONNOUSERSITE="1" \
@@ -355,6 +411,23 @@ run_seed_evaluation() {
 
     return 1
 }
+
+# --single-seed: this seed's full cascade from stage 0, independent of the other seeds; result_seed<S>.txt records its
+# outcome ("stage <N>" or "failed"), and the caller aggregates once every seed has one.
+if [ "${SINGLE_SEED}" = 1 ]; then
+    seed="${EVAL_SEEDS[0]}"
+    EVAL_COUNTER=0
+    echo "=== Seed ${seed}: evaluating from stage 0 (single-seed mode) ==="
+    if run_seed_evaluation "$seed" 0; then
+        echo "Seed ${seed}: succeeded at stage ${SEED_STAGE}"
+        echo "stage ${SEED_STAGE}" > "${OUTPUT_DIR}/result_seed${seed}.txt"
+    else
+        echo "Seed ${seed}: failed at every stage"
+        echo "failed" > "${OUTPUT_DIR}/result_seed${seed}.txt"
+    fi
+    echo $(cat "${OUTPUT_DIR}/final_eval_seed${seed}_${EVAL_COUNTER}.txt")
+    exit 0
+fi
 
 # The first seed runs the full cascade. If it fails at every stage, the other seeds are skipped. The later seeds start
 # at the stage where the first seed succeeded, so they share its max-tokens setting; a later seed that fails at every

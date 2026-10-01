@@ -48,6 +48,11 @@ mkdir -p ${EVAL_DIR}
 exec 1>${EVAL_DIR}/output.log
 exec 2>${EVAL_DIR}/error.log
 
+# Whenever this script exits, give the users in POST_TRAIN_BENCH_USERS_ACCESS access to the whole result dir (see
+# src/utils/grant_access.py). A job that condor kills exits without it: then run grant_access.py on the dir by hand.
+GRANT_ACCESS="$(pwd)/src/utils/grant_access.py"
+trap 'python3 "${GRANT_ACCESS}" "${EVAL_DIR}"' EXIT
+
 echo "$@"
 echo "Judge backend: ${JUDGE_BACKEND} (eval script: ${EVAL_SCRIPT}, final eval script: ${FINAL_EVAL_SCRIPT})"
 

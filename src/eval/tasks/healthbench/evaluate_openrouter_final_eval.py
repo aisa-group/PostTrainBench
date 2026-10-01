@@ -2,6 +2,7 @@
 # Final-evaluation variant of evaluate_openrouter.py, which run_task.sh runs instead of evaluate_final_eval.py when
 # grading goes through OpenRouter; the agent sandbox then gets evaluate_openrouter.py as evaluate.py. The only
 # difference is --seed: the final evaluation runs once per fixed seed and averages the results.
+# Each question gets its own generation seed derived from --seed (src/eval/per_sample_seed.py).
 # Feel free to use this script as needed. Don't edit it.
 # Note that our final evaluation will be done using default parameters of this script and --limit will be set to -1.
 # Also, the templates/ directory will be used as is without any modifications.
@@ -18,6 +19,7 @@ variant automatically when .env provides OPENROUTER_API_KEY but no OPENAI_API_KE
 
 import os
 import argparse
+import sys
 import atexit
 import json
 import random
@@ -30,6 +32,10 @@ from typing import Dict, List, Optional
 import requests
 from dotenv import load_dotenv
 from tqdm import tqdm
+
+# Per-sample generation seeds, see src/eval/per_sample_seed.py.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+from per_sample_seed import sample_seed  # noqa: E402
 
 # Load environment variables from .env file
 load_dotenv()
@@ -112,7 +118,6 @@ class VLLMServer:
             self.model_path,
             "--port",
             str(port),
-            "--trust-remote-code",
             "--api-key",
             os.environ.get("VLLM_API_KEY", ""),
         ]
@@ -220,7 +225,7 @@ def generate_answers(
                 "model": args.model_path,
                 "messages": messages,
                 "max_tokens": args.max_new_tokens,
-                "seed": args.seed,
+                "seed": None if args.seed is None else sample_seed(args.seed, example.prompt_id),
             }
 
             answer_text: Optional[str] = None

@@ -6,7 +6,10 @@ For each method directory in the results dir, does a single pass:
   1. Finds the latest run per (benchmark, model), for the benchmarks in
      HARDCODED_BENCHMARKS only (runs of removed benchmarks such as bfcl or
      aime2026 in old result roots are ignored)
-  2. Reads metrics.json, the GPT-5.4 contamination judgement (resolved by
+  2. Reads the run's score (utils.run_metrics_path: a final-eval rerun's
+     metrics_averaged_exact_match.json > metrics_averaged.json > the run's own
+     metrics.json, which then only keeps the original numbers), the GPT-5.4
+     contamination judgement (resolved by
      utils.resolve_judgement: manual override judgement_gpt5_4_manual.json >
      majority of the three judge runs > judgement_gpt5_4_rerun.json >
      judgement_gpt5_4.json),
@@ -55,6 +58,7 @@ from utils import (
     get_baseline_fallback_data,
     walk_latest_runs,
     load_metrics,
+    run_metrics_path,
     load_judgement,
     load_api_judgement,
     load_ptb_lookup_judgement,
@@ -125,9 +129,15 @@ def collect_method(
             run_id = latest_runs[key]["run_id"]
 
             try:
-                metrics_grid[model][bench] = load_metrics(
-                    os.path.join(run_dir, "metrics.json")
-                )
+                # A final-eval rerun can score a run whose original evaluation failed (no metrics.json). If that
+                # run was never judged, its rerun score does not count: it keeps the baseline, as before the rerun.
+                if (not os.path.exists(os.path.join(run_dir, "metrics.json"))
+                        and missing_required_judgements(run_dir, run_id)):
+                    raise FileNotFoundError(
+                        f"{run_dir}: original evaluation failed and the run was never judged; "
+                        f"its rerun score is not used"
+                    )
+                metrics_grid[model][bench] = load_metrics(run_metrics_path(run_dir))
                 # A scored run must carry every judge verdict required for
                 # its era; one that doesn't makes main() skip this whole
                 # method (warning, no CSVs) instead of aggregating a score

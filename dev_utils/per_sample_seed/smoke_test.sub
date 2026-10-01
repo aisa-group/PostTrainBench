@@ -1,0 +1,15 @@
+# GPU smoke test of the per-sample seeds; see smoke_test.sh. Submit from the repo root:
+#   condor_submit_bid 50 -a "model_dir=<dir>" -a "out_dir=<new dir>" dev_utils/per_sample_seed/smoke_test.sub
+executable = /bin/bash
+arguments = dev_utils/per_sample_seed/smoke_test.sh $(model_dir) $(out_dir)
+environment = "HOME=$ENV(HOME)"
+error = logs/seed_smoke_$(Cluster).err
+output = logs/seed_smoke_$(Cluster).out
+log = logs/seed_smoke_$(Cluster).log
+request_memory = 131072
+request_cpus = 16
+request_gpus = 1
+requirements = TARGET.CUDADeviceName == "NVIDIA H100 80GB HBM3" && Machine != "i104.internal.cluster.is.localnet" && Machine != "i205.internal.cluster.is.localnet"
+request_disk = 100G
++BypassLXCfs = "true"
+queue

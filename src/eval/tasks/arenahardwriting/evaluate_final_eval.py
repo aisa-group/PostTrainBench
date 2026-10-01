@@ -1,10 +1,12 @@
 # Final-evaluation variant of evaluate.py. run_task.sh (and the eval rerun / baseline scripts) run this file; the
 # agent sandbox only ever gets evaluate.py. The only difference is --seed: the final evaluation runs once per fixed
 # seed and averages the results.
+# Each question gets its own generation seed derived from --seed (src/eval/per_sample_seed.py).
 # IMPORTANT: You are NOT allowed to use the OpenAI API for anything but this evaluation script.
 import os
 
 import argparse
+import sys
 import atexit
 import json
 import math
@@ -17,6 +19,10 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+# Per-sample generation seeds, see src/eval/per_sample_seed.py.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+from per_sample_seed import sample_seed  # noqa: E402
 
 import requests
 import shortuuid
@@ -265,7 +271,6 @@ class VLLMServer:
             self.model_path,
             "--port",
             str(port),
-            "--trust-remote-code",
             "--api-key",
             os.environ.get("VLLM_API_KEY", ""),
         ]
@@ -343,7 +348,7 @@ def generate_answers(args) -> tuple:
                     {"role": "user", "content": question["prompt"]},
                 ],
                 "max_tokens": args.max_new_tokens,
-                "seed": args.seed,
+                "seed": None if args.seed is None else sample_seed(args.seed, question["uid"]),
             }
 
             answer_text: Optional[str] = None

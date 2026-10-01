@@ -158,3 +158,44 @@ condor_submit_bid 50 \
 ```
 
 Leave out `seed_args` for the default seeds.
+
+## Re-evaluating many runs in parallel
+
+`rerun_final_eval_parallel.py` reruns the final evaluation of many result dirs
+with **one GPU job per (run, seed)**, so a run's seeds evaluate at the same time
+(the slowest cells: ~2 h instead of ~10 h). Each job
+(`rerun_final_eval_seed.sh`) runs `src/eval/run_final_eval.sh --single-seed`:
+that seed's full max-tokens cascade from stage 0. Unlike the sequential
+evaluation, a later seed does not start at the first seed's stage, and a failed
+first seed does not skip the others. The seeds are the final evaluation's
+defaults, and only the first one for a model that vLLM decodes greedily (checked
+for all models at once with `src/utils/default_temperature.py --batch-output`).
+The job that finishes a cell's last seed writes `metrics_averaged.json` (same
+format as `metrics.json`), or `reruns/no_seed_succeeded.txt` if no seed did.
+
+Cells and outputs:
+- In place (default): `<run>/reruns/` and `<run>/metrics_averaged.json`; needs
+  write access to the result dir.
+- `--out-root DIR`: `DIR/<method>/<run>/`, with `final_model` a symlink to the
+  result dir's, for result dirs of other users.
+- `reruns/` holds `plan.json` (task, seeds, decoding, source run, code commit)
+  and per seed `metrics_seed<S>.json`, `result_seed<S>.txt` (`stage <N>` or
+  `failed`), `final_eval_seed<S>_<N>.txt`, `inspect_logs/seed<S>/`,
+  `seed<S>_jobs.txt`. `submit` skips a cell that already has `reruns/` or
+  `metrics_averaged.json`, so nothing is overwritten.
+
+```bash
+# Latest run per (benchmark, model) of some agents (as collect.py aggregates), into a mirror tree:
+scripts/rerun_final_eval_parallel.py submit --bid 50 --results-root /fast/other/results \
+    --agents "GPT-6-Astra" "Opus-5.5 (Max)" --benchmarks aime2025 gsm8k --out-root /fast/me/reruns [--dry-run]
+# Explicit run dirs, in place:
+scripts/rerun_final_eval_parallel.py submit --bid 50 /path/to/results/<method>/<run> ...
+# Progress (same selection), and resubmitting seeds whose job died without a result:
+scripts/rerun_final_eval_parallel.py status [-v] --results-root ... --agents ... --out-root ...
+scripts/rerun_final_eval_parallel.py retry --bid 50 --results-root ... --agents ... --out-root ...
+```
+
+Condor logs go to `logs/rerun_parallel/`. The jobs run this checkout's code
+when they start, so do not edit it while jobs are queued (or run from a copy).
+Cells whose `final_model/` has no weights or unreadable files are skipped and
+listed.
