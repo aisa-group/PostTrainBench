@@ -7,7 +7,6 @@ from pathlib import Path
 
 INSPECT_EVALS = [
     "aime2025",
-    "bfcl",
     "gpqamain",
     "gsm8k",
     "humaneval",

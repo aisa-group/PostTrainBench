@@ -14,7 +14,7 @@ Agents are run through one of 4 CLI scaffolds: Claude Code, Codex CLI, Gemini CL
 
 ## Evaluation Tasks
 
-PostTrainBench includes 6 scored benchmarks spanning reasoning, knowledge, math, health, and code:
+PostTrainBench includes 6 benchmarks spanning reasoning, knowledge, math, health, and code:
 
 1. **AIME 2025** — Math competition problems
 2. **Arena Hard Writing** — Creative writing benchmark adapted from ArenaHard v2
@@ -22,9 +22,6 @@ PostTrainBench includes 6 scored benchmarks spanning reasoning, knowledge, math,
 4. **GSM8K** — Grade school math
 5. **HealthBench Easy** — Medical knowledge and reasoning
 6. **HumanEval** — Code generation
-
-BFCL (Berkeley Function Calling Leaderboard) was part of earlier releases and is still in
-`src/eval/tasks/bfcl/`, but it is no longer scored or included in the weighted average.
 
 ## Quick Start
 

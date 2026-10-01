@@ -79,8 +79,7 @@ fi
 ALL_AGENTS=($(ls agents 2>/dev/null))
 
 # Benchmarks known to the framework — must match src/eval/tasks/ subdirs
-# (bfcl is retired from the benchmark set, so bfcl cells are no longer rerunnable here)
-BENCHMARKS="aime2025 aime2026 arenahardwriting gpqamain gsm8k humaneval healthbench"
+BENCHMARKS="aime2025 arenahardwriting gpqamain gsm8k humaneval healthbench"
 
 parse_and_submit() {
     local cell_path="${1%/}"

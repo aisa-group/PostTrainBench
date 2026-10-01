@@ -1,0 +1,19 @@
+# One job per (cell, seed) of scripts/rerun_final_eval_parallel.py, which submits it with
+# -a "job_list=<file>" (one "<cell_dir> <seed>" per line). No `priority` here: condor_submit_bid sets it (bid - 1000).
+executable = /bin/bash
+arguments = scripts/rerun_final_eval_seed.sh $(cell_dir) $(seed) $(Cluster).$(Process)
+# Only HOME: everything else comes from .env (see rerun_eval.sub).
+environment = "HOME=$ENV(HOME)"
+error = logs/rerun_parallel/$(Cluster).$(Process).err
+output = logs/rerun_parallel/$(Cluster).$(Process).out
+log = logs/rerun_parallel/$(Cluster).log
+request_memory = 131072
+request_cpus = 16
+request_gpus = 1
+# Both H100 variants (80GB HBM3 and the 94 GB NVL, same Hopper architecture); i104/i205 excluded as in rerun_eval.sub.
+requirements = (TARGET.CUDADeviceName == "NVIDIA H100 80GB HBM3" || TARGET.CUDADeviceName == "NVIDIA H100") && Machine != "i104.internal.cluster.is.localnet" && Machine != "i205.internal.cluster.is.localnet"
+request_disk = 100G
++BypassLXCfs = "true"
++PtbRerunCell = "$(cell_dir)"
++PtbRerunSeed = "$(seed)"
+queue cell_dir, seed from $(job_list)

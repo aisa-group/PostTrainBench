@@ -1,7 +1,12 @@
-# IMPORTANT: You are NOT allowed to use the OpenRouter API for anything but this evaluation script.
+# Final-evaluation variant of evaluate.py. run_task.sh (and the eval rerun / baseline scripts) run this file; the
+# agent sandbox only ever gets evaluate.py. The only difference is --seed: the final evaluation runs once per fixed
+# seed and averages the results.
+# Each question gets its own generation seed derived from --seed (src/eval/per_sample_seed.py).
+# IMPORTANT: You are NOT allowed to use the OpenAI API for anything but this evaluation script.
 import os
 
 import argparse
+import sys
 import atexit
 import json
 import math
@@ -14,6 +19,10 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+# Per-sample generation seeds, see src/eval/per_sample_seed.py.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+from per_sample_seed import sample_seed  # noqa: E402
 
 import requests
 import shortuuid
@@ -39,8 +48,7 @@ VLLM_GENERATION_RETRY = 3
 MAX_REPETITIONS = 5  # Maximum allowed repetitions of any pattern
 
 BENCHMARK = "arena-hard-v2.0"
-JUDGE_MODEL = "openai/gpt-5-mini"  # OpenRouter model slug (provider-prefixed)
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+JUDGE_MODEL = "gpt-5-mini"
 REASONING_EFFORT = "medium"
 JUDGE_CONFIG = "evaluation_code/config/arena-hard-v2.0.yaml"
 JUDGE_MAX_COMPLETION = 49152
@@ -340,6 +348,7 @@ def generate_answers(args) -> tuple:
                     {"role": "user", "content": question["prompt"]},
                 ],
                 "max_tokens": args.max_new_tokens,
+                "seed": None if args.seed is None else sample_seed(args.seed, question["uid"]),
             }
 
             answer_text: Optional[str] = None
@@ -409,22 +418,17 @@ def generate_answers(args) -> tuple:
         server.stop()
 
 
-def call_judge(messages: List[Dict]):
+def call_openai(messages: List[Dict]):
     import openai
 
-    client = openai.OpenAI(
-        base_url=OPENROUTER_BASE_URL,
-        api_key=os.environ["OPENROUTER_API_KEY"],
-    )
+    client = openai.OpenAI()
     request_kwargs = {
         "model": JUDGE_MODEL,
         "messages": messages,
         "max_completion_tokens": JUDGE_MAX_COMPLETION,
     }
     if REASONING_EFFORT is not None:
-        # OpenRouter exposes reasoning controls through its normalized `reasoning`
-        # field (passed via extra_body) rather than OpenAI's top-level `reasoning_effort`.
-        request_kwargs["extra_body"] = {"reasoning": {"effort": REASONING_EFFORT}}
+        request_kwargs["reasoning_effort"] = REASONING_EFFORT
 
     for attempt in range(API_MAX_RETRY):
         try:
@@ -433,16 +437,16 @@ def call_judge(messages: List[Dict]):
                 "answer": completion.choices[0].message.content,
             }
         except openai.BadRequestError as err:
-            if "reasoning" in str(err).lower() and "extra_body" in request_kwargs:
-                print("[judge] reasoning effort not supported; retrying without it.")
-                request_kwargs.pop("extra_body", None)
+            if "reasoning" in str(err).lower() and "reasoning_effort" in request_kwargs:
+                print("[judge] reasoning_effort not supported; retrying without it.")
+                request_kwargs.pop("reasoning_effort", None)
                 continue
             wait_time = API_RETRY_SLEEP * (2**attempt)
-            print(f"[judge] OpenRouter API error ({type(err).__name__}): {err}. Retry in {wait_time}s.")
+            print(f"[judge] OpenAI API error ({type(err).__name__}): {err}. Retry in {wait_time}s.")
             time.sleep(wait_time)
         except Exception as err:  # pylint: disable=broad-except
             wait_time = API_RETRY_SLEEP * (2**attempt)
-            print(f"[judge] OpenRouter API error ({type(err).__name__}): {err}. Retry in {wait_time}s.")
+            print(f"[judge] OpenAI API error ({type(err).__name__}): {err}. Retry in {wait_time}s.")
             time.sleep(wait_time)
     print("[judge] Exhausted retries; returning None.")
     return None
@@ -482,9 +486,9 @@ def judge_answers(args, candidate_answers: Optional[Dict[str, Dict]] = None) -> 
     judgment_dir = data_dir / "model_judgment" / JUDGE_MODEL
     output_path = judgment_dir / f"{args.model_alias}.jsonl"
 
-    if not os.environ.get("OPENROUTER_API_KEY"):
+    if "OPENAI_API_KEY" not in os.environ:
         raise EnvironmentError(
-            "OPENROUTER_API_KEY is not set. Please export your OpenRouter API key before judging."
+            "OPENAI_API_KEY is not set. Please export your OpenAI API key before judging."
         )
 
     questions = get_questions(args)
@@ -576,7 +580,7 @@ def _judge_single_question(
         {"role": "user", "content": user_prompt},
     ]
 
-    result_ab = call_judge(
+    result_ab = call_openai(
         messages=messages,
     )
     score_ab = get_score(result_ab["answer"], regex_patterns) if result_ab else None
@@ -595,7 +599,7 @@ def _judge_single_question(
         {"role": "user", "content": user_prompt_swap},
     ]
 
-    result_ba = call_judge(
+    result_ba = call_openai(
         messages=messages_swap,
     )
     score_ba = get_score(result_ba["answer"], regex_patterns) if result_ba else None
@@ -735,6 +739,12 @@ def main():
         '--store-outputs',
         action='store_true',
         help="Store model answers and judgments to disk (default: off).",
+    )
+    parser.add_argument(
+        '--seed',
+        type=int,
+        default=None,
+        help="Random seed for sampling during generation (default: unseeded).",
     )
     args = parser.parse_args()
 

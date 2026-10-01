@@ -1,20 +1,21 @@
 #!/usr/bin/env python3
+# Final-evaluation variant of evaluate.py. run_task.sh (and the eval rerun / baseline scripts) run this file; the
+# agent sandbox only ever gets evaluate.py. The only difference is --seed: the final evaluation runs once per fixed
+# seed and averages the results.
+# Each question gets its own generation seed derived from --seed (src/eval/per_sample_seed.py).
 # Feel free to use this script as needed. Don't edit it.
 # Note that our final evaluation will be done using default parameters of this script and --limit will be set to -1.
 # Also, the templates/ directory will be used as is without any modifications.
 # Make sure to test your model accordingly before submission.
-# This script will consume OpenRouter API credits for grading the model outputs, but don't worry about this.
+# This script will consume OpenAI API credits for grading the model outputs, but don't worry about this.
 # You are allowed to run this script as often as you want for evaluation purposes.
-# IMPORTANT: You are NOT allowed to use the OpenRouter API for anything but this evaluation script.
+# IMPORTANT: You are NOT allowed to use the OpenAI API for anything but this evaluation script.
 
-"""HealthBench evaluation (OpenRouter-backed variant).
-
-Grading runs through OpenRouter instead of the OpenAI API. run_task.sh selects this
-variant automatically when .env provides OPENROUTER_API_KEY but no OPENAI_API_KEY.
-"""
+"""HealthBench evaluation."""
 
 import os
 import argparse
+import sys
 import atexit
 import json
 import random
@@ -27,6 +28,10 @@ from typing import Dict, List, Optional
 import requests
 from dotenv import load_dotenv
 from tqdm import tqdm
+
+# Per-sample generation seeds, see src/eval/per_sample_seed.py.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+from per_sample_seed import sample_seed  # noqa: E402
 
 # Load environment variables from .env file
 load_dotenv()
@@ -45,7 +50,7 @@ VLLM_HEALTH_TIMEOUT = 600
 VLLM_REQUEST_TIMEOUT = 300
 VLLM_GENERATION_RETRY = 3
 
-JUDGE_MODEL = "openai/gpt-5-mini"  # OpenRouter model slug (provider-prefixed)
+JUDGE_MODEL = "gpt-5-mini"
 
 
 def _model_alias(model_path: str) -> str:
@@ -216,6 +221,7 @@ def generate_answers(
                 "model": args.model_path,
                 "messages": messages,
                 "max_tokens": args.max_new_tokens,
+                "seed": None if args.seed is None else sample_seed(args.seed, example.prompt_id),
             }
 
             answer_text: Optional[str] = None
@@ -313,13 +319,19 @@ def main():
         action='store_true',
         help="Store model answers to disk (default: off)."
     )
+    parser.add_argument(
+        '--seed',
+        type=int,
+        default=None,
+        help="Random seed for sampling during generation (default: unseeded).",
+    )
     args = parser.parse_args()
 
     model_alias = _model_alias(args.model_path)
 
-    if not os.environ.get("OPENROUTER_API_KEY"):
+    if "OPENAI_API_KEY" not in os.environ:
         raise EnvironmentError(
-            "OPENROUTER_API_KEY is not set. Please export your OpenRouter API key before running."
+            "OPENAI_API_KEY is not set. Please export your OpenAI API key before running."
         )
 
     # Load data

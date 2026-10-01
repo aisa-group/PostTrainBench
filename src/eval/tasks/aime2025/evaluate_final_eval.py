@@ -1,89 +1,48 @@
 #!/usr/bin/env python3
+# Final-evaluation variant of evaluate.py. run_task.sh (and the eval rerun / baseline scripts) run this file; the
+# agent sandbox only ever gets evaluate.py. The differences are --seed: the final evaluation runs once per fixed seed
+# and averages the results, each sample with its own generation seed derived from --seed (src/eval/per_sample_seed.py);
+# and the scorer: aime_scorer_exact() below compares the extracted answer with == instead of inspect_ai's str.endswith
+# (upstream scores "ANSWER: 711" correct for 11; src/eval/exact_numeric_match.py, PostTrainBench issue #44).
 from __future__ import annotations
 
 import os
-import re
+
 import argparse
+import sys
 import json
-from typing import Any
 
-from inspect_ai import Task, task
-from inspect_ai import eval as inspect_eval  # type: ignore
-from inspect_ai.dataset import Sample, hf_dataset
-from inspect_ai.scorer import (
-    Score,
-    Scorer,
-    Target,
-    accuracy,
-    match,
-    scorer,
-    stderr,
-)
+from inspect_ai.log._log import EvalLog, EvalMetric, EvalSample
+from inspect_ai import eval as inspect_eval  # type: ignore  # noqa: E402
+from inspect_ai import task_with
+from inspect_ai.scorer import CORRECT, INCORRECT, Score, Scorer, Target, accuracy, scorer, stderr
 from inspect_ai.solver import TaskState
-from inspect_ai.util._display import init_display_type
+from inspect_ai.util._display import init_display_type  # noqa: E402
 
-from inspect_evals.aime2024.aime2024 import aime2024_solver
+import inspect_evals.aime2025  # noqa: F401, E402  (registers task definitions)
+from inspect_evals.aime2025.aime2025 import remove_boxed_from_ans  # noqa: E402
 
-DATASET_PATH = "math-ai/aime26"
-
-USER_PROMPT_TEMPLATE = """
-Solve the following math problem step by step.
-The last line of your response should be of the form "ANSWER: $ANSWER" (without quotes) where $ANSWER is the answer to the problem.
-
-{prompt}
-
-Remember to put your answer on its own line at the end in the form "ANSWER: $ANSWER" (without quotes) where $ANSWER is the answer to the problem, and you do not need to use a \\boxed command.
-""".strip()
-
-
-@task
-def aime2026() -> Task:
-    """Inspect Task implementation for the AIME 2026 benchmark."""
-    dataset = hf_dataset(
-        path=DATASET_PATH,
-        split="test",
-        sample_fields=record_to_sample,
-    )
-
-    return Task(
-        dataset=dataset,
-        solver=aime2024_solver(),
-        scorer=[
-            aime_scorer(),
-        ],
-    )
-
-
-def record_to_sample(record: dict[str, Any]) -> Sample:
-    sample = Sample(
-        id=record["id"],
-        input=record["problem"],
-        target=str(record["answer"]),
-    )
-    return sample
-
-
-def remove_boxed_from_ans(answer: str) -> str:
-    # Sometimes, LLMs respond by formatting their responses
-    # with \boxed{...}, which inspect_ai.scorer.match
-    # does not handle well, so we remove it here.
-    return re.sub(r"\\boxed\{(.+)\}", r"\1", answer)
+# Per-sample generation seeds, see src/eval/per_sample_seed.py.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+from per_sample_seed import per_sample_seed  # noqa: E402
+from exact_numeric_match import last_number_exact  # noqa: E402
 
 
 @scorer(metrics=[accuracy(), stderr()])
-def aime_scorer() -> Scorer:
+def aime_scorer_exact() -> Scorer:
+    """inspect_evals' aime_scorer (strips \\boxed{...}, scores the last number) with an exact comparison."""
+
     async def score(state: TaskState, target: Target) -> Score:
         raw = state.output.completion
         cleaned = remove_boxed_from_ans(raw)
-        state.output.completion = cleaned
-
-        result = await match(numeric=True)(state, target)
-        if result is None:
-            raise ValueError("No result found")
-
-        result.metadata = {"unprocessed_answer": raw, "cleaned_answer": cleaned}
-
-        return result
+        answer = None
+        matched = False
+        for value in target:
+            answer, matched = last_number_exact(cleaned, value)
+            if matched:
+                break
+        return Score(value=CORRECT if matched else INCORRECT, answer=answer, explanation=cleaned,
+                     metadata={"unprocessed_answer": raw, "cleaned_answer": cleaned})
 
     return score
 
@@ -130,6 +89,12 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default="templates/",
     )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Random seed for sampling during generation (default: unseeded).",
+    )
     return parser.parse_args()
 
 
@@ -142,7 +107,8 @@ def main() -> None:
     if (args.limit is not None) and (args.limit != -1):
         other_kwargs["limit"] = args.limit
 
-    task = aime2026()
+    task = task_with(inspect_evals.aime2025.aime2025(), scorer=aime_scorer_exact())
+    solver = None if args.seed is None else per_sample_seed(task.solver, args.seed)
     model_args = {
         'gpu_memory_utilization': args.gpu_memory_utilization,
     }
@@ -159,9 +125,10 @@ def main() -> None:
         log_format='json',
         max_tokens=args.max_tokens,
         max_connections=args.max_connections,
+        solver=solver,
         **other_kwargs,
     )
-
+    
     if args.json_output_file is not None:
         assert len(eval_out) == 1, eval_out
         assert len(eval_out[0].results.scores) == 1, eval_out[0].results.scores

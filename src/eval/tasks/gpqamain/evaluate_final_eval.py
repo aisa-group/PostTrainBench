@@ -1,0 +1,204 @@
+#!/usr/bin/env python3
+# Final-evaluation variant of evaluate.py. run_task.sh (and the eval rerun / baseline scripts) run this file; the
+# agent sandbox only ever gets evaluate.py. The only difference is --seed, which fixes sampling and the answer-choice
+# order: the final evaluation runs once per fixed seed and averages the results. Each sample gets its own generation
+# seed derived from --seed (src/eval/per_sample_seed.py); the choice order is shuffled with --seed itself.
+"""
+GPQA: A Graduate-Level Google-Proof Q&A Benchmark
+
+David Rein, Betty Li Hou, Asa Cooper Stickland, Jackson Petty, Richard
+Yuanzhe Pang, Julien Dirani, Julian Michael, Samuel R. Bowman
+https://arxiv.org/abs/2311.12022
+
+Based on: https://github.com/UKGovernmentBEIS/inspect_evals/blob/main/src/inspect_evals/gpqa/gpqa.py
+"""
+from __future__ import annotations
+import os
+
+from typing import Any
+
+import argparse
+import sys
+import json
+
+from inspect_ai import Task, task
+from inspect_ai.dataset import Sample, hf_dataset
+from inspect_ai.scorer import choice
+from inspect_ai.solver import multiple_choice
+from inspect_ai.log._log import EvalLog, EvalMetric, EvalSample
+from inspect_ai import eval as inspect_eval  # type: ignore  # noqa: E402
+from inspect_ai.util._display import init_display_type  # noqa: E402
+
+# Per-sample generation seeds, see src/eval/per_sample_seed.py.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+from per_sample_seed import per_sample_seed  # noqa: E402
+
+DEFAULT_EPOCHS = 1
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run Inspect AI eval without banners.")
+    parser.add_argument(
+        "--model-path",
+        type=str,
+        default="final_model",
+        help="Path to the Hugging Face model (directory or model identifier).",
+    )
+    # this is a good limit for this task, just keep it like that (or use less in case you want faster tests)
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=50,
+        help="Optional limit for number of samples to evaluate.",
+    )
+    parser.add_argument(
+        '--json-output-file',
+        type=str,
+        default=None,
+        help="Optional path to output the metrics as a seperate JSON file.",
+    )
+    parser.add_argument(
+        "--max-tokens",
+        type=int,
+        default=16000,
+    )
+    parser.add_argument(
+        '--templates-dir',
+        type=str,
+        default="templates/",
+    )
+    parser.add_argument(
+        "--gpu-memory-utilization",
+        type=float,
+        default=0.8,
+    )
+    # You can adjust --max-connections this if you want faster tests and don't receive errors
+    parser.add_argument(
+        "--max-connections",
+        type=int,
+        default=6,
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Random seed for sampling during generation and for the answer-choice order (default: unseeded).",
+    )
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+
+    init_display_type("plain")
+
+    other_kwargs = {}
+    if (args.limit is not None) and (args.limit != -1):
+        other_kwargs["limit"] = args.limit
+
+    task = gpqa_main(shuffle_seed=args.seed)
+    solver = None if args.seed is None else per_sample_seed(task.solver, args.seed)
+    model_args = {
+        'gpu_memory_utilization': args.gpu_memory_utilization,
+    }
+    model_args.update(template_kwargs(args))
+
+    eval_out = inspect_eval(
+        task,
+        model=f"vllm/{args.model_path}",
+        model_args=model_args,
+        score_display=False,
+        log_realtime=False,
+        timeout=18000000,
+        attempt_timeout=18000000,
+        log_format='json',
+        max_tokens=args.max_tokens,
+        max_connections=args.max_connections,
+        solver=solver,
+        **other_kwargs,
+    )
+
+    if args.json_output_file is not None:
+        assert len(eval_out) == 1, eval_out
+        assert len(eval_out[0].results.scores) == 1, eval_out[0].results.scores
+        metrics = {}
+        for k, v in eval_out[0].results.scores[0].metrics.items():
+            metrics[k] = v.value
+
+        with open(args.json_output_file, 'w') as f:
+            json.dump(metrics, f, indent=2)
+
+@task
+def gpqa_main(shuffle_seed: int | None = None) -> Task:
+    return Task(
+        dataset=hf_dataset(
+            path='Idavidrein/gpqa',
+            name='gpqa_main',
+            split='train',
+            sample_fields=record_to_sample,
+            # Seeded so a fixed --seed also fixes the answer-choice order.
+            shuffle_choices=True if shuffle_seed is None else shuffle_seed,
+        ),
+        solver=[
+            multiple_choice(cot=True),
+        ],
+        scorer=choice(),
+        epochs=DEFAULT_EPOCHS,
+    )
+
+
+# map records to inspect samples (note that target is always "A" in the,
+# dataset, we will shuffle the presentation of options to mitigate this)
+def record_to_sample(record: dict[str, Any]) -> Sample:
+    return Sample(
+        input=record["Question"],
+        choices=[
+            str(record["Correct Answer"]),
+            str(record["Incorrect Answer 1"]),
+            str(record["Incorrect Answer 2"]),
+            str(record["Incorrect Answer 3"]),
+        ],
+        target="A",
+        id=record["Record ID"],
+    )
+
+def model_type(args) -> str:
+    if 'qwen' in args.model_path.lower():
+        return 'qwen'
+    if 'llama' in args.model_path.lower():
+        return 'llama'
+    if 'gemma' in args.model_path.lower():
+        return 'gemma'
+    if 'smollm' in args.model_path.lower():
+        return 'smollm'
+
+    with open(os.path.join(args.model_path, "config.json"), 'r') as f:
+        config = json.load(f)
+    architecture = config['architectures'][0].lower()
+    if 'gemma' in architecture:
+        return 'gemma'
+    if 'llama' in architecture:
+        return 'llama'
+    if 'qwen' in architecture:
+        return 'qwen'
+    if 'smollm' in architecture:
+        return 'smollm'
+    raise ValueError(architecture)
+
+def template_kwargs(args) -> dict:
+    model_type_str = model_type(args)
+    if model_type_str == 'qwen':
+        template = 'qwen3.jinja'
+    elif model_type_str == 'llama':
+        template = 'llama3.jinja'
+    elif model_type_str == 'gemma':
+        template = 'gemma3.jinja'
+    elif model_type_str == 'smollm':
+        template = 'smollm.jinja'
+    else:
+        raise ValueError(model_type_str)
+    return {
+        'chat_template': os.path.join(args.templates_dir, template)
+    }
+
+if __name__ == "__main__":
+    main()
