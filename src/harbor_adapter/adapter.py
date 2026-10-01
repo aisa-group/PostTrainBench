@@ -438,6 +438,8 @@ fi
                                      judge_tools/ (checkers + reference_configs/)
           ptb/src/trace_parsing/     parse_trace.py + parsers + sanitize_trace.py
           ptb/src/eval/run_final_eval.sh
+          ptb/src/eval/*.py          shared final-eval modules the task scripts
+                                     import (per_sample_seed.py, exact_numeric_match.py)
           ptb/src/eval/tasks/<id>/   the whole task dir: info.json, the final-eval
                                      scripts (evaluate_final_eval.py, ...), their
                                      helpers, test_data.json
@@ -464,6 +466,10 @@ fi
         eval_dst = tests_dir / "ptb" / "src" / "eval"
         eval_dst.mkdir(parents=True, exist_ok=True)
         shutil.copy(self.posttrainbench_root / "src" / "eval" / "run_final_eval.sh", eval_dst / "run_final_eval.sh")
+        # The shared modules every evaluate_final_eval.py imports from src/eval/
+        # (sys.path two levels up from the task dir), e.g. per_sample_seed.py.
+        for py in sorted((self.posttrainbench_root / "src" / "eval").glob("*.py")):
+            shutil.copy(py, eval_dst / py.name)
         self._copy_repo_dir(self.posttrainbench_root / "src" / "eval" / "templates", eval_dst / "templates")
         # The task dir's files as git sees them (local eval logs and caches are
         # gitignored and can be many GB); test_data.json is gitignored too, so it

@@ -23,7 +23,9 @@ with its condor source and exits 1 on any mismatch:
               update_agent_cli.sh's npm packages vs the wrapper's
   timer       condor's and Harbor's timer.sh print the same
   scope       scored benchmarks and expected models vs the adapter
-  generate    every task generates; its shell scripts and task.toml parse
+  generate    every task generates; its shell scripts and task.toml parse; the
+              verifier slice has every src/eval module its final-eval scripts
+              import (per_sample_seed.py, exact_numeric_match.py, ...)
 
 No GPU, API keys or network needed. Missing (gitignored) test_data.json files
 are replaced by placeholders for the duration of the run and removed again.
@@ -349,6 +351,17 @@ def check_scope(adapter_mod) -> None:
 
 # --------------------------------------------------------------- generate
 
+def imported_modules(text: str) -> set[str]:
+    """Top-level module names a Python source imports (import X / from X import ...)."""
+    mods = set()
+    for node in ast.walk(ast.parse(text)):
+        if isinstance(node, ast.Import):
+            mods.update(alias.name.split(".")[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+            mods.add(node.module.split(".")[0])
+    return mods
+
+
 def check_generate(adapter_mod) -> None:
     with tempfile.TemporaryDirectory() as d:
         gen = adapter_mod.PostTrainBenchAdapter(output_dir=Path(d), num_hours=1)
@@ -380,6 +393,14 @@ def check_generate(adapter_mod) -> None:
                         fail("generate", f"{task.name}: verifier slice lacks ptb/{needed}")
                 if bench == "humaneval" and not (ptb / "src/eval/tasks/humaneval/with_answer_sandbox_local.sh").exists():
                     fail("generate", f"{task.name}: verifier slice lacks humaneval's with_answer_sandbox_local.sh")
+                # The final-eval scripts import shared modules from src/eval/ (sys.path two levels up from the
+                # task dir). One missing from the slice fails every evaluation at import time, and the reward
+                # silently falls back to the baseline.
+                for script_py in sorted((ptb / "src/eval/tasks" / bench).glob("*.py")):
+                    for mod in sorted(imported_modules(script_py.read_text())):
+                        if (REPO / "src/eval" / f"{mod}.py").is_file() and not (ptb / "src/eval" / f"{mod}.py").is_file():
+                            fail("generate", f"{task.name}: {script_py.name} imports `{mod}` but the verifier "
+                                             f"slice lacks ptb/src/eval/{mod}.py")
                 # Build contexts are uploaded to Modal on every image build: no local junk (gitignored eval
                 # logs, caches), and nothing near the size of a stray log dump.
                 for ctx in ("tests", "environment"):

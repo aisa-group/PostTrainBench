@@ -245,11 +245,12 @@ transcript), `../test_data.json`, the checker tools and `../final_model_config.j
 produces no verdict is a warning, not a failure.
 
 The evaluation is condor's `src/eval/run_final_eval.sh`, run with `EVAL_RUNTIME=local`: the
-benchmark's `evaluate_final_eval.py` (never shown to the agent) once per fixed seed (5; 1 for
-arenahardwriting and healthbench, and for models that decode greedily), each seed through the
-max-tokens retry cascade, and the mean over the seeds that succeeded. The reward is that mean's
-`accuracy`. Outputs in `/logs/verifier/`: `metrics.json` (the seed mean), `evaluation/` (per-seed
-metrics and attempt logs), `reward.txt`, `judgement_<id>.json`, `judge_output_<id>.{json,txt}`,
+benchmark's `evaluate_final_eval.py` (never shown to the agent) once per fixed seed (5 for
+aime2025, 3 for gpqamain/gsm8k/humaneval, 1 for arenahardwriting and healthbench, and for models
+that decode greedily), each seed through the max-tokens retry cascade, and the mean over the seeds
+that succeeded. The reward is that mean's `accuracy`. Outputs in `/logs/verifier/`: `metrics.json`
+(the seed mean), `evaluation/` (per-seed metrics, attempt logs and `inspect_logs/`), `reward.txt`,
+`judgement_<id>.json`, `judge_output_<id>.{json,txt}`,
 `solve_out.txt`, `solve_parsed.txt`. If the first seed fails at every stage there is no
 `metrics.json`, and the reward is the base model's zero-shot score, as `scripts/collect.py` scores
 such a run.
