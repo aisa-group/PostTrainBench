@@ -5,8 +5,8 @@ same prompt, judges and evaluation as the condor pipeline (`src/run_task.sh`).
 
 ## Benchmarks and models
 
-Benchmarks come from `src/eval/tasks/*/info.json`: aime2025, arenahardwriting, bfcl, gpqamain,
-gsm8k, healthbench, humaneval. arenahardwriting and healthbench grade with an OpenAI judge
+Benchmarks come from `src/eval/tasks/*/info.json` (PostTrainBench v1.2): aime2025, arenahardwriting,
+gpqamain, gsm8k, healthbench, humaneval. arenahardwriting and healthbench grade with an OpenAI judge
 (`required_api_keys` in their `info.json`), so the agent also receives `OPENAI_API_KEY` for them.
 
 | Key | Base model |
@@ -17,8 +17,16 @@ gsm8k, healthbench, humaneval. arenahardwriting and healthbench grade with an Op
 | gemma3-4b | google/gemma-3-4b-pt |
 
 `all` (`run_modal_task.sh --benchmark all`, `run_adapter.py --all`) means the benchmarks condor
-scores, `HARDCODED_BENCHMARKS` in `scripts/utils.py`: 6 benchmarks x 4 models = **24 tasks**. bfcl is
-retired from scoring but can still be run by name (`--benchmark bfcl`).
+scores, `HARDCODED_BENCHMARKS` in `scripts/utils.py`: 6 benchmarks x 4 models = **24 tasks**.
+
+**humaneval's answer sandbox.** Its v1.2 scorer runs the model's answers in a separate, isolated
+sandbox: on condor a second apptainer container (`with_answer_sandbox.sh`). apptainer cannot run
+inside Modal's gVisor sandbox, so in the verifier the answers run in
+`src/eval/tasks/humaneval/with_answer_sandbox_local.sh`: the same answer server, jailed with the
+namespaces apptainer itself uses (created inside a user namespace, which Modal allows): as `nobody`,
+no network, its own PID namespace, and an allow-list root with only the image's system dirs,
+read-only. The tests, logs, keys and HF cache do not exist in there. `run_final_eval.sh` uses it by
+default with `EVAL_RUNTIME=local`, and never runs the answers without it.
 
 ## Quick start
 
@@ -27,11 +35,11 @@ retired from scoring but can still be run by name (`--benchmark bfcl`).
 ```bash
 uv tool install --force 'harbor[modal]>=0.23.0'
 harbor_py="$(dirname "$(readlink -f "$(command -v harbor)")")/python"
-uv pip install --python "$harbor_py" python-socks   # behind an HTTP proxy only; --force above removes it
+uv pip install --python "$harbor_py" python-socks 'modal[api-proxy-support]'   # behind an HTTP proxy only; --force above removes them
 $harbor_py -m modal setup                            # Modal login
 ```
 
-Without `python-socks`, every Modal call on a proxy host fails with "Could not connect to the Modal server".
+Behind a proxy Modal needs both: without `python-socks` every call fails with "Could not connect to the Modal server"; without `aiohttp-socks` (the `api-proxy-support` extra) uploads of files over 2 MiB fail with "the 'aiohttp-socks' package is not installed" (e.g. healthbench's test set in the image build context).
 
 Put all keys in the repo-root `.env` (template: `example.env`; details in [Keys](#keys)):
 `OPENAI_API_KEY`, a **read-only** `HF_TOKEN`, and your agent's key (`ANTHROPIC_API_KEY` for
@@ -178,13 +186,13 @@ posttrainbench-gsm8k-qwen3-1.7b/
 │   ├── entrypoint.sh, system_monitor.sh, ptb_collect.sh  # -> /usr/local/bin (not in the workspace)
 │   ├── contamination_check.py, test_data.json            # -> /home/agent/ (agent self-decontamination)
 │   ├── evaluate.py, templates/, timer.sh, metadata.json  # the agent's workspace
-│   └── evaluation_code/ / task_context files             # (arenahardwriting, healthbench / bfcl)
+│   └── evaluation_code/                                  # (arenahardwriting, healthbench)
 └── tests/                 # VERIFIER image build context, baked into /tests
     ├── Dockerfile, requirements-direct.txt, entrypoint.sh, system_monitor.sh
-    ├── test.sh            # verifier: four judges, then the 3-phase eval (reads $PTB_MODEL_DIR)
-    ├── evaluate.py, templates/, test_data.json
+    ├── test.sh            # verifier: condor's judge phase, then its final evaluation (reads $PTB_MODEL_DIR)
     ├── metadata.json      # adds baseline_accuracy (verifier only)
-    └── ptb/               # src/judges + src/trace_parsing + the benchmark's info.json
+    └── ptb/               # repo slice: src/judges, src/trace_parsing, src/eval/run_final_eval.sh,
+                           # src/eval/tasks/<id>/ (final-eval scripts, test set), templates, src/utils helpers
 ```
 
 The prompt is rendered by condor's own `get_prompt.py`. `timer.sh` counts down from `/timer_start`, which the `task.toml` healthcheck writes right before the agent launches.
@@ -236,10 +244,15 @@ verifier image, authenticated by `OPENAI_API_KEY`, each run bounded by `PTB_JUDG
 transcript), `../test_data.json`, the checker tools and `../final_model_config.json`. A judge that
 produces no verdict is a warning, not a failure.
 
-The evaluation is `run_task.sh`'s: up to 4, 3 and 2 attempts at its per-benchmark token limits,
-killing GPU processes between attempts. The reward is the accuracy from `metrics.json`. Outputs in
-`/logs/verifier/`: `metrics.json`, `reward.txt`, `judgement_<id>.json`,
-`judge_output_<id>.{json,txt}`, `solve_out.txt`, `solve_parsed.txt`.
+The evaluation is condor's `src/eval/run_final_eval.sh`, run with `EVAL_RUNTIME=local`: the
+benchmark's `evaluate_final_eval.py` (never shown to the agent) once per fixed seed (5; 1 for
+arenahardwriting and healthbench, and for models that decode greedily), each seed through the
+max-tokens retry cascade, and the mean over the seeds that succeeded. The reward is that mean's
+`accuracy`. Outputs in `/logs/verifier/`: `metrics.json` (the seed mean), `evaluation/` (per-seed
+metrics and attempt logs), `reward.txt`, `judgement_<id>.json`, `judge_output_<id>.{json,txt}`,
+`solve_out.txt`, `solve_parsed.txt`. If the first seed fails at every stage there is no
+`metrics.json`, and the reward is the base model's zero-shot score, as `scripts/collect.py` scores
+such a run.
 
 If `final_model` is missing or has no `config.json`, the verifier skips judges and evaluation,
 writes all four verdicts unflagged with a justification such as "No final model submitted", and
@@ -262,7 +275,8 @@ differences below are intended; the check allows exactly these.
 | RAM | 128 GB, hard cap | `memory_mb = 131072` is a reservation only; `-- --memory guarantee` also caps it |
 | Disk | `request_disk = 400G` | `storage_mb` is ignored by Modal; the host disk is effectively unbounded |
 | Agent time | `num_hours` + 5 min, timer starts at job setup | exactly `num_hours`, timer starts right before the agent |
-| Verifier time | no limit (eval: 8 h per attempt) | judge runs (6) x 3000 s + 4 h for the eval = 9 h, derived from `judge_lib.sh` by `adapter.py`; 2 h per eval attempt, so a hung attempt still leaves time for the retries |
+| Verifier time | no limit (eval: 8 h per attempt) | judge runs (6) x 3000 s + 4 h for the eval = 9 h, derived from `judge_lib.sh` by `adapter.py`; 2 h per eval attempt (`EVAL_ATTEMPT_TIMEOUT_SEC`), so a hung attempt still leaves time for the retries |
+| humaneval answer sandbox | a second apptainer container (`with_answer_sandbox.sh`) | a namespace jail in the verifier (`with_answer_sandbox_local.sh`): same isolation, see "Benchmarks and models" |
 | HF cache | pre-filled `HF_HOME` overlay | none: the base model downloads inside the agent's budget |
 | Judge auth | ChatGPT subscription `auth.json` in `gpt_5_5.sif` | `OPENAI_API_KEY`, directly in the verifier image (`JUDGE_RUNTIME=local`) |
 | CLI pins | also per-model pins in `agents/claude_non_api_max`, `agents/glmx` `solve.sh` | not mirrored |

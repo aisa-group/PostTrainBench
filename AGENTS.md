@@ -374,7 +374,8 @@ API-usage verdict is `judgement_api.json` (or `judgement_api_rerun.json`).
 so external users can run it without the cluster. Condor is the reference implementation; the
 adapter must stay in step with it. Most of it is read straight from condor at task generation
 (prompt, benchmarks, `evaluate.py`, test sets, judge code and prompts, trace parsers, baselines),
-and its verifier runs condor's own judge phase (`run_all_judges`). The rest it mirrors, and
+and its verifier runs condor's own judge phase (`run_all_judges`) and final evaluation
+(`src/eval/run_final_eval.sh`, with `EVAL_RUNTIME=local`). The rest it mirrors, and
 `src/harbor_adapter/check_parity.py` compares every mirror with its condor source. CI
 (`.github/workflows/harbor-parity.yml`) runs it on every change to the condor files involved.
 
@@ -389,16 +390,19 @@ A failure names the condor file and the Harbor file that disagree. The mirrored 
 | condor | Harbor |
 |---|---|
 | `containers/opus_5.def` (agent image) | `src/harbor_adapter/template/environment/Dockerfile` |
-| eval container `.def` (`run_task.sh`) and judge container `.def` (`judge_lib.sh` `JUDGE_CONTAINER`) | `src/harbor_adapter/template/tests/Dockerfile` |
-| constant `--env` values in `run_task.sh` / `judge_lib.sh` | `ENV` lines in both Dockerfiles |
-| eval retry ladder in `run_task.sh` | `src/harbor_adapter/template/tests/test.sh` |
+| eval container `.def` (`run_final_eval.sh`) and judge container `.def` (`judge_lib.sh` `JUDGE_CONTAINER`) | `src/harbor_adapter/template/tests/Dockerfile` |
+| constant `--env` values in `run_task.sh` / `run_final_eval.sh` / `judge_lib.sh` | `ENV` lines in both Dockerfiles |
 | `agents/claude/solve.sh` settings and flags, `src/utils/update_agent_cli.sh` packages | `src/harbor_adapter/run_modal_task.sh` |
 | `src/utils/create_timer.sh` | `generate_timer_sh` in `src/harbor_adapter/adapter.py` |
 | judge verdict fields (`src/judges/*/prompt.md`) | `write_no_model_results` in `test.sh` |
 
 A `.def` with `--torch-backend=auto` must be mirrored by the explicit backend of its CUDA base
 image (e.g. `cuda:12.9.1` -> `cu129`): Modal builds without a GPU, so `auto` would give CPU
-torch. Change judge behaviour only in `src/judges/`, never in `test.sh`. If a difference is
+torch. Change judge and evaluation behaviour only in `src/judges/` and `src/eval/run_final_eval.sh`,
+never in `test.sh`, and keep their non-apptainer paths (`JUDGE_RUNTIME=local`, `EVAL_RUNTIME=local`)
+working: the Harbor verifier runs them. humaneval's answer sandbox has two implementations,
+`with_answer_sandbox.sh` (apptainer) and `with_answer_sandbox_local.sh` (namespaces, for Harbor);
+change them together. If a difference is
 intended, update the check and record it in `src/harbor_adapter/README.md` ("Differences from
 condor").
 

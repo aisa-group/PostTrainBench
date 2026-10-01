@@ -36,11 +36,9 @@ TASKS_ROOT = POSTTRAINBENCH_ROOT / "src" / "eval" / "tasks"
 JUDGE_TOOLS_DIR = POSTTRAINBENCH_ROOT / "src" / "judges" / "judge_tools"
 GET_PROMPT = POSTTRAINBENCH_ROOT / "src" / "eval" / "general" / "get_prompt.py"
 
-# Benchmarks present in src/eval/tasks/ that are deliberately not offered as
-# Harbor tasks.
-#   aime2026: upstream's test-data downloader has no entry for it, so
-#             run_task.sh cannot run it either (test_data.json is mandatory).
-SKIP_BENCHMARKS = {"aime2026"}
+# Benchmarks with an info.json that are deliberately not offered as Harbor
+# tasks (none at the moment).
+SKIP_BENCHMARKS: set[str] = set()
 
 
 @dataclass
@@ -354,34 +352,29 @@ fi
         *,
         for_tests: bool = False,
     ) -> None:
-        """The evaluation pipeline files (what run_task.sh copies into task/):
+        """The agent's workspace files (what run_task.sh copies into task/):
         evaluate.py, templates/, evaluation_code/ and task_context/*, plus
-        metadata.json. With for_tests=True also the verifier-only files."""
+        metadata.json. With for_tests=True, the verifier's files instead:
+        condor's repo slice (_copy_condor_tree) and metadata.json."""
         task_src = self._task_src(benchmark_id)
 
-        eval_src = task_src / "evaluate.py"
-        if not eval_src.exists():
-            raise FileNotFoundError(f"evaluate.py not found: {eval_src}")
-        shutil.copy(eval_src, target_dir / "evaluate.py")
-
-        templates_src = self.posttrainbench_root / "src" / "eval" / "templates"
-        shutil.copytree(templates_src, target_dir / "templates", dirs_exist_ok=True)
-
-        eval_code_src = task_src / "evaluation_code"
-        if eval_code_src.is_dir():
-            shutil.copytree(eval_code_src, target_dir / "evaluation_code", dirs_exist_ok=True)
-
-        task_context_src = task_src / "task_context"
-        if task_context_src.is_dir():
-            for item in task_context_src.iterdir():
-                dst = target_dir / item.name
-                if item.is_dir():
-                    shutil.copytree(item, dst, dirs_exist_ok=True)
-                else:
-                    shutil.copy(item, dst)
-
         if for_tests:
-            self._copy_judge_tree(target_dir, benchmark_id)
+            self._copy_condor_tree(target_dir, benchmark_id)
+        else:
+            eval_src = task_src / "evaluate.py"
+            if not eval_src.exists():
+                raise FileNotFoundError(f"evaluate.py not found: {eval_src}")
+            shutil.copy(eval_src, target_dir / "evaluate.py")
+
+            self._copy_repo_dir(self.posttrainbench_root / "src" / "eval" / "templates", target_dir / "templates")
+
+            eval_code_src = task_src / "evaluation_code"
+            if eval_code_src.is_dir():
+                self._copy_repo_dir(eval_code_src, target_dir / "evaluation_code")
+
+            task_context_src = task_src / "task_context"
+            if task_context_src.is_dir():
+                self._copy_repo_dir(task_context_src, target_dir)
 
         metadata = {
             "benchmark_id": benchmark_id,
@@ -414,30 +407,53 @@ fi
             metadata["baseline_accuracy"] = baseline
         (target_dir / "metadata.json").write_text(json.dumps(metadata, indent=2))
 
-    def _copy_judge_tree(self, tests_dir: Path, benchmark_id: str) -> None:
-        """Verifier-only inputs for the v1.1 reward-hacking judges.
+    def _copy_repo_dir(self, src: Path, dst: Path) -> None:
+        """Copy a repo directory as git sees it (see _repo_files) into dst."""
+        for rel_path in self._repo_files(src):
+            (dst / rel_path).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src / rel_path, dst / rel_path)
 
-        tests/ptb/ reproduces the slice of the PostTrainBench repo layout the
-        judge tooling resolves paths against (get_judge_prompt.py uses
-        REPO_ROOT = src/judges/../..; sanitize_trace.py wants REPO_ROOT/.env):
+    def _repo_files(self, directory: Path) -> list[Path]:
+        """Files under `directory` that belong to the repo, relative to it: tracked
+        plus new but not gitignored (`git ls-files -co --exclude-standard`). Without
+        git, every file except logs/ and __pycache__/."""
+        try:
+            out = subprocess.run(
+                ["git", "ls-files", "-co", "--exclude-standard", "--", "."],
+                cwd=directory, capture_output=True, text=True, check=True,
+            ).stdout
+            return [Path(line) for line in out.splitlines() if (directory / line).is_file()]
+        except (OSError, subprocess.CalledProcessError):
+            return [f.relative_to(directory) for f in directory.rglob("*")
+                    if f.is_file() and not {"logs", "__pycache__"} & set(f.relative_to(directory).parts)]
+
+    def _copy_condor_tree(self, tests_dir: Path, benchmark_id: str) -> None:
+        """The verifier's inputs: tests/ptb/ is the slice of the PostTrainBench
+        repo that condor's judge phase and final evaluation run in, laid out as
+        in the repo (both resolve paths against the repo root; test.sh runs
+        them from /tests/ptb):
 
           ptb/src/judges/            get_judge_prompt.py, judge_lib.sh (judge set,
                                      order, defaults), <judge>/{judge.conf,prompt.md},
                                      judge_tools/ (checkers + reference_configs/)
           ptb/src/trace_parsing/     parse_trace.py + parsers + sanitize_trace.py
-          ptb/src/eval/tasks/<id>/info.json
+          ptb/src/eval/run_final_eval.sh
+          ptb/src/eval/tasks/<id>/   the whole task dir: info.json, the final-eval
+                                     scripts (evaluate_final_eval.py, ...), their
+                                     helpers, test_data.json
+          ptb/src/eval/templates/    chat templates
+          ptb/src/utils/             aggregate_seed_metrics.py, default_temperature.py
           ptb/.env                   empty: no host secrets in the image
-          test_data.json             n-gram checker reference
         """
         judges_src = self.posttrainbench_root / "src" / "judges"
         judges_dst = tests_dir / "ptb" / "src" / "judges"
         judges_dst.mkdir(parents=True, exist_ok=True)
         for name in ("get_judge_prompt.py", "judge_lib.sh"):
             shutil.copy(judges_src / name, judges_dst / name)
-        shutil.copytree(judges_src / "judge_tools", judges_dst / "judge_tools", dirs_exist_ok=True)
+        self._copy_repo_dir(judges_src / "judge_tools", judges_dst / "judge_tools")
         for conf in sorted(judges_src.glob("*/judge.conf")):
             judge_dir = conf.parent
-            shutil.copytree(judge_dir, judges_dst / judge_dir.name, dirs_exist_ok=True)
+            self._copy_repo_dir(judge_dir, judges_dst / judge_dir.name)
 
         tp_src = self.posttrainbench_root / "src" / "trace_parsing"
         tp_dst = tests_dir / "ptb" / "src" / "trace_parsing"
@@ -445,17 +461,26 @@ fi
         for py in tp_src.glob("*.py"):
             shutil.copy(py, tp_dst / py.name)
 
-        info_dst = tests_dir / "ptb" / "src" / "eval" / "tasks" / benchmark_id
-        info_dst.mkdir(parents=True, exist_ok=True)
-        shutil.copy(self._task_src(benchmark_id) / "info.json", info_dst / "info.json")
-        # prepare_judge_sandbox (judge_lib.sh) reads it from here.
-        shutil.copy(self._test_data_path(benchmark_id), info_dst / "test_data.json")
+        eval_dst = tests_dir / "ptb" / "src" / "eval"
+        eval_dst.mkdir(parents=True, exist_ok=True)
+        shutil.copy(self.posttrainbench_root / "src" / "eval" / "run_final_eval.sh", eval_dst / "run_final_eval.sh")
+        self._copy_repo_dir(self.posttrainbench_root / "src" / "eval" / "templates", eval_dst / "templates")
+        # The task dir's files as git sees them (local eval logs and caches are
+        # gitignored and can be many GB); test_data.json is gitignored too, so it
+        # is copied explicitly (prepare_judge_sandbox and the decontamination
+        # tooling read it here).
+        task_dst = eval_dst / "tasks" / benchmark_id
+        self._copy_repo_dir(self._task_src(benchmark_id), task_dst)
+        shutil.copy(self._test_data_path(benchmark_id), task_dst / "test_data.json")
+
+        utils_dst = tests_dir / "ptb" / "src" / "utils"
+        utils_dst.mkdir(parents=True, exist_ok=True)
+        for name in ("aggregate_seed_metrics.py", "default_temperature.py"):
+            shutil.copy(self.posttrainbench_root / "src" / "utils" / name, utils_dst / name)
 
         (tests_dir / "ptb" / ".env").write_text(
             "# Intentionally empty: sanitize_trace.py reads *_API_KEY / *_TOKEN values from here.\n"
         )
-
-        shutil.copy(self._test_data_path(benchmark_id), tests_dir / "test_data.json")
 
     # ---------------------------------------------------------------- tests
 
@@ -469,7 +494,7 @@ fi
         """tests/: the verifier image build context (harbor separate-verifier
         mode builds it into a container the agent never touches). Must
         self-contain test.sh and everything it reads, under /tests/ —
-        including the judge tree (see _copy_judge_tree)."""
+        including condor's repo slice (see _copy_condor_tree)."""
         tests_dir = task_dir / "tests"
         tests_dir.mkdir(parents=True, exist_ok=True)
 

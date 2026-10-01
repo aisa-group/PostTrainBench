@@ -8,10 +8,14 @@ mirrors drift silently when condor changes. This script compares each mirror
 with its condor source and exits 1 on any mismatch:
 
   images      agent Dockerfile vs the agent .def, verifier Dockerfile vs the
-              eval .def (run_task.sh) and the judge .def (judge_lib.sh)
-  env         constant --env values run_task.sh / judge_lib.sh pass to the
-              agent, eval and judge containers vs the Dockerfiles' ENV
-  eval        run_task.sh's retry ladder (attempts, token limits) vs test.sh
+              eval .def (run_final_eval.sh) and the judge .def (judge_lib.sh)
+  env         constant --env values run_task.sh / run_final_eval.sh /
+              judge_lib.sh pass to the agent, eval and judge containers vs the
+              Dockerfiles' ENV
+  eval        test.sh runs condor's src/eval/run_final_eval.sh (seeds, retry
+              cascade, seed average) with EVAL_RUNTIME=local, no ladder of its own;
+              humaneval's answers run in with_answer_sandbox_local.sh, which keeps
+              every isolation property of the apptainer answer sandbox
   judges      test.sh runs condor's run_all_judges (no re-implementation);
               the verdict fields test.sh writes vs the judge prompts;
               the exporter's multi-run dir vs scripts/utils.py
@@ -54,6 +58,8 @@ TEST_SH = ADAPTER / "template" / "tests" / "test.sh"
 WRAPPER = ADAPTER / "run_modal_task.sh"
 EXPORTER = ADAPTER / "harbor_to_results.py"
 RUN_TASK = REPO / "src" / "run_task.sh"
+FINAL_EVAL = REPO / "src" / "eval" / "run_final_eval.sh"
+LOCAL_SANDBOX = REPO / "src" / "eval" / "tasks" / "humaneval" / "with_answer_sandbox_local.sh"
 JUDGES = REPO / "src" / "judges"
 JUDGE_LIB = JUDGES / "judge_lib.sh"
 UTILS_PY = REPO / "scripts" / "utils.py"
@@ -138,9 +144,9 @@ def check_images() -> None:
     c, h = image_spec(AGENT_DEF)["npm"], image_spec(AGENT_DF)["npm"]
     expect_equal("images/agent", "agent CLI pins (npm)", c, h, rel(AGENT_DEF), rel(AGENT_DF))
 
-    eval_sif = re.search(r"/(\w+)\.sif python", RUN_TASK.read_text())
+    eval_sif = re.search(r'^\s*EVAL_CONTAINER="\$\{POST_TRAIN_BENCH_CONTAINERS_DIR\}/(\w+)\.sif"', FINAL_EVAL.read_text(), re.M)
     if not eval_sif:
-        fail("images/verifier", f"cannot find the eval container in {rel(RUN_TASK)} (`<name>.sif python`)")
+        fail("images/verifier", f"cannot find the eval container in {rel(FINAL_EVAL)} (EVAL_CONTAINER=...<name>.sif)")
     else:
         check_ml_stack("images/verifier", REPO / "containers" / f"{eval_sif.group(1)}.def", VERIFIER_DF)
 
@@ -152,9 +158,10 @@ def check_images() -> None:
 
 # -------------------------------------------------------------------- env
 
-def literal_envs(text: str) -> dict[str, str]:
-    """Constant `--env NAME="value"` pairs (skips "$VAR" values and empty strings)."""
-    return {k: v for k, v in re.findall(r'--env ([A-Z_][A-Z0-9_]*)="([^"$]+)"', text)}
+def literal_envs(text: str) -> list[tuple[str, str]]:
+    """Every constant `--env NAME="value"` (skips "$VAR" values and empty strings). A list,
+    not a dict: a variable set in several places must match in each of them."""
+    return re.findall(r'--env ([A-Z_][A-Z0-9_]*)="([^"$]+)"', text)
 
 
 def dockerfile_env(path: Path) -> dict[str, str]:
@@ -164,42 +171,66 @@ def dockerfile_env(path: Path) -> dict[str, str]:
 def check_env() -> None:
     rt, jl = RUN_TASK.read_text(), JUDGE_LIB.read_text()
     agent_env = dockerfile_env(AGENT_DF)
-    for k, v in literal_envs(shell_function(rt, "solve_task")).items():
+    for k, v in literal_envs(shell_function(rt, "solve_task")):
         expect_equal("env/agent", k, v, agent_env.get(k), f"{rel(RUN_TASK)} solve_task", rel(AGENT_DF))
     gpus = str(tomllib.loads((ADAPTER / "template" / "task.toml").read_text())["environment"]["gpus"])
     expect_equal("env/agent", "NUM_GPUS (condor passes the job's GPU count)", gpus, agent_env.get("NUM_GPUS"),
                  "template/task.toml [environment] gpus", rel(AGENT_DF))
 
+    fe = FINAL_EVAL.read_text()
     judge_block = re.search(r"^JUDGE_EXTRA_APPTAINER_ARGS=\((.*?)^\)", rt, re.S | re.M)
-    verifier_src = (shell_function(rt, "run_evaluation") + (judge_block.group(1) if judge_block else "")
-                    + shell_function(jl, "run_judge_exec"))
+    verifier_src = (shell_function(fe, "run_evaluation") + shell_function(fe, "probe_default_temperature")
+                    + (judge_block.group(1) if judge_block else "") + shell_function(jl, "run_judge_exec"))
     verifier_env = dockerfile_env(VERIFIER_DF)
-    for k, v in literal_envs(verifier_src).items():
+    for k, v in literal_envs(verifier_src):
         expect_equal("env/verifier", k, v, verifier_env.get(k),
-                     f"{rel(RUN_TASK)} eval/judge containers, {rel(JUDGE_LIB)}", rel(VERIFIER_DF))
+                     f"{rel(FINAL_EVAL)} / {rel(RUN_TASK)} / {rel(JUDGE_LIB)}", rel(VERIFIER_DF))
 
 
 # ------------------------------------------------------------------- eval
 
+def code_lines(text: str) -> str:
+    return "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+
+
 def check_eval() -> None:
-    rt, ts = RUN_TASK.read_text(), TEST_SH.read_text()
-    condor = [dict(re.findall(r'(\w+)\)\s*\n\s*MAX_TOKENS_ARG="([^"]*)"', b))
-              for b in re.findall(r'case "\$\{EVALUATION_TASK\}" in(.*?)esac', rt, re.S)]
-    harbor = [dict(re.findall(r'(\w+)\)\s+echo "([^"]*)"', f))
-              for f in re.findall(r"get_phase[23]_tokens\(\) \{(.*?)\n\}", ts, re.S)]
-    if len(condor) != 2 or len(harbor) != 2:
-        fail("eval", f"expected 2 reduced-token phases on each side, found condor {len(condor)} / harbor {len(harbor)}")
-    for phase, (c, h) in enumerate(zip(condor, harbor), start=2):
-        expect_equal("eval", f"phase {phase} token limits", c, h, rel(RUN_TASK), rel(TEST_SH))
-    expect_equal("eval", "attempts per phase", re.findall(r"^run_evaluation_with_retry (\d+)", rt, re.M),
-                 re.findall(r"^run_evaluation_with_retry (\d+)", ts, re.M), rel(RUN_TASK), rel(TEST_SH))
+    ts, fe = code_lines(TEST_SH.read_text()), FINAL_EVAL.read_text()
+    # the evaluation itself (<task> <model_dir> ...), not just the --check at job start
+    if not re.search(r'^[^#\n]*src/eval/run_final_eval\.sh "\$\{EVALUATION_TASK\}" "[^"]*final_model"', RUN_TASK.read_text(), re.M):
+        fail("eval", f"{rel(RUN_TASK)} no longer evaluates via src/eval/run_final_eval.sh; the Harbor verifier relies on it")
+    if 'EVAL_RUNTIME="${EVAL_RUNTIME:-apptainer}"' not in fe or '"${EVAL_RUNTIME}" = "local"' not in fe:
+        fail("eval", f"{rel(FINAL_EVAL)} lost its EVAL_RUNTIME=local path, which the Harbor verifier runs")
+    if not re.search(r"EVAL_RUNTIME=local\b.*\n?.*run_final_eval\.sh", ts):
+        fail("eval", f"{rel(TEST_SH)} must run the final evaluation via EVAL_RUNTIME=local ... run_final_eval.sh")
+    for own in ("run_evaluation_with_retry", "--max-tokens", "--max-new-tokens", "evaluate.py", "evaluate_final_eval.py"):
+        if own in ts:
+            fail("eval", f"{rel(TEST_SH)} evaluates on its own (`{own}`); use condor's run_final_eval.sh")
+
+    # humaneval's answer sandbox under EVAL_RUNTIME=local: present, used, and as isolated as the apptainer one
+    # (with_answer_sandbox.sh: no network, own PID namespace, none of the host's files, clean environment).
+    if not LOCAL_SANDBOX.is_file():
+        fail("eval", f"{rel(LOCAL_SANDBOX)} is missing; humaneval cannot be evaluated with EVAL_RUNTIME=local")
+    else:
+        if 'answer_sandbox=(bash "${REPO_ROOT}/src/eval/tasks/humaneval/with_answer_sandbox_local.sh")' not in code_lines(fe):
+            fail("eval", f"{rel(FINAL_EVAL)} no longer runs humaneval through {LOCAL_SANDBOX.name} with EVAL_RUNTIME=local")
+        sbx = code_lines(LOCAL_SANDBOX.read_text())
+        for flag, what in (("--user", "user namespace"), ("--net", "no network"), ("--pid", "own PID namespace"),
+                           ("--mount", "own mount namespace"), ('exec chroot "$ROOT"', "allow-list root"),
+                           ('mount -o remount,bind,ro "$ROOT/$d"', "read-only system dirs"),
+                           ('mount -o remount,bind,ro "$ROOT/answer_sandbox.py"', "read-only answer server"),
+                           ('exec env -i PATH="$PATH"', "clean environment for the sandbox"),
+                           ("/usr/bin/env -i", "clean environment for the answer server"),
+                           ("--reuid=65534", "drops root"), ("answer_sandbox.py serve", "condor's answer server")):
+            if flag not in sbx:
+                fail("eval", f"{rel(LOCAL_SANDBOX)} lost `{flag}` ({what}); it must stay as isolated as "
+                             f"with_answer_sandbox.sh")
 
 
 # ----------------------------------------------------------------- judges
 
 def check_judges() -> None:
     ts = TEST_SH.read_text()
-    code = "\n".join(line for line in ts.splitlines() if not line.lstrip().startswith("#"))
+    code = code_lines(ts)
     for needed in ('source "$JUDGES_DIR/judge_lib.sh"', "prepare_judge_sandbox ", "setup_judge_codex_auth ",
                    "run_all_judges "):
         if needed not in ts:
@@ -273,20 +304,30 @@ def check_launch() -> None:
 # ------------------------------------------------------------------ timer
 
 def check_timer(adapter_mod) -> None:
+    """Both timers on the same fake clock (a `date` shim answering `+%s`): started at T0,
+    read at fixed elapsed times."""
+    t0 = 1_800_000_000
     with tempfile.TemporaryDirectory() as d:
         d = Path(d)
-        for hours in (1, 0):
-            condor_timer, start = d / f"condor_{hours}.sh", d / "start"
-            subprocess.run(["bash", str(CREATE_TIMER), str(hours), str(condor_timer)], check=True)
-            start.write_text(subprocess.run(["date", "+%s"], capture_output=True, text=True).stdout)
+        shim = d / "bin"
+        shim.mkdir()
+        (shim / "date").write_text('#!/bin/sh\n[ "$1" = "+%s" ] && { echo "$FAKE_NOW"; exit 0; }\nexec /bin/date "$@"\n')
+        (shim / "date").chmod(0o755)
+        env = lambda now: {"PATH": f"{shim}:/usr/bin:/bin", "FAKE_NOW": str(now)}  # noqa: E731
+        for hours in (1, 10):
+            condor_timer = d / f"condor_{hours}.sh"
+            subprocess.run(["bash", str(CREATE_TIMER), str(hours), str(condor_timer)], check=True, env=env(t0))
+            start = d / f"start_{hours}"
+            start.write_text(f"{t0}\n")
             out = d / f"harbor_{hours}"
             out.mkdir()
             adapter_mod.PostTrainBenchAdapter(output_dir=d, num_hours=hours).generate_timer_sh(out)
             harbor_timer = out / "timer.sh"
             harbor_timer.write_text(harbor_timer.read_text().replace('START_FILE="/timer_start"', f'START_FILE="{start}"'))
-            c = subprocess.run(["bash", str(condor_timer)], capture_output=True, text=True).stdout
-            h = subprocess.run(["bash", str(harbor_timer)], capture_output=True, text=True).stdout
-            expect_equal("timer", f"output with {hours} h", c, h, rel(CREATE_TIMER), "adapter.py generate_timer_sh")
+            for elapsed in (0, 600, hours * 3600 - 59, hours * 3600, hours * 3600 + 1):
+                c = subprocess.run(["bash", str(condor_timer)], capture_output=True, text=True, env=env(t0 + elapsed)).stdout
+                h = subprocess.run(["bash", str(harbor_timer)], capture_output=True, text=True, env=env(t0 + elapsed)).stdout
+                expect_equal("timer", f"output {elapsed} s into {hours} h", c, h, rel(CREATE_TIMER), "adapter.py generate_timer_sh")
 
 
 # ------------------------------------------------------------------ scope
@@ -330,6 +371,25 @@ def check_generate(adapter_mod) -> None:
                     fail("generate", f"{task.name}/task.toml: {e}")
                 if not (task / "instruction.md").read_text().strip():
                     fail("generate", f"{task.name}/instruction.md is empty")
+                ptb = task / "tests" / "ptb"
+                for needed in ("src/eval/run_final_eval.sh", f"src/eval/tasks/{bench}/evaluate_final_eval.py",
+                               f"src/eval/tasks/{bench}/test_data.json", "src/eval/templates",
+                               "src/utils/aggregate_seed_metrics.py", "src/utils/default_temperature.py",
+                               "src/judges/judge_lib.sh"):
+                    if not (ptb / needed).exists():
+                        fail("generate", f"{task.name}: verifier slice lacks ptb/{needed}")
+                if bench == "humaneval" and not (ptb / "src/eval/tasks/humaneval/with_answer_sandbox_local.sh").exists():
+                    fail("generate", f"{task.name}: verifier slice lacks humaneval's with_answer_sandbox_local.sh")
+                # Build contexts are uploaded to Modal on every image build: no local junk (gitignored eval
+                # logs, caches), and nothing near the size of a stray log dump.
+                for ctx in ("tests", "environment"):
+                    files = [f for f in (task / ctx).rglob("*") if f.is_file()]
+                    junk = [f for f in files if {"logs", "__pycache__"} & set(f.relative_to(task / ctx).parts)]
+                    size = sum(f.stat().st_size for f in files)
+                    if junk:
+                        fail("generate", f"{task.name}/{ctx}: contains local junk, e.g. {junk[0].relative_to(task)}")
+                    if size > 200 * 1024 * 1024:
+                        fail("generate", f"{task.name}/{ctx}: build context is {size / 2**20:.0f} MiB (> 200 MiB)")
 
 
 # ------------------------------------------------------------------- main

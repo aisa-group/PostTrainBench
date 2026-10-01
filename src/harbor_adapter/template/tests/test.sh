@@ -5,20 +5,19 @@
 # before that turns a finished run into a trial error with no reward.
 
 # PostTrainBench verification script
-# Runs the PostTrainBench v1.1 reward-hacking judges (src/judges, codex CLI) and
-# the 3-phase evaluation with retry logic.
-# Matches the original run_task.sh evaluation pipeline.
+# Runs condor's own judge phase (src/judges/judge_lib.sh run_all_judges) and
+# final evaluation (src/eval/run_final_eval.sh), in run_task.sh's order.
 #
 # Tamper-resistance design (harbor 0.7.0 separate-verifier mode):
 #   - This script runs in a SEPARATE container from the agent (see
 #     [verifier].environment_mode = "separate" in task.toml). The agent
 #     never has shell or filesystem access to this container, so it
-#     can't tamper with evaluate.py, templates/, the Python interpreter,
+#     can't tamper with the final-eval scripts, templates/, the Python interpreter,
 #     installed packages (vllm, inspect_evals, transformers), or this
 #     script itself.
-#   - All verifier-side files (evaluate.py, templates/, metadata.json,
-#     evaluation_code/, bfcl_evaluation_code.py, ptb/ = src/judges +
-#     src/trace_parsing + info.json, test_data.json) are
+#   - All verifier-side files (metadata.json and ptb/ = the repo slice with
+#     src/judges, src/trace_parsing, src/eval/run_final_eval.sh, the task dir,
+#     templates and src/utils helpers) are
 #     BAKED INTO the verifier image at build time (see tests/Dockerfile)
 #     and live at /tests/.
 #   - The agent's code arrives as a size-filtered snapshot in
@@ -270,140 +269,27 @@ else
 fi
 
 # ============================================================
-# Evaluation with 3-phase retry logic
-# Matches run_task.sh evaluation pipeline.
-#
-# evaluate.py is run from /tests (untamperable). Some evaluate.py scripts
-# (arenahardwriting, healthbench) `from evaluation_code.X import Y`, so
-# /tests must be cwd for the import to resolve. final_model lives in
-# the agent's workspace (only place it could exist), so --model-path is
-# absolute.
+# Final evaluation: condor's own src/eval/run_final_eval.sh, baked in under
+# /tests/ptb by the adapter and run with EVAL_RUNTIME=local. Seeds, the
+# greedy-model check, the max-tokens retry cascade and the seed average are
+# condor's code. Per-seed metrics and attempt logs go to /logs/verifier/
+# evaluation/, the seed average to /logs/verifier/metrics.json. Each attempt is
+# bounded by PTB_EVAL_ATTEMPT_TIMEOUT_SEC (task.toml), so a hung attempt still
+# leaves verifier time for the rest.
 # ============================================================
 echo ""
-echo "=== Running evaluation on final_model ==="
-
-# evaluate.py imports evaluation_code/ relative to /tests.
-cd "$TESTS" || echo "ERROR: cannot cd to $TESTS; evaluation imports will fail"
-
-EVAL_COUNTER=0
-
-kill_gpu_processes() {
-    echo "Killing GPU processes..."
-    # Kill GPU-holding processes EXCEPT PID 1 (container init / dumb-init).
-    # In Docker/Modal, the agent's vLLM process can get reparented to PID 1,
-    # which still holds GPU memory when the verifier starts. Killing PID 1
-    # would destroy the entire container.
-    nvidia-smi --query-compute-apps=pid --format=csv,noheader 2>/dev/null \
-        | grep -v '^$' \
-        | while read pid; do
-            if [ "$pid" -gt 1 ] 2>/dev/null; then
-                kill -9 "$pid" 2>/dev/null || true
-            fi
-        done
-    sleep 5
-}
-
-run_evaluation() {
-    local max_tokens_arg="$1"
-    local eval_num="$2"
-
-    kill_gpu_processes
-
-    # Bounded like run_task.sh's attempts (which get 8 h each), but short enough
-    # that a hung attempt leaves verifier time for the reduced-token retries; a
-    # leftover vLLM server is killed by kill_gpu_processes before the next one.
-    timeout --signal=TERM --kill-after=60s "${PTB_EVAL_ATTEMPT_TIMEOUT_SEC:-7200}" \
-    python3 "$TESTS/evaluate.py" \
-        --model-path "$MODEL_DIR" \
-        --json-output-file "$LOGS_DIR/metrics.json" \
-        --templates-dir "$TESTS/templates" \
-        --limit -1 \
-        ${max_tokens_arg} \
-        2>&1 | tee "$LOGS_DIR/final_eval_${eval_num}.txt"
-    # PIPESTATUS: `$?` of the pipeline would be tee's status, not evaluate.py's.
-    local exit_code=${PIPESTATUS[0]}
-    echo "evaluate.py exit code: $exit_code"
-    [ "$exit_code" = 124 ] && echo "evaluate.py hit the ${PTB_EVAL_ATTEMPT_TIMEOUT_SEC:-7200}s per-attempt timeout"
-    # Whether an attempt succeeded is decided by metrics.json, as in run_task.sh.
-    return 0
-}
-
-run_evaluation_with_retry() {
-    local max_retries="$1"
-    local max_tokens_arg="$2"
-
-    for ((attempt=1; attempt<=max_retries; attempt++)); do
-        sleep 5
-        if [ -f "$LOGS_DIR/metrics.json" ]; then
-            return 0
-        fi
-
-        EVAL_COUNTER=$((EVAL_COUNTER + 1))
-        echo "Evaluation attempt $EVAL_COUNTER (phase attempt $attempt of $max_retries)"
-
-        run_evaluation "$max_tokens_arg" "$EVAL_COUNTER"
-
-        if [ -f "$LOGS_DIR/metrics.json" ]; then
-            return 0
-        fi
-    done
-
-    return 1
-}
-
-# Determine token limit args per benchmark for phase 2 and 3
-get_phase2_tokens() {
-    case "$BENCHMARK_ID" in
-        aime2025)    echo "--max-tokens 12000" ;;
-        arenahardwriting) echo "--max-new-tokens 12288" ;;
-        bfcl)        echo "--max-tokens 12000" ;;
-        gpqamain)    echo "--max-tokens 12000" ;;
-        gsm8k)       echo "--max-tokens 3000" ;;
-        healthbench) echo "--max-new-tokens 12288" ;;
-        humaneval)   echo "--max-tokens 3000" ;;
-        *)           echo "" ;;
-    esac
-}
-
-get_phase3_tokens() {
-    case "$BENCHMARK_ID" in
-        aime2025)    echo "--max-tokens 8000" ;;
-        arenahardwriting) echo "--max-new-tokens 8192" ;;
-        bfcl)        echo "--max-tokens 8000" ;;
-        gpqamain)    echo "--max-tokens 8000" ;;
-        gsm8k)       echo "--max-tokens 2000" ;;
-        healthbench) echo "--max-new-tokens 8192" ;;
-        humaneval)   echo "--max-tokens 2000" ;;
-        *)           echo "" ;;
-    esac
-}
-
-# A phase returns 1 once its attempts are exhausted; the next phase (lower token
-# limits, the point of the ladder) must still run. `|| true` keeps it that way
-# even if someone reintroduces `set -e`.
-
-# Phase 1: up to 4 attempts with default tokens
-echo ""
-echo "--- Phase 1: default token limits (up to 4 attempts) ---"
-run_evaluation_with_retry 4 "" || true
-
-# Phase 2: up to 3 attempts with reduced tokens
-PHASE2_TOKENS=$(get_phase2_tokens)
-echo ""
-echo "--- Phase 2: reduced tokens [${PHASE2_TOKENS}] (up to 3 attempts) ---"
-run_evaluation_with_retry 3 "$PHASE2_TOKENS" || true
-
-# Phase 3: up to 2 attempts with further reduced tokens
-PHASE3_TOKENS=$(get_phase3_tokens)
-echo ""
-echo "--- Phase 3: further reduced tokens [${PHASE3_TOKENS}] (up to 2 attempts) ---"
-run_evaluation_with_retry 2 "$PHASE3_TOKENS" || true
+echo "=== Running the final evaluation (src/eval/run_final_eval.sh) ==="
+EVAL_STATUS=0
+( cd "$PTB" && EVAL_RUNTIME=local EVAL_ATTEMPT_TIMEOUT_SEC="${PTB_EVAL_ATTEMPT_TIMEOUT_SEC:-7200}" \
+    bash src/eval/run_final_eval.sh "$BENCHMARK_ID" "$MODEL_DIR" "$LOGS_DIR/evaluation" "$LOGS_DIR/metrics.json" ) \
+    || EVAL_STATUS=$?
+[ "$EVAL_STATUS" = 0 ] || echo "ERROR: the final evaluation failed (exit $EVAL_STATUS); see its output above"
 
 # ============================================================
 # Extract accuracy and write reward
 # ============================================================
 echo ""
-echo "=== Evaluation complete (${EVAL_COUNTER} total attempts) ==="
+echo "=== Evaluation complete ==="
 
 # Reward = metrics.json's `accuracy`, read as strictly as scripts/utils.py
 # load_metrics (every evaluate.py writes a float `accuracy`). Without a usable
@@ -428,7 +314,7 @@ try:
         sys.exit(0)
     reason = f"metrics.json has no finite numeric 'accuracy' (got {accuracy!r})"
 except FileNotFoundError:
-    reason = "metrics.json not created after all evaluation attempts"
+    reason = "metrics.json not written (the first seed failed at every stage, or the evaluation errored)"
 except Exception as e:  # malformed JSON, top level not an object, ...
     reason = f"metrics.json unreadable ({type(e).__name__}: {e})"
 with open(metadata_path) as f:

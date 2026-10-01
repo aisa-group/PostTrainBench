@@ -15,7 +15,7 @@ each Harbor trial as a result dir those tools accept unchanged:
         prompt.txt                   the instruction the agent received
         time_taken.txt               agent phase duration, H:M:S
         cli_version.txt              agent CLI version (from harbor's agent_info)
-        final_eval_<n>.txt           evaluation attempts
+        evaluation/                  per-seed metrics + attempt logs (final_eval_<n>.txt before v1.2)
         system_monitor.log, output.log, error.log
         task/                        the agent's code snapshot
         harbor/                      result.json + config.json (provenance)
@@ -217,8 +217,12 @@ def export_trial(trial: Path, results_dir: Path, *, experiment_name: str,
             shutil.copy(f, out / sub / f.name)
             if f.name.startswith("judge_output_"):
                 run_parse_trace("codex", out / sub / f.name, out / sub / f"{f.stem}.txt")
-    for f in sorted(v.glob("final_eval_*.txt")):
+    for f in sorted(v.glob("final_eval_*.txt")):   # single-seed eval (before v1.2)
         shutil.copy(f, out / f.name)
+    # v1.2 final eval (src/eval/run_final_eval.sh): per-seed metrics and attempt
+    # logs; scripts/collect.py reads evaluation/final_eval_seed<S>_9.txt.
+    if (v / "evaluation").is_dir():
+        shutil.copytree(v / "evaluation", out / "evaluation", dirs_exist_ok=True)
 
     # agent transcript: harbor's /logs/agent/<agent>.txt, else the largest staged log
     raw = trial / "agent" / f"{agent_name}.txt"
