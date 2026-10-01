@@ -1,12 +1,11 @@
 # PostTrainBench: Can LLM Agents Automate LLM Post-Training?
 
 [![Website](https://img.shields.io/badge/Website-posttrainbench.com-c17d5a)](http://posttrainbench.com/)
-[![harbor-parity](https://github.com/aisa-group/PostTrainBench/actions/workflows/harbor-parity.yml/badge.svg)](https://github.com/aisa-group/PostTrainBench/actions/workflows/harbor-parity.yml)
 
 We introduce PostTrainBench, a benchmark that measures the ability of CLI agents to post-train pre-trained large language models (LLMs). In PostTrainBench, the agent's task is to improve the performance of a base LLM on a given benchmark. The agent is given access to an evaluation script and 10 hours on an H100 GPU. Performance is measured by the benchmark score of the post-trained LLM. This setup naturally evaluates an agent's ability to conduct AI R&D.
 
 > [!IMPORTANT]
-> **Run it on cloud GPUs via [Harbor](https://github.com/harbor-framework/harbor).** This repository's reference pipeline targets our HPC cluster (HTCondor), but `src/harbor_adapter/` runs the full benchmark — same prompt, judges and evaluation — on Modal, with no cluster needed. See [its README](src/harbor_adapter/README.md).
+> **Run it on cloud GPUs via [Harbor](https://github.com/harbor-framework/harbor).** This repository's reference pipeline targets our HPC cluster (HTCondor), but `src/harbor_adapter/` runs the full benchmark (same prompt, judges and evaluation) on Modal, with no cluster needed. See [its README](src/harbor_adapter/README.md).
 
 ## Scaffolds
 
@@ -17,12 +16,12 @@ Agents are run through one of 4 CLI scaffolds: Claude Code, Codex CLI, Gemini CL
 
 PostTrainBench includes 6 benchmarks spanning reasoning, knowledge, math, health, and code:
 
-1. **AIME 2025** — Math competition problems
-2. **Arena Hard Writing** — Creative writing benchmark adapted from ArenaHard v2
-3. **GPQA** — Graduate-level science questions
-4. **GSM8K** — Grade school math
-5. **HealthBench Easy** — Medical knowledge and reasoning
-6. **HumanEval** — Code generation
+1. **AIME 2025** - Math competition problems
+2. **Arena Hard Writing** - Creative writing benchmark adapted from ArenaHard v2
+3. **GPQA** - Graduate-level science questions
+4. **GSM8K** - Grade school math
+5. **HealthBench Easy** - Medical knowledge and reasoning
+6. **HumanEval** - Code generation
 
 ## Quick Start
 
@@ -58,11 +57,11 @@ The `.env` file contains API keys and configuration. See `example.env` for all a
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `OPENAI_API_KEY` | OpenAI API key | — |
-| `ANTHROPIC_API_KEY` | Anthropic API key | — |
-| `GEMINI_API_KEY` | Google Gemini API key | — |
-| `OPENCODE_API_KEY` | OpenCode API key (used by the `opencode` agent) | — |
-| `ZAI_API_KEY` | Z.AI API key (used by the `opencode` and `glm5` agents) | — |
+| `OPENAI_API_KEY` | OpenAI API key | - |
+| `ANTHROPIC_API_KEY` | Anthropic API key | - |
+| `GEMINI_API_KEY` | Google Gemini API key | - |
+| `OPENCODE_API_KEY` | OpenCode API key (used by the `opencode` agent) | - |
+| `ZAI_API_KEY` | Z.AI API key (used by the `opencode` and `glm5` agents) | - |
 | `HF_HOME` | HuggingFace cache directory | `$HOME/.cache/huggingface` |
 | `POST_TRAIN_BENCH_RESULTS_DIR` | Directory for results | `results` |
 | `POST_TRAIN_BENCH_CONTAINERS_DIR` | Directory for containers | `containers` |
