@@ -399,6 +399,35 @@ def walk_latest_runs(
 # Metrics loading
 # ---------------------------------------------------------------------------
 
+# A run's own evaluation writes metrics.json. A later rerun of the final evaluation
+# (scripts/rerun_final_eval_parallel.py, scripts/rerun_eval_n_times.sh) writes metrics_averaged.json next to it, and
+# scripts/rescore_exact_match.py rescores that rerun into metrics_averaged_exact_match.json (aime2025, gsm8k; issue
+# #44). The newest evaluation is the run's score; metrics.json then only keeps the numbers of the original one.
+METRICS_FILE_PREFERENCE = ("metrics_averaged_exact_match.json", "metrics_averaged.json", "metrics.json")
+
+
+def run_metrics_path(run_dir: str) -> str:
+    """The file whose accuracy is the run's score: the first of METRICS_FILE_PREFERENCE in run_dir.
+
+    A metrics_averaged*.json counts only in the format of src/utils/aggregate_seed_metrics.py (per_seed). An older
+    metrics_averaged.json of a pre-v1.2 variance study (n_runs/per_run, no top-level accuracy; a few healthbench
+    runs in Hardik's results) is no final-eval rerun and is passed over; any other format raises ValueError. Returns
+    the metrics.json path, existing or not, when no rerun file counts.
+    """
+    for name in METRICS_FILE_PREFERENCE[:-1]:
+        path = os.path.join(run_dir, name)
+        if not os.path.exists(path):
+            continue
+        with open(path, "r") as f:
+            data = json.load(f)
+        if "per_seed" in data:
+            return path
+        if "n_runs" in data and "per_run" in data:
+            continue
+        raise ValueError(f"{path}: neither a final-eval rerun (per_seed) nor a pre-v1.2 variance study (n_runs)")
+    return os.path.join(run_dir, "metrics.json")
+
+
 def load_metrics(metrics_path: str) -> str:
     """Read the accuracy from metrics.json as a string.
 

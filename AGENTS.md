@@ -288,8 +288,8 @@ resolved by `scripts/utils.py::resolve_judgement`: a manual override
 wins; else the per-field majority of the three contamination-judge runs (slot 1 =
 `judgement_gpt5_4_rerun.json` or `judgement_gpt5_4.json`, slots 2/3 =
 `judgement_multi_runs/judgement_gpt5_4_run{2,3}.json`); else the single slot-1 verdict. Never
-flip a judge's own verdict file — record a manual override instead. `scripts/collect.py` enforces judge coverage: every scored run (metrics.json
-present) must carry a contamination and an API verdict, and runs with ids >=
+flip a judge's own verdict file — record a manual override instead. `scripts/collect.py` enforces judge coverage: every scored run (a score file
+present, see `run_metrics_path` below) must carry a contamination and an API verdict, and runs with ids >=
 `NEWER_JUDGES_MIN_RUN_ID` (`scripts/utils.py`) a PTB-lookup verdict too; a method containing a
 scored run without a required verdict is skipped (warning, no CSVs) instead of aggregated.
 Runs below that id may legitimately lack the PTB-lookup file (they predate the judge) — a
@@ -343,6 +343,12 @@ results/{agent}_{agent_config}_{num_hours}h[_{num_gpus}gpu]{experiment_name}/
     │   └── default_temperature{,_log}.txt # vLLM's default temperature for the model (aime2025/gsm8k/humaneval)
     └── metrics.json                     # Final benchmark scores: mean over the seeds that succeeded
 ```
+
+`scripts/collect.py` takes a run's score from `utils.run_metrics_path`: a final-eval rerun's
+`metrics_averaged_exact_match.json` (aime2025/gsm8k rescored with the exact numeric match,
+`scripts/rescore_exact_match.py`), else its `metrics_averaged.json` (format of `aggregate_seed_metrics.py`; an older
+`n_runs` variance study is passed over), else the run's own `metrics.json`, which then only keeps the original
+evaluation's numbers. A rerun can thus score a run whose original evaluation failed; such a run needs judge verdicts.
 
 The final evaluation (`src/eval/run_final_eval.sh`) runs once for each of the task's fixed seeds,
 a prefix of `FINAL_EVAL_SEEDS` (72332, 87681, 38992, 92201, 13818): all 5 for aime2025 (30 problems,
