@@ -1,91 +1,18 @@
 #!/usr/bin/env python3
+# Final-evaluation variant of evaluate.py. run_task.sh (and the eval rerun / baseline scripts) run this file; the
+# agent sandbox only ever gets evaluate.py. The only difference is --seed: the final evaluation runs once per fixed
+# seed and averages the results.
 from __future__ import annotations
-
 import os
-import re
+
 import argparse
 import json
-from typing import Any
 
-from inspect_ai import Task, task
-from inspect_ai import eval as inspect_eval  # type: ignore
-from inspect_ai.dataset import Sample, hf_dataset
-from inspect_ai.scorer import (
-    Score,
-    Scorer,
-    Target,
-    accuracy,
-    match,
-    scorer,
-    stderr,
-)
-from inspect_ai.solver import TaskState
-from inspect_ai.util._display import init_display_type
+from inspect_ai.log._log import EvalLog, EvalMetric, EvalSample
+from inspect_ai import eval as inspect_eval  # type: ignore  # noqa: E402
+from inspect_ai.util._display import init_display_type  # noqa: E402
 
-from inspect_evals.aime2024.aime2024 import aime2024_solver
-
-DATASET_PATH = "math-ai/aime26"
-
-USER_PROMPT_TEMPLATE = """
-Solve the following math problem step by step.
-The last line of your response should be of the form "ANSWER: $ANSWER" (without quotes) where $ANSWER is the answer to the problem.
-
-{prompt}
-
-Remember to put your answer on its own line at the end in the form "ANSWER: $ANSWER" (without quotes) where $ANSWER is the answer to the problem, and you do not need to use a \\boxed command.
-""".strip()
-
-
-@task
-def aime2026() -> Task:
-    """Inspect Task implementation for the AIME 2026 benchmark."""
-    dataset = hf_dataset(
-        path=DATASET_PATH,
-        split="test",
-        sample_fields=record_to_sample,
-    )
-
-    return Task(
-        dataset=dataset,
-        solver=aime2024_solver(),
-        scorer=[
-            aime_scorer(),
-        ],
-    )
-
-
-def record_to_sample(record: dict[str, Any]) -> Sample:
-    sample = Sample(
-        id=record["id"],
-        input=record["problem"],
-        target=str(record["answer"]),
-    )
-    return sample
-
-
-def remove_boxed_from_ans(answer: str) -> str:
-    # Sometimes, LLMs respond by formatting their responses
-    # with \boxed{...}, which inspect_ai.scorer.match
-    # does not handle well, so we remove it here.
-    return re.sub(r"\\boxed\{(.+)\}", r"\1", answer)
-
-
-@scorer(metrics=[accuracy(), stderr()])
-def aime_scorer() -> Scorer:
-    async def score(state: TaskState, target: Target) -> Score:
-        raw = state.output.completion
-        cleaned = remove_boxed_from_ans(raw)
-        state.output.completion = cleaned
-
-        result = await match(numeric=True)(state, target)
-        if result is None:
-            raise ValueError("No result found")
-
-        result.metadata = {"unprocessed_answer": raw, "cleaned_answer": cleaned}
-
-        return result
-
-    return score
+import inspect_evals.gsm8k # noqa: F401, E402  (registers task definitions)
 
 
 def parse_args() -> argparse.Namespace:
@@ -100,13 +27,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--limit",
         type=int,
-        default=None,
+        default=150,
         help="Optional limit for number of samples to evaluate.",
-    )
-    parser.add_argument(
-        "--max-tokens",
-        type=int,
-        default=16000,
     )
     parser.add_argument(
         '--json-output-file',
@@ -114,24 +36,34 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional path to output the metrics as a seperate JSON file.",
     )
-    # You can adjust --max-connections if you want faster tests and don't receive errors (or if you have issues with vllm, try lowering this value)
-    parser.add_argument(
-        "--max-connections",
-        type=int,
-        default=6,
-    )
-    parser.add_argument(
-        "--gpu-memory-utilization",
-        type=float,
-        default=0.8,
-    )
     parser.add_argument(
         '--templates-dir',
         type=str,
         default="templates/",
     )
+    # You can adjust --max-connections if you want faster tests and don't receive errors (or if you have issues with vllm, try lowering this value)
+    parser.add_argument(
+        "--max-connections",
+        type=int,
+        default=2,
+    )
+    parser.add_argument(
+        "--max-tokens",
+        type=int,
+        default=4000,
+    )
+    parser.add_argument(
+        "--gpu-memory-utilization",
+        type=float,
+        default=0.3,
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Random seed for sampling during generation (default: unseeded).",
+    )
     return parser.parse_args()
-
 
 def main() -> None:
     args = parse_args()
@@ -142,7 +74,7 @@ def main() -> None:
     if (args.limit is not None) and (args.limit != -1):
         other_kwargs["limit"] = args.limit
 
-    task = aime2026()
+    task = "inspect_evals/gsm8k"
     model_args = {
         'gpu_memory_utilization': args.gpu_memory_utilization,
     }
@@ -153,12 +85,13 @@ def main() -> None:
         model=f"vllm/{args.model_path}",
         model_args=model_args,
         score_display=False,
-        timeout=18000000,
-        attempt_timeout=18000000,
         log_realtime=False,
         log_format='json',
+        timeout=18000000,
+        attempt_timeout=18000000,
         max_tokens=args.max_tokens,
         max_connections=args.max_connections,
+        seed=args.seed,
         **other_kwargs,
     )
 

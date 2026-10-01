@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Final-evaluation variant of evaluate.py. run_task.sh (and the eval rerun / baseline scripts) run this file; the
+# agent sandbox only ever gets evaluate.py. The only difference is --seed: the final evaluation runs once per fixed
+# seed and averages the results.
 from __future__ import annotations
 
 import os
@@ -6,13 +9,11 @@ import os
 import argparse
 import json
 
-from pathlib import Path
-
 from inspect_ai.log._log import EvalLog, EvalMetric, EvalSample
 from inspect_ai import eval as inspect_eval  # type: ignore  # noqa: E402
 from inspect_ai.util._display import init_display_type  # noqa: E402
 
-import inspect_evals.bfcl # noqa: F401, E402  (registers task definitions)
+import inspect_evals.aime2025  # noqa: F401, E402  (registers task definitions)
 
 
 def parse_args() -> argparse.Namespace:
@@ -21,7 +22,7 @@ def parse_args() -> argparse.Namespace:
         "--model-path",
         type=str,
         default="final_model",
-        help="Path to the local model directory or Hugging Face model identifier.",
+        help="Path to the Hugging Face model (directory or model identifier).",
     )
     # this is a good limit for this task, just keep it like that (or use less in case you want faster tests)
     parser.add_argument(
@@ -31,15 +32,15 @@ def parse_args() -> argparse.Namespace:
         help="Optional limit for number of samples to evaluate.",
     )
     parser.add_argument(
+        "--max-tokens",
+        type=int,
+        default=16000,
+    )
+    parser.add_argument(
         '--json-output-file',
         type=str,
         default=None,
         help="Optional path to output the metrics as a seperate JSON file.",
-    )
-    parser.add_argument(
-        "--max-tokens",
-        type=int,
-        default=16000,
     )
     # You can adjust --max-connections if you want faster tests and don't receive errors (or if you have issues with vllm, try lowering this value)
     parser.add_argument(
@@ -57,15 +58,14 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default="templates/",
     )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Random seed for sampling during generation (default: unseeded).",
+    )
     return parser.parse_args()
 
-def tool_call_parser_name(args) -> str:
-    model_type_str = model_type(args)
-    if model_type_str in ['gemma', 'qwen', 'smollm']:
-        return 'hermes'
-    if model_type_str == 'llama':
-        return 'llama3_json'
-    raise ValueError(model_type_str)
 
 def main() -> None:
     args = parse_args()
@@ -76,27 +76,24 @@ def main() -> None:
     if (args.limit is not None) and (args.limit != -1):
         other_kwargs["limit"] = args.limit
 
-    task = inspect_evals.bfcl.bfcl()
-
-    model_name = f"vllm/{args.model_path}"
-
+    task = "inspect_evals/aime2025"  
     model_args = {
-        "enable_auto_tool_choice": None,
-        "tool_call_parser": tool_call_parser_name(args),
         'gpu_memory_utilization': args.gpu_memory_utilization,
     }
     model_args.update(template_kwargs(args))
 
     eval_out = inspect_eval(
         task,
-        model=model_name,
+        model=f"vllm/{args.model_path}",
         model_args=model_args,
         score_display=False,
         timeout=18000000,
         attempt_timeout=18000000,
+        log_realtime=False,
         log_format='json',
         max_tokens=args.max_tokens,
         max_connections=args.max_connections,
+        seed=args.seed,
         **other_kwargs,
     )
     
@@ -140,7 +137,7 @@ def template_kwargs(args) -> dict:
     elif model_type_str == 'llama':
         template = 'llama3.jinja'
     elif model_type_str == 'gemma':
-        template = 'gemma3_tool_calling.jinja'
+        template = 'gemma3.jinja'
     elif model_type_str == 'smollm':
         template = 'smollm.jinja'
     else:

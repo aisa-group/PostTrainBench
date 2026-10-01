@@ -39,7 +39,6 @@ def hf_token() -> str:
 ALL_TASKS = [
     "aime2025",
     "arenahardwriting",
-    "bfcl",
     "gpqamain",
     "gsm8k",
     "healthbench",
@@ -108,33 +107,6 @@ def download_arenahardwriting():
                 prompt = json.dumps(prompt, ensure_ascii=False)
             items.append({"question": prompt, "answer": ""})
     save_test_data("arenahardwriting", items)
-
-
-def download_bfcl():
-    log("Downloading bfcl from HuggingFace (gorilla-llm/Berkeley-Function-Calling-Leaderboard, BFCL_v3_exec_simple)...")
-    from huggingface_hub import hf_hub_download
-
-    REPO_ID = "gorilla-llm/Berkeley-Function-Calling-Leaderboard"
-    FILENAME = "BFCL_v3_exec_simple.json"
-
-    log(f"  Fetching {FILENAME}")
-    path = hf_hub_download(REPO_ID, FILENAME, repo_type="dataset")
-    with open(path) as f:
-        raw = f.read()
-
-    data = []
-    for obj in _iter_jsonl(raw):
-        question_parts = obj.get("question", [])
-        question_str = json.dumps(question_parts, ensure_ascii=False) if not isinstance(question_parts, str) else question_parts
-        ground_truth = obj.get("ground_truth", "")
-        gt_str = json.dumps(ground_truth, ensure_ascii=False) if not isinstance(ground_truth, str) else ground_truth
-        data.append({
-            "question": question_str,
-            "answer": gt_str,
-        })
-
-    log(f"  Total: {len(data)} items")
-    save_test_data("bfcl", data)
 
 
 def download_gpqamain():
@@ -208,7 +180,6 @@ def download_humaneval():
 DOWNLOADERS = {
     "aime2025": download_aime2025,
     "arenahardwriting": download_arenahardwriting,
-    "bfcl": download_bfcl,
     "gpqamain": download_gpqamain,
     "gsm8k": download_gsm8k,
     "healthbench": download_healthbench,

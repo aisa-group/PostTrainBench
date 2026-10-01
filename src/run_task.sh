@@ -25,6 +25,11 @@ else
     export EVAL_SCRIPT="evaluate.py"
 fi
 
+# The final evaluation (src/eval/run_final_eval.sh) runs the task's evaluate_final_eval.py, or
+# evaluate_openrouter_final_eval.py for the OpenRouter backend. Check now that it can run, so a missing file fails
+# before the agent's run and not after it.
+FINAL_EVAL_SCRIPT="$(bash src/eval/run_final_eval.sh --check "${EVALUATION_TASK}")" || exit 1
+
 RESULT_PREFIX_SAFE=$(echo "$MODEL_TO_TRAIN" | tr '/:[]' '____')
 
 AGENT_CONFIG_SAFE=$(echo "$AGENT_CONFIG" | tr '/:[]' '____')
@@ -44,7 +49,7 @@ exec 1>${EVAL_DIR}/output.log
 exec 2>${EVAL_DIR}/error.log
 
 echo "$@"
-echo "Judge backend: ${JUDGE_BACKEND} (eval script: ${EVAL_SCRIPT})"
+echo "Judge backend: ${JUDGE_BACKEND} (eval script: ${EVAL_SCRIPT}, final eval script: ${FINAL_EVAL_SCRIPT})"
 
 export TMP_SUBDIR="/tmp/posttrain_container_${EVALUATION_TASK}_${RESULT_PREFIX_SAFE}_${RANDOM_UUID}"
 
@@ -385,124 +390,10 @@ echo "================================"
 echo "========= EVALUATING ==========="
 echo "================================"
 
-export REPO_ROOT="$(pwd)"
-
-export TMP_HF_CACHE="/tmp/hf_cache_90afd0"
-
-export EVAL_COUNTER=0
-
-run_evaluation() {
-    local max_tokens_arg="$1"
-    local eval_num="$2"
-    nvidia-smi --query-compute-apps=pid --format=csv,noheader | xargs -r kill -9
-    sleep 5
-    with_huggingface_overlay apptainer exec \
-        --nv \
-        --env "HF_HOME=${TMP_HF_CACHE}" \
-        --env OPENAI_API_KEY="${OPENAI_API_KEY}" \
-        --env OPENROUTER_API_KEY="${OPENROUTER_API_KEY}" \
-        --env VLLM_API_KEY="inspectai" \
-        --env PYTHONNOUSERSITE="1" \
-        --writable-tmpfs \
-        --bind "${REPO_ROOT}:${REPO_ROOT}" \
-        --bind "${HF_MERGED}:${TMP_HF_CACHE}" \
-        --pwd "$(pwd)/src/eval/tasks/${EVALUATION_TASK}" \
-        ${POST_TRAIN_BENCH_CONTAINERS_DIR}/vllm_debug.sif python "${EVAL_SCRIPT}" \
-            --model-path "$EVAL_DIR/final_model" \
-            --templates-dir ../../../../src/eval/templates \
-            --limit -1 \
-            ${max_tokens_arg} \
-            --json-output-file "${EVAL_DIR}/metrics.json" > "$EVAL_DIR/final_eval_${eval_num}.txt"
-}
-
-run_evaluation_with_retry() {
-    local max_retries="$1"
-    local max_tokens_arg="$2"
-
-    for ((attempt=1; attempt<=max_retries; attempt++)); do
-        sleep 5
-        if [ -f "${EVAL_DIR}/metrics.json" ]; then
-            return 0
-        fi
-
-        EVAL_COUNTER=$((EVAL_COUNTER + 1))
-        export EVAL_COUNTER
-        echo "Evaluation attempt $EVAL_COUNTER (phase attempt $attempt of $max_retries)"
-
-        timeout --signal=TERM --kill-after=60s 28800s bash -c "$(declare -f run_evaluation with_huggingface_overlay); run_evaluation \"$max_tokens_arg\" \"$EVAL_COUNTER\""
-
-        if [ -f "${EVAL_DIR}/metrics.json" ]; then
-            return 0
-        fi
-    done
-
-    return 1
-}
-
-# First evaluation: up to 4 attempts
-run_evaluation_with_retry 4 ""
-
-# Second evaluation with adjusted max tokens: up to 2 attempts
-case "${EVALUATION_TASK}" in
-    aime2025)
-        MAX_TOKENS_ARG="--max-tokens 12000"
-        ;;
-    arenahardwriting)
-        MAX_TOKENS_ARG="--max-new-tokens 12288"
-        ;;
-    bfcl)
-        MAX_TOKENS_ARG="--max-tokens 12000"
-        ;;
-    gpqamain)
-        MAX_TOKENS_ARG="--max-tokens 12000"
-        ;;
-    gsm8k)
-        MAX_TOKENS_ARG="--max-tokens 3000"
-        ;;
-    healthbench)
-        MAX_TOKENS_ARG="--max-new-tokens 12288"
-        ;;
-    humaneval)
-        MAX_TOKENS_ARG="--max-tokens 3000"
-        ;;
-    *)
-        MAX_TOKENS_ARG=""
-        ;;
-esac
-
-run_evaluation_with_retry 3 "$MAX_TOKENS_ARG"
-
-# Third evaluation with further adjusted max tokens: up to 2 attempts
-case "${EVALUATION_TASK}" in
-    aime2025)
-        MAX_TOKENS_ARG="--max-tokens 8000"
-        ;;
-    arenahardwriting)
-        MAX_TOKENS_ARG="--max-new-tokens 8192"
-        ;;
-    bfcl)
-        MAX_TOKENS_ARG="--max-tokens 8000"
-        ;;
-    gpqamain)
-        MAX_TOKENS_ARG="--max-tokens 8000"
-        ;;
-    gsm8k)
-        MAX_TOKENS_ARG="--max-tokens 2000"
-        ;;
-    healthbench)
-        MAX_TOKENS_ARG="--max-new-tokens 8192"
-        ;;
-    humaneval)
-        MAX_TOKENS_ARG="--max-tokens 2000"
-        ;;
-    *)
-        MAX_TOKENS_ARG=""
-        ;;
-esac
-
-run_evaluation_with_retry 2 "$MAX_TOKENS_ARG"
-
-echo $(cat "$EVAL_DIR/final_eval_${EVAL_COUNTER}.txt")
+# Evaluates the final model once per fixed seed and writes the mean to metrics.json; the per-seed metrics and logs go
+# to evaluation/. Without metrics.json (the first seed failed at every stage), collect.py uses the baseline.
+bash src/eval/run_final_eval.sh "${EVALUATION_TASK}" "${EVAL_DIR}/final_model" "${EVAL_DIR}/evaluation" "${EVAL_DIR}/metrics.json" \
+    || { echo "ERROR: the final evaluation failed" >&2; exit 1; }
 
 echo "================================"
 echo "======= EVALUATION DONE ========"

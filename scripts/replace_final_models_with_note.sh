@@ -26,8 +26,8 @@
 #   --exclude-methods REGEX    Skip method dirs whose name matches this regex.
 #                              Applied after --only-methods.
 #   --preserve-benchmark NAME  Skip cell dirs starting with "<NAME>_" — e.g.
-#                              --preserve-benchmark bfcl keeps bfcl checkpoints
-#                              for later re-scoring under PR 63. Can be
+#                              --preserve-benchmark gsm8k keeps gsm8k checkpoints
+#                              for later re-scoring. Can be
 #                              repeated: pipe-separated in a single flag or
 #                              pass the flag multiple times.
 #   -h, --help                 Show this help and exit.

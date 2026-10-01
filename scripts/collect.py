@@ -3,7 +3,9 @@
 Collect results from raw run directories into per-method CSVs.
 
 For each method directory in the results dir, does a single pass:
-  1. Finds the latest run per (benchmark, model)
+  1. Finds the latest run per (benchmark, model), for the benchmarks in
+     HARDCODED_BENCHMARKS only (runs of removed benchmarks such as bfcl or
+     aime2026 in old result roots are ignored)
   2. Reads metrics.json, the GPT-5.4 contamination judgement (resolved by
      utils.resolve_judgement: manual override judgement_gpt5_4_manual.json >
      majority of the three judge runs > judgement_gpt5_4_rerun.json >
@@ -87,10 +89,14 @@ def collect_method(
     judge coverage (non-empty "judgements_missing") can be skipped entirely
     instead of aggregated.
     """
-    latest_runs = walk_latest_runs(method_path, min_run_id, max_run_id)
-    # Only scored benchmarks enter the per-method CSVs; runs of retired
-    # benchmarks (bfcl) stay on disk but are ignored here.
-    latest_runs = {k: v for k, v in latest_runs.items() if k[0] in HARDCODED_BENCHMARKS}
+    # Only benchmarks of the current suite are collected. Old result roots
+    # also hold runs of removed benchmarks (e.g. bfcl, aime2026); those are
+    # not scored and have no baselines.json fallback, so they are ignored.
+    latest_runs = {
+        key: run
+        for key, run in walk_latest_runs(method_path, min_run_id, max_run_id).items()
+        if key[0] in HARDCODED_BENCHMARKS
+    }
     if not latest_runs:
         return None
 
@@ -156,9 +162,14 @@ def collect_method(
                 # or time file). Fall through to baseline fallback. Skip the
                 # warning when a final_eval_9.txt-style file exists — the
                 # eval exhausted its retries, so a missing metrics.json is
-                # expected. Matches both `final_eval_9.txt` and the rerun
-                # naming `*_final_eval_9.txt` (e.g. `z_new_<id>_final_eval_9.txt`).
-                if not glob.glob(os.path.join(run_dir, "*final_eval_9.txt")):
+                # expected. Matches the pre-seed `final_eval_9.txt` in the run
+                # dir, the per-seed `evaluation/final_eval_seed<S>_9.txt`, and
+                # their rerun variants (`z_new_<id>_final_eval_9.txt`,
+                # `z_new_<id>_evaluation/final_eval_seed<S>_9.txt`).
+                if not (
+                    glob.glob(os.path.join(run_dir, "*final_eval_9.txt"))
+                    or glob.glob(os.path.join(run_dir, "*evaluation", "final_eval_seed*_9.txt"))
+                ):
                     print(f"WARNING: skipping broken run {run_dir}: {e}")
                 metrics_grid[model][bench] = ""
                 contamination_grid[model][bench] = ""

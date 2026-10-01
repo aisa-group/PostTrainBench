@@ -109,9 +109,9 @@ for input in "${INPUT_DIRS[@]}"; do
         name="$(basename "$d")"
         [[ "$name" =~ ^(.+)_([0-9]+)$ ]]
         key="${BASH_REMATCH[1]}"
-        # bfcl is retired from scoring (see HARDCODED_BENCHMARKS in scripts/utils.py);
-        # don't spend judge runs on it when expanding a method dir.
-        if [[ "$name" == bfcl_* ]]; then
+        # bfcl and aime2026 were removed (see HARDCODED_BENCHMARKS in scripts/utils.py);
+        # don't spend judge runs on them when expanding a method dir.
+        if [[ "$name" == bfcl_* || "$name" == aime2026_* ]]; then
             skipped_retired=$((skipped_retired+1))
             continue
         fi
@@ -245,7 +245,7 @@ wait_for_clusters() {
 }
 
 echo "Skipped (superseded by newer run): $skipped_superseded" >&2
-echo "Skipped (retired benchmark bfcl): $skipped_retired" >&2
+echo "Skipped (removed benchmarks bfcl, aime2026): $skipped_retired" >&2
 
 # ---------- dispatch ----------
 if [ -n "$SLOT" ]; then

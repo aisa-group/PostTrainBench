@@ -22,8 +22,9 @@ PostTrainBench/
 │   ├── judges/                # Reward-hacking judges (one folder per judge; see Safety)
 │   ├── eval/
 │   │   ├── general/           # Prompt generation (get_prompt.py, prompt.txt)
-│   │   ├── tasks/             # Evaluation benchmarks (aime2025, aime2026, gsm8k, ...)
-│   │   └── templates/         # Chat templates (Jinja2)
+│   │   ├── tasks/             # Evaluation benchmarks (aime2025, gsm8k, ...)
+│   │   ├── templates/         # Chat templates (Jinja2)
+│   │   └── run_final_eval.sh  # The final evaluation of a trained model
 │   ├── trace_parsing/         # Per-agent trace parsers (claude/codex/gemini/opencode)
 │   ├── utils/                 # Utility scripts (check_cuda, system_monitor, timestamp_lines, ...)
 │   └── run_task.sh            # Main task execution orchestrator
@@ -35,6 +36,7 @@ PostTrainBench/
 | File | Purpose |
 |------|---------|
 | `src/run_task.sh` | Main task execution orchestrator (runs agent, then 4 judges, then evaluation) |
+| `src/eval/run_final_eval.sh` | The final evaluation (seeds, max-tokens retry cascade, mean into `metrics.json`); used by `run_task.sh`, `dev_utils/test_evaluation/run_only_evaluation.sh` and `scripts/rerun_eval_n_times.sh` |
 | `src/commit_utils/commit.sh` | Batch job submission across agents × benchmarks × models |
 | `src/commit_utils/set_env_vars.sh` | Sources `.env` and exports `POST_TRAIN_BENCH_*` env vars |
 | `src/commit_utils/single_task.sub` | HTCondor submission template |
@@ -147,6 +149,27 @@ alias in the CLI's `[models] default`.
      present, `run_task.sh` also copies it (plus `contamination_check.py`) into the agent sandbox
      home and `get_prompt.py` adds a "Decontamination Tool" prompt section, so the agent can
      screen its own training data for test-set overlap
+   - `evaluate_final_eval.py` - Variant of `evaluate.py` that the final evaluation runs instead
+     (`src/eval/run_final_eval.sh`, and the baselines). It is
+     **never** copied into the agent sandbox, which only sees `evaluate.py`. It must accept `--seed` and
+     use it for generation (the final evaluation runs once per fixed seed, see "Results Structure").
+     `run_final_eval.sh` exits before it evaluates anything if it is missing, and `run_task.sh` runs
+     `run_final_eval.sh --check` at job start. Also use it for
+     grading hardening the agent should not see (e.g. humaneval's scorer, see below). Keep it in sync
+     with `evaluate.py` otherwise. A task with an `evaluate_openrouter.py` also needs
+     `evaluate_openrouter_final_eval.py`, the same variant of that file, which `run_final_eval.sh` runs
+     when grading goes through OpenRouter. A new task also needs its max-tokens retry cascade in
+     `run_final_eval.sh`.
+
+     humaneval's final-eval scorer never runs the model's code next to the tests. Upstream runs both in
+     one process, where the code can end the process early (counted as a pass) or return an object that
+     equals everything. Instead, the test runs in a checker process, and each call of the model's function
+     runs in a fresh process of an *answer sandbox*: a second apptainer container with no network, no host
+     filesystems and its own PID namespace (`src/eval/tasks/humaneval/answer_sandbox.py`). Results come
+     back as plain values only. Every script that runs humaneval's final evaluation therefore wraps its
+     `apptainer exec` in `src/eval/tasks/humaneval/with_answer_sandbox.sh`, which starts one sandbox per
+     evaluation run; `evaluate_final_eval.py` exits at startup without it. Regression tests:
+     `dev_utils/humaneval_early_exit/scorer_tests.sub`.
 3. Optional files:
    - `evaluation_code/` - Supporting evaluation code copied into the agent sandbox
    - `task_context/` - Additional context (e.g. dataset hints) copied into the agent sandbox
@@ -309,9 +332,35 @@ results/{agent}_{agent_config}_{num_hours}h[_{num_gpus}gpu]{experiment_name}/
     ├── judgement_ptb_lookup.json        # ptb_lookup_judge structured verdict (archival; collect.py errors if flagged)
     ├── judge_output_general.{json,txt}  # general_judge raw + parsed trace
     ├── judgement_general.json           # general_judge structured verdict (archival; ignored by collect.py)
-    ├── final_eval_*.txt                 # vLLM/inspect-ai evaluation logs (one per retry)
-    └── metrics.json                     # Final benchmark scores
+    ├── evaluation/                      # Per-seed final-evaluation outputs
+    │   ├── final_eval_seed{S}_{N}.txt   # vLLM/inspect-ai evaluation logs (one per seed and retry)
+    │   ├── metrics_seed{S}.json         # Benchmark scores of one evaluation seed
+    │   └── default_temperature{,_log}.txt # vLLM's default temperature for the model (aime2025/gsm8k/humaneval)
+    └── metrics.json                     # Final benchmark scores: mean over the seeds that succeeded
 ```
+
+The final evaluation (`src/eval/run_final_eval.sh`) runs once for each fixed seed in
+`FINAL_EVAL_SEEDS`: 72332, 87681, 38992, 92201, 13818. arenahardwriting and healthbench use only the
+first seed, because each seed costs a full set of paid OpenAI grader calls. aime2025, gsm8k and
+humaneval also use only the first seed when vLLM decodes the model greedily. Their tasks set no
+temperature, so vLLM uses the model's default temperature from its `generation_config.json`
+(`src/utils/default_temperature.py`), and at 0 the seed does not change the result. gpqamain always
+uses all seeds, because its seed also shuffles the answer choices. Earlier seeded runs
+used the seeds 0–4 (only 0 for those two benchmarks); `per_seed` in `metrics.json` shows the seeds
+of a run. The seed goes to
+`evaluate_final_eval.py` as `--seed`. Each seed runs the max-tokens retry cascade:
+- The first seed starts at stage 0. If it fails at every stage, the other seeds are skipped and
+  no `metrics.json` is written, so `scripts/collect.py` uses the baseline.
+- The later seeds start at the stage where the first seed succeeded, so they use the same
+  max-tokens setting. A later seed that fails at every stage is left out of the mean.
+
+`src/utils/aggregate_seed_metrics.py` then writes `metrics.json`. It holds the mean of each
+top-level numeric metric over the seeds that succeeded, plus `num_seeds`, `num_seeds_succeeded`
+and `per_seed` (the raw metrics and cascade stage of each seed). Runs from before this change have
+no `evaluation/` folder: they have one `final_eval_{N}.txt` series in the run dir and an unseeded
+`metrics.json`. `dev_utils/test_evaluation/run_only_evaluation.sh` writes its per-seed files to
+`z_new_{cluster_id}_evaluation/` instead. `scripts/rerun_eval_n_times.sh` writes them to `reruns/`
+and the mean to `metrics_averaged.json`, and it can use other seeds (`--seeds`).
 
 Result directories with the `_rerun` suffix on `judgement_*.json` come from the rerun-judge
 pipeline; original files are kept side-by-side. The canonical contamination verdict is
