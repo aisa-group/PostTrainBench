@@ -1,11 +1,12 @@
 # PostTrainBench: Can LLM Agents Automate LLM Post-Training?
 
 [![Website](https://img.shields.io/badge/Website-posttrainbench.com-c17d5a)](http://posttrainbench.com/)
+[![harbor-parity](https://github.com/aisa-group/PostTrainBench/actions/workflows/harbor-parity.yml/badge.svg)](https://github.com/aisa-group/PostTrainBench/actions/workflows/harbor-parity.yml)
 
 We introduce PostTrainBench, a benchmark that measures the ability of CLI agents to post-train pre-trained large language models (LLMs). In PostTrainBench, the agent's task is to improve the performance of a base LLM on a given benchmark. The agent is given access to an evaluation script and 10 hours on an H100 GPU. Performance is measured by the benchmark score of the post-trained LLM. This setup naturally evaluates an agent's ability to conduct AI R&D.
 
 > [!IMPORTANT]
-> **Harbor support coming soon!** This repository currently targets our internal HPC cluster (HTCondor). We are adding [Harbor](https://github.com/harbor-framework/harbor) support to make it straightforward to run on rented hardware (e.g., cloud GPUs). See our [PR](https://github.com/aisa-group/PostTrainBench/pull/8).
+> **Run it on cloud GPUs via [Harbor](https://github.com/harbor-framework/harbor).** This repository's reference pipeline targets our HPC cluster (HTCondor), but `src/harbor_adapter/` runs the full benchmark — same prompt, judges and evaluation — on Modal, with no cluster needed. See [its README](src/harbor_adapter/README.md).
 
 ## Scaffolds
 
@@ -24,6 +25,9 @@ PostTrainBench includes 6 benchmarks spanning reasoning, knowledge, math, health
 6. **HumanEval** — Code generation
 
 ## Quick Start
+
+On an HTCondor cluster (the reference setup); to run on cloud GPUs instead, see
+[`src/harbor_adapter/`](src/harbor_adapter/README.md).
 
 ```bash
 # 1. Install requirements (apptainer, fuse-overlayfs)
@@ -127,6 +131,7 @@ The `solve.sh` script reads the token from the file, exports it as `CLAUDE_CODE_
 | `src/commit_utils/` | Job submission utilities (e.g., `bash src/commit_utils/commit.sh`) |
 | `src/baselines/` | Scripts to compute baseline scores |
 | `src/eval/` | Evaluation tasks |
+| `src/harbor_adapter/` | Runs the benchmark on cloud GPUs (Modal) via Harbor ([README](src/harbor_adapter/README.md)) |
 | `results/` | Evaluation results (baseline runs prefixed with `baseline_`) |
 | `logs/` | HTCondor scheduler logs (`.err`/`.out`/`.log` per job; gitignored) |
 
