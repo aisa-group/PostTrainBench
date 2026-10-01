@@ -33,14 +33,10 @@ UNREADABLE="$(find "${MODEL_DIR}/" -type f ! -readable)"
 
 source src/commit_utils/set_env_vars.sh
 
-JOB_TMP="$(mktemp -d /tmp/ptb_rerun_seed.XXXXXX)"
 GRANT_ACCESS="$(pwd)/src/utils/grant_access.py"
-trap 'rm -rf "${JOB_TMP}"; python3 "${GRANT_ACCESS}" "${CELL_DIR}"' EXIT
-# Job-local caches: ~/.cache/vllm would grow in the home quota, and inspect's shared trace dir makes concurrent evals
-# delete each other's trace files ("Stale file handle" tracebacks in every log call).
-export VLLM_CACHE_ROOT="${JOB_TMP}/vllm_cache"
-export XDG_DATA_HOME="${JOB_TMP}/xdg_data"
-export INSPECT_LOG_DIR="${RERUNS}/inspect_logs/seed${SEED}"
+trap 'python3 "${GRANT_ACCESS}" "${CELL_DIR}"' EXIT
+# run_final_eval.sh keeps vLLM's and inspect's caches local to the evaluation and writes the inspect logs to
+# ${RERUNS}/inspect_logs/seed${SEED}/.
 
 # A job that condor restarted (machine failure, eviction) finds its own interrupted attempt: the last line of this
 # seed's jobs log is its own start line. Move that attempt aside; any other leftover makes run_final_eval.sh refuse.

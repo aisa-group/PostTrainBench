@@ -3,7 +3,8 @@
 aime_scorer_exact() in src/eval/tasks/aime2025/evaluate_final_eval.py and gsm8k_match_exact() in
 src/eval/tasks/gsm8k/evaluate_final_eval.py; PostTrainBench issue #44).
 
-1. Unit cases: the issue's false positives (711 for 11, 149 for 49) are wrong; formatting variants stay right.
+1. Unit cases: the issue's false positives (711 for 11, 149 for 49) are wrong; formatting variants stay right; a last
+   "number" that upstream cannot parse (it raises, failing the attempt) is wrong.
 2. Agreement with inspect_ai's match_str(location="end", numeric=True): same extracted answer always; same verdict
    except where upstream matched only by str.endswith.
 3. The scorer through the real inspect pipeline with a mock model.
@@ -80,6 +81,25 @@ GSM8K_CASES = [  # (completion, target, correct)
 ]
 
 
+# Last "numbers" that upstream's match(numeric=True) raises on (ValueError or OverflowError), failing the whole
+# evaluation attempt. Both matchers score them wrong instead. The factorization is from a real aime2025 completion
+# (stripping "*" leaves "35²13").
+UNPARSABLE_CASES = ["ANSWER: .10.00.50", "the answer is ½½", "ANSWER: 10⁹⁹⁹", "975 factors into 3*5²*13. Therefore,"]
+
+
+def test_unparsable() -> None:
+    for completion in UNPARSABLE_CASES:
+        try:
+            match_str(completion, "50", location="end", numeric=True)
+        except (ValueError, OverflowError):
+            pass
+        else:
+            raise AssertionError(f"upstream no longer raises on {completion!r}")
+        for matcher in (last_number_exact, signed_last_number_exact):
+            answer, matched = matcher(completion, "50")
+            assert not matched, (matcher.__name__, completion, answer)
+
+
 def test_cases() -> None:
     for completion, target, correct in GSM8K_CASES:
         answer, matched = signed_last_number_exact(completion, target)
@@ -93,21 +113,22 @@ def test_cases() -> None:
 
 
 def test_gsm8k_pipeline() -> None:
-    outputs = ["ANSWER: 15", "ANSWER: 5", "ANSWER: 14000", "ANSWER: 3"]
-    targets = ["5", "5", "14,000", "-3"]
+    outputs = ["ANSWER: 15", "ANSWER: 5", "ANSWER: 14000", "ANSWER: 3", "ANSWER: 10⁹⁹⁹"]
+    targets = ["5", "5", "14,000", "-3", "5"]
     model = get_model("mockllm/model", custom_outputs=[ModelOutput.from_content("mockllm/model", o) for o in outputs])
     task = Task(dataset=[Sample(input=f"q{i}", target=t, id=i) for i, t in enumerate(targets)], solver=generate(),
                 scorer=gsm8k_match_exact())
     with tempfile.TemporaryDirectory() as log_dir:
         log = inspect_eval(task, model=model, log_dir=log_dir, display="none", max_connections=1)[0]
     assert log.status == "success", log.status
-    got = [next(s for s in log.samples if s.input == f"q{i}").scores["gsm8k_match_exact"].value for i in range(4)]
-    assert got == ["I", "C", "C", "I"], got
+    got = [next(s for s in log.samples if s.input == f"q{i}").scores["gsm8k_match_exact"].value
+           for i in range(len(outputs))]
+    assert got == ["I", "C", "C", "I", "I"], got
 
 
 def test_pipeline() -> None:
-    outputs = ["ANSWER: 711", "ANSWER: \\boxed{11}", "ANSWER: 149", "ANSWER: 49"]
-    targets = ["11", "11", "49", "49"]
+    outputs = ["ANSWER: 711", "ANSWER: \\boxed{11}", "ANSWER: 149", "ANSWER: 49", "ANSWER: .10.00.50"]
+    targets = ["11", "11", "49", "49", "50"]
     model = get_model("mockllm/model", custom_outputs=[ModelOutput.from_content("mockllm/model", o) for o in outputs])
     task = Task(dataset=[Sample(input=f"q{i}", target=t, id=i) for i, t in enumerate(targets)], solver=generate(),
                 scorer=aime_scorer_exact())
@@ -116,8 +137,9 @@ def test_pipeline() -> None:
     assert log.status == "success", log.status
     got = {s.input: s.scores["aime_scorer_exact"].value for s in log.samples}
     by_output = dict(zip(outputs, (got[f"q{i}"] for i in range(len(outputs)))))
-    assert by_output == {"ANSWER: 711": "I", "ANSWER: \\boxed{11}": "C", "ANSWER: 149": "I", "ANSWER: 49": "C"}, by_output
-    assert log.results.scores[0].metrics["accuracy"].value == 0.5
+    assert by_output == {"ANSWER: 711": "I", "ANSWER: \\boxed{11}": "C", "ANSWER: 149": "I", "ANSWER: 49": "C",
+                         "ANSWER: .10.00.50": "I"}, by_output
+    assert log.results.scores[0].metrics["accuracy"].value == 0.4
 
 
 def gsm8k_flip_category(completion: str, target: str, upstream: dict, answer: str, matched: bool) -> str:
@@ -171,6 +193,7 @@ def replay_logs(dirs: list[str]) -> None:
 
 if __name__ == "__main__":
     test_cases()
+    test_unparsable()
     test_pipeline()
     test_gsm8k_pipeline()
     if len(sys.argv) > 1:

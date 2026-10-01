@@ -12,8 +12,9 @@ seed's recorded accuracy, and rescores every sample from its logged cleaned answ
 reruns/metrics_seed<S>_exact_match.json and <cell>/metrics_averaged_exact_match.json (same format as
 metrics_averaged.json, same seeds and stages); existing files are never overwritten.
 
-Final evaluations of run_task.sh keep their inspect logs in the submitting checkout, not in the result dir, so they
-cannot be rescored from the result dir alone.
+Final evaluations of run_task.sh before 2026-10-01 kept their inspect logs in the submitting checkout, not in the
+result dir, so they cannot be rescored from the result dir alone. Later ones keep them in
+<run>/evaluation/inspect_logs/seed<S>/ and already use the exact match.
 
 Usage (in the eval container, from the repo root):
   apptainer exec --bind "$PWD" --pwd "$PWD" "$POST_TRAIN_BENCH_CONTAINERS_DIR/vllm_debug.sif" \\

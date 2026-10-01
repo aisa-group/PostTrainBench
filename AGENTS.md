@@ -160,7 +160,8 @@ alias in the CLI's `[models] default`.
      `run_final_eval.sh --check` at job start. Also use it for
      grading hardening the agent should not see (e.g. humaneval's scorer, see below; the exact numeric match of aime2025
      and gsm8k, `src/eval/exact_numeric_match.py`: upstream `match(numeric=True)` compares with `str.endswith`, so 711
-     counts for 11, and gsm8k's negative and thousands-separator targets as text, issue #44;
+     counts for 11, and gsm8k's negative and thousands-separator targets as text, issue #44; a last number upstream
+     cannot parse, such as `35²13` from `3*5²*13`, crashes its scorer and so the attempt, and is wrong here;
      `scripts/rescore_exact_match.py` rescores finished reruns from their inspect logs). Keep it in sync
      with `evaluate.py` otherwise. A task with an `evaluate_openrouter.py` also needs
      `evaluate_openrouter_final_eval.py`, the same variant of that file, which `run_final_eval.sh` runs
@@ -338,6 +339,7 @@ results/{agent}_{agent_config}_{num_hours}h[_{num_gpus}gpu]{experiment_name}/
     ├── evaluation/                      # Per-seed final-evaluation outputs
     │   ├── final_eval_seed{S}_{N}.txt   # vLLM/inspect-ai evaluation logs (one per seed and retry)
     │   ├── metrics_seed{S}.json         # Benchmark scores of one evaluation seed
+    │   ├── inspect_logs/seed{S}/        # Inspect logs of the seed's attempts (before 2026-10-01: in the submitting checkout)
     │   └── default_temperature{,_log}.txt # vLLM's default temperature for the model (aime2025/gsm8k/humaneval)
     └── metrics.json                     # Final benchmark scores: mean over the seeds that succeeded
 ```

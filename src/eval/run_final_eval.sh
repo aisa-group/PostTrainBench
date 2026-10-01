@@ -13,8 +13,8 @@
 # - Without seeds, it uses the task's default seeds (DEFAULT_SEEDS in setup_task): all 5 of FINAL_EVAL_SEEDS for
 #   aime2025, the first 3 for gpqamain, gsm8k and humaneval, and only the first for arenahardwriting and healthbench;
 #   and only the first for aime2025, gsm8k and humaneval when vLLM decodes the model greedily (see "Greedy models").
-# - <output_dir> gets each seed's metrics (metrics_seed<S>.json) and the log of each attempt
-#   (final_eval_seed<S>_<N>.txt). Neither it nor <metrics_json> may exist yet.
+# - <output_dir> gets each seed's metrics (metrics_seed<S>.json), the log of each attempt (final_eval_seed<S>_<N>.txt)
+#   and the inspect logs of the seed's attempts (inspect_logs/seed<S>/). Neither it nor <metrics_json> may exist yet.
 # - <model_dir> is not checked. A missing model fails at every stage like any broken model, and collect.py
 #   recognizes that case by the final_eval_seed<S>_9.txt log.
 # - If the first seed fails at every stage, the other seeds are skipped and no <metrics_json> is written. That is a
@@ -185,7 +185,8 @@ DUPLICATE_SEEDS="$(printf '%s\n' "${EVAL_SEEDS[@]}" | sort | uniq -d)"
 # other seeds' jobs share <output_dir>, so only this seed's files must be new.
 if [ "${SINGLE_SEED}" = 1 ]; then
     [ -d "${OUTPUT_DIR}" ] || die "${OUTPUT_DIR} not found"
-    if compgen -G "${OUTPUT_DIR}/*_seed${EVAL_SEEDS[0]}[._]*" > /dev/null; then
+    if compgen -G "${OUTPUT_DIR}/*_seed${EVAL_SEEDS[0]}[._]*" > /dev/null \
+            || [ -e "${OUTPUT_DIR}/inspect_logs/seed${EVAL_SEEDS[0]}" ]; then
         die "${OUTPUT_DIR} already has files of seed ${EVAL_SEEDS[0]}; move them away before evaluating"
     fi
 else
@@ -199,6 +200,11 @@ fi
 REPO_ROOT="$(pwd)"
 TMP_SUBDIR="$(mktemp -d /tmp/ptb_final_eval.XXXXXX)"
 HF_MERGED="${TMP_SUBDIR}/merged_huggingface"
+# Caches local to this evaluation, which the eval container inherits: ~/.cache/vllm (vLLM's compile cache) would grow
+# in the home quota, and inspect's trace dir under ~/.local/share is shared by all concurrent evaluations, which then
+# delete each other's trace files ("Stale file handle" tracebacks in every log call).
+export VLLM_CACHE_ROOT="${TMP_SUBDIR}/vllm_cache"
+export XDG_DATA_HOME="${TMP_SUBDIR}/xdg_data"
 # run_evaluation runs in its own bash and sees only exported variables.
 export EVALUATION_TASK MODEL_DIR OUTPUT_DIR EVAL_CONTAINER FINAL_EVAL_SCRIPT GRADER_API_KEY_NAME TMP_HF_CACHE HF_HOME \
     REPO_ROOT TMP_SUBDIR HF_MERGED
@@ -281,9 +287,11 @@ run_evaluation() {
     fi
     nvidia-smi --query-compute-apps=pid --format=csv,noheader | xargs -r kill -9
     sleep 5
+    # The inspect logs go next to the seed's metrics, not to the task directory of the checkout (inspect's default).
     with_huggingface_overlay "${answer_sandbox[@]}" apptainer exec \
         --nv \
         --env "HF_HOME=${TMP_HF_CACHE}" \
+        --env "INSPECT_LOG_DIR=${OUTPUT_DIR}/inspect_logs/seed${seed}" \
         "${grader_key_env[@]}" \
         --env VLLM_API_KEY="inspectai" \
         --env PYTHONNOUSERSITE="1" \
