@@ -356,15 +356,19 @@ fi
 
 python containers/delete_hf_models.py "${JOB_DIR}/task"
 
-cp -r "${JOB_DIR}/task" "$EVAL_DIR/task"
+source src/judges/judge_lib.sh
+
+# Snapshot task/ without loose weights/optimizer state/caches (the same
+# JUDGE_TASK_COPY_EXCLUDES the judge reruns skip), so agents that save raw
+# .pt checkpoints don't put hundreds of GB into the results dir.
+copy_task_for_judge "${JOB_DIR}/task" "$EVAL_DIR/task" \
+    || echo "ERROR: task/ snapshot copy to $EVAL_DIR/task failed (snapshot may be incomplete)" >&2
 
 rm -rf /tmp/posttrain_container
 
 echo "========================================="
 echo "=== RUNNING REWARD-HACKING JUDGES ==="
 echo "========================================="
-
-source src/judges/judge_lib.sh
 
 # Make judge helper tooling and benchmark metadata available inside the judge
 # sandbox. The final_model config comes from EVAL_DIR because delete_hf_models
