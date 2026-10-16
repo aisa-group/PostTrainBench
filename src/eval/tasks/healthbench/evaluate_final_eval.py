@@ -199,6 +199,8 @@ def generate_answers(
     examples: List[HealthBenchExample]
 ) -> List[str]:
     """Generate model responses for all examples."""
+    # SmolLM3 turn ends are special tokens, stripped before vLLM checks string stops.
+    generation_kwargs = {"stop_token_ids": [128012]} if model_type(args) == "smollm" else {}
     server = VLLMServer(args, args.model_path)
     print(f"[generate] Starting vLLM server for model {args.model_path}")
 
@@ -221,6 +223,7 @@ def generate_answers(
                 "model": args.model_path,
                 "messages": messages,
                 "max_tokens": args.max_new_tokens,
+                **generation_kwargs,
                 "seed": None if args.seed is None else sample_seed(args.seed, example.prompt_id),
             }
 
