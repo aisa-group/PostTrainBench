@@ -240,6 +240,10 @@ The sandbox receives exactly the **union** of the two. Consequences:
 
 - `OPENAI_API_KEY` reaches an agent **only** when it runs `arenahardwriting`/`healthbench`, so the
   agent can run `evaluate.py`'s OpenAI judge; for every other benchmark it is absent.
+- If `.env` has an `OPENROUTER_API_KEY` but no `OPENAI_API_KEY`, those two benchmarks are graded
+  through OpenRouter instead (`evaluate_openrouter.py`, same judge model): `run_task.sh` adds
+  `OPENROUTER_API_KEY` to the sandbox, and `get_prompt.py` (seeing `EVAL_SCRIPT=evaluate_openrouter.py`)
+  names that key in the prompt's evaluation exception (rule 10).
 - Subscription-auth agents (`*_non_api`) list `[]` and authenticate via their bind-mounted
   `auth.json`/`oauth_token`; on the two writing benchmarks they additionally receive
   `OPENAI_API_KEY` purely for grading.
