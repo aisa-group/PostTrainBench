@@ -35,7 +35,7 @@ PostTrainBench/
 
 | File | Purpose |
 |------|---------|
-| `src/run_task.sh` | Main task execution orchestrator (runs agent, then 4 judges, then evaluation) |
+| `src/run_task.sh` | Main task execution orchestrator (runs agent, then 4 judges, then evaluation; stops before the judges if the sandbox's CUDA check failed) |
 | `src/eval/run_final_eval.sh` | The final evaluation (seeds, max-tokens retry cascade, mean into `metrics.json`); used by `run_task.sh`, `dev_utils/test_evaluation/run_only_evaluation.sh` and `scripts/rerun_eval_n_times.sh`; `--single-seed` runs one seed (`scripts/rerun_final_eval_parallel.py`) |
 | `scripts/rerun_final_eval_parallel.py` | Reruns the final evaluation of many result dirs, one GPU job per (run, seed); submit/status/retry |
 | `src/commit_utils/commit.sh` | Batch job submission across agents × benchmarks × models |
