@@ -42,6 +42,19 @@ cat > opencode.json << 'EOF'
       "options": {
         "apiKey": "{env:MODEL_API_KEY}"
       }
+    },
+    "openrouter": {
+      "options": {
+        "apiKey": "{env:OPENROUTER_API_KEY}"
+      },
+      "models": {
+        "google/gemini-4-argon": {
+          "options": {
+            "reasoning": {"effort": "high"},
+            "provider": {"order": ["google-vertex/global"], "allow_fallbacks": false}
+          }
+        }
+      }
     }
   }
 }

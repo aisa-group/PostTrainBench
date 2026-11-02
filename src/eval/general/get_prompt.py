@@ -100,6 +100,10 @@ def main():
     # provider key (e.g. OPENAI_API_KEY for healthbench/arenahardwriting) get a rule 10
     # carving out that key as an exception, permitted for evaluation only.
     required_api_keys = read_required_api_keys(args.benchmark_id)
+    # run_task.sh grades through OpenRouter instead (EVAL_SCRIPT=evaluate_openrouter.py, exported before it calls
+    # this script) when .env has an OPENROUTER_API_KEY but no OPENAI_API_KEY; evaluate.py then uses OPENROUTER_API_KEY.
+    if os.environ.get("EVAL_SCRIPT") == "evaluate_openrouter.py":
+        required_api_keys = ["OPENROUTER_API_KEY" if k == "OPENAI_API_KEY" else k for k in required_api_keys]
     if required_api_keys:
         keys_str = ", ".join(f"\\`{k}\\`" for k in required_api_keys)
         if len(required_api_keys) == 1:

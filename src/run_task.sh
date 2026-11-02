@@ -261,7 +261,7 @@ solve_task() {
         --pwd "/home/ben/task" \
         --writable-tmpfs \
         "${POST_TRAIN_BENCH_CONTAINERS_DIR}/${POST_TRAIN_BENCH_CONTAINER_NAME}.sif" \
-        bash -c "{ python /home/ben/check_cuda.py && python /home/ben/check_cuda_writing.py || exit 1; bash /home/ben/system_monitor.sh & MONITOR_PID=\$!; bash /home/ben/agent_solve.sh; kill \$MONITOR_PID 2>/dev/null; } 2>&1 | python /home/ben/timestamp_lines.py" > "${SOLVE_OUT}" 2>&1
+        bash -c "{ python /home/ben/check_cuda.py && python /home/ben/check_cuda_writing.py && touch /home/ben/cuda_check_passed || exit 1; bash /home/ben/system_monitor.sh & MONITOR_PID=\$!; bash /home/ben/agent_solve.sh; kill \$MONITOR_PID 2>/dev/null; } 2>&1 | python /home/ben/timestamp_lines.py" > "${SOLVE_OUT}" 2>&1
 }
 
 # ---------- judge OAuth precheck ----------
@@ -319,6 +319,14 @@ echo "disk_job_dir: $(du -sh "${JOB_DIR}" 2>/dev/null | cut -f1)"
 echo "disk_tmp: $(du -sh "${JOB_TMP}" 2>/dev/null | cut -f1)"
 echo "memory: $(free -m 2>/dev/null | grep Mem | awk '{print "total=" $2 "MB used=" $3 "MB free=" $4 "MB"}')"
 echo "--- END SOLVE DIAGNOSTICS ---"
+
+# The CUDA checks' `exit 1` ends only the sandbox's command group: the pipe through timestamp_lines.py exits 0, so a
+# node with a broken GPU used to go on to the judges and the evaluation of a run that never started. The checks leave
+# this marker when they pass.
+if [ ! -f "${JOB_DIR}/cuda_check_passed" ]; then
+    echo "ERROR: the CUDA check in the agent sandbox failed on $(hostname) (see solve_out.txt); stopping before the judges and the evaluation" >&2
+    exit 1
+fi
 
 # Record the (auto-updated) agent CLI version captured by update_agent_cli.sh.
 if [ -f "${JOB_DIR}/cli_version.txt" ]; then

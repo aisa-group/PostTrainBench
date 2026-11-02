@@ -35,7 +35,7 @@ PostTrainBench/
 
 | File | Purpose |
 |------|---------|
-| `src/run_task.sh` | Main task execution orchestrator (runs agent, then 4 judges, then evaluation) |
+| `src/run_task.sh` | Main task execution orchestrator (runs agent, then 4 judges, then evaluation; stops before the judges if the sandbox's CUDA check failed) |
 | `src/eval/run_final_eval.sh` | The final evaluation (seeds, max-tokens retry cascade, mean into `metrics.json`); used by `run_task.sh`, `dev_utils/test_evaluation/run_only_evaluation.sh` and `scripts/rerun_eval_n_times.sh`; `--single-seed` runs one seed (`scripts/rerun_final_eval_parallel.py`) |
 | `scripts/rerun_final_eval_parallel.py` | Reruns the final evaluation of many result dirs, one GPU job per (run, seed); submit/status/retry |
 | `src/commit_utils/commit.sh` | Batch job submission across agents × benchmarks × models |
@@ -137,6 +137,11 @@ chmod 600 agents/grok_cli/grok_auth.json
 The explicit model ID for Grok 4.5 is `grok-4.5` (per `docs.x.ai/docs/models`) — pass it as
 `agent_config` so `-m grok-4.5` pins the exact version regardless of the floating `grok-build`
 alias in the CLI's `[models] default`.
+
+`opencode` also runs OpenRouter models: pass `openrouter/<model>` as `agent_config` (its `api_keys.json` allows
+`OPENROUTER_API_KEY`). `solve.sh` configures `openrouter/google/gemini-4-argon` with `reasoning.effort: high` and
+pins it to OpenRouter's `google-vertex/global` endpoint (no fallbacks); verified on the wire on 2026-11-02. Gemini
+runs use opencode.
 
 ## Adding a New Evaluation Task
 
@@ -240,6 +245,10 @@ The sandbox receives exactly the **union** of the two. Consequences:
 
 - `OPENAI_API_KEY` reaches an agent **only** when it runs `arenahardwriting`/`healthbench`, so the
   agent can run `evaluate.py`'s OpenAI judge; for every other benchmark it is absent.
+- If `.env` has an `OPENROUTER_API_KEY` but no `OPENAI_API_KEY`, those two benchmarks are graded
+  through OpenRouter instead (`evaluate_openrouter.py`, same judge model): `run_task.sh` adds
+  `OPENROUTER_API_KEY` to the sandbox, and `get_prompt.py` (seeing `EVAL_SCRIPT=evaluate_openrouter.py`)
+  names that key in the prompt's evaluation exception (rule 10).
 - Subscription-auth agents (`*_non_api`) list `[]` and authenticate via their bind-mounted
   `auth.json`/`oauth_token`; on the two writing benchmarks they additionally receive
   `OPENAI_API_KEY` purely for grading.
