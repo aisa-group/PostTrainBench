@@ -138,6 +138,11 @@ The explicit model ID for Grok 4.5 is `grok-4.5` (per `docs.x.ai/docs/models`) â
 `agent_config` so `-m grok-4.5` pins the exact version regardless of the floating `grok-build`
 alias in the CLI's `[models] default`.
 
+`opencode` also runs OpenRouter models: pass `openrouter/<model>` as `agent_config` (its `api_keys.json` allows
+`OPENROUTER_API_KEY`). `solve.sh` configures `openrouter/google/gemini-4-argon` with `reasoning.effort: high` and
+pins it to OpenRouter's `google-vertex/global` endpoint (no fallbacks); verified on the wire on 2026-11-02. Gemini
+runs use opencode.
+
 ## Adding a New Evaluation Task
 
 1. Create directory: `src/eval/tasks/<task_name>/`

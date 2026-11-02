@@ -2,6 +2,7 @@
   "allowed_api_keys": [
     "OPENCODE_API_KEY",
     "ZAI_API_KEY",
-    "MODEL_API_KEY"
+    "MODEL_API_KEY",
+    "OPENROUTER_API_KEY"
   ]
 }
