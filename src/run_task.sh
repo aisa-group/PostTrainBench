@@ -338,6 +338,12 @@ else
     echo "WARNING: ${JOB_DIR}/cli_version.txt not found (agent CLI version not recorded)" >&2
 fi
 
+# Logs and state that an agent's solve.sh keeps in ~/agent_logs (opencode: its data directory with the session
+# database), for analysing the run afterwards. Copied from outside the sandbox, so they survive the timeout.
+if [ -d "${JOB_DIR}/agent_logs" ]; then
+    cp -r "${JOB_DIR}/agent_logs" "${EVAL_DIR}/agent_logs"
+fi
+
 echo "============================================"
 echo "=== TASK COMPLETE, PARSING AGENT TRACE ==="
 echo "============================================"

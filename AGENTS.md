@@ -66,6 +66,8 @@ PostTrainBench/
    `parse_trace.py` so `solve_parsed.txt` is human-readable.
 6. If the agent needs persistent OAuth state (e.g. `codex_non_api`), drop an `auth.json` or
    `oauth_token` next to `solve.sh`; `run_task.sh` bind-mounts them into the sandbox.
+   Logs and state that `solve.sh` writes to `~/agent_logs/` are copied to the result dir (`agent_logs/`)
+   after the run, also after a timeout.
 7. Auto-update the CLI harness: call `bash /home/ben/update_agent_cli.sh <cli-binary>` in
    `solve.sh` just before launching the CLI (e.g. `... update_agent_cli.sh claude`). This upgrades
    the harness to the latest npm release and writes its version to `cli_version.txt` (surfaced in
@@ -142,6 +144,15 @@ alias in the CLI's `[models] default`.
 `OPENROUTER_API_KEY`). `solve.sh` configures `openrouter/google/gemini-4-argon` with `reasoning.effort: high` and
 pins it to OpenRouter's `google-vertex/global` endpoint (no fallbacks); verified on the wire on 2026-11-02. Gemini
 runs use opencode.
+`opencode run` ends the session at the first model turn without a tool call and at an error from the model provider
+(Argon did both: a bare `}` after 17 minutes, a 403 `SAFETY` from Google Vertex after 3 hours), so `solve.sh` resumes
+the session (`opencode run --session <id>`, with a note on the time left) while time is left, if it ended with a provider
+error or `final_model/` is still empty, at most 10 times; each resume is marked `=== solve.sh: resume` in `solve_out.txt`.
+`solve.sh` passes `--thinking`, so the JSON events include the model's reasoning summaries (`"type":"reasoning"`,
+shown by `opencode_parser.py`), and keeps opencode's data directory (`~/.local/share/opencode`: the session database
+with every message, tool call and reasoning summary, and opencode's log) in `~/agent_logs/opencode`. `solve_out.txt`
+can miss events: once opencode's stdout stalled at a 64 KB event, and 12 minutes of a session never reached it;
+`dev_utils/opencode_trace_rebuild/rebuild_solve_out.py` rebuilds such a trace from that database.
 
 ## Adding a New Evaluation Task
 
@@ -339,6 +350,7 @@ results/{agent}_{agent_config}_{num_hours}h[_{num_gpus}gpu]{experiment_name}/
     ├── task/                    # Snapshot of the agent's working directory (post-cleanup)
     ├── final_model/             # Trained model checkpoint
     ├── system_monitor.log       # GPU/CPU/RAM samples from src/utils/system_monitor.sh
+    ├── agent_logs/              # Optional: the agent's own logs/state (~/agent_logs in the sandbox; opencode: its data dir with the session database)
     ├── judge_output_gpt5_4.{json,txt}   # data_contamination_judge raw + parsed trace
     ├── judgement_gpt5_4.json            # data_contamination_judge structured verdict (slot 1 of 3)
     ├── judgement_multi_runs/            # contamination judge slots 2/3 (judgement_gpt5_4_run{2,3}.json) + majority cache (_final.json)
