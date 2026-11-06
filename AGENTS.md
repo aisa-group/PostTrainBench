@@ -48,6 +48,7 @@ PostTrainBench/
 | `src/utils/update_agent_cli.sh` | Auto-updates an agent's CLI harness to latest and records its version |
 | `src/judges/run_judges.sh` | Runs judges on an existing result dir (`--judges` to select a subset); each writes its own per-judge JSON |
 | `src/eval/per_sample_seed.py` | Per-sample generation seeds for every `evaluate_final_eval.py` (never one seed for all requests) |
+| `src/utils/memory_watchdog.py` | Runs next to the agent sandbox (`run_task.sh`): above 80% of `request_memory` it kills the job process with the most private memory, before HTCondor holds the whole job at 90%; kills go to `memory_watchdog.log`. Test: `dev_utils/memory_watchdog/test_memory_watchdog.sub` |
 | `src/utils/grant_access.py` | Gives the users in `POST_TRAIN_BENCH_USERS_ACCESS` ACL access to result dirs (run on exit by `run_task.sh`) |
 | `src/judges/get_judge_prompt.py` | Generates judge prompts (`--judge <judge_name>`) |
 | `containers/standard.def` | Main container definition (other `.def` files exist per-agent) |
@@ -354,6 +355,7 @@ results/{agent}_{agent_config}_{num_hours}h[_{num_gpus}gpu]{experiment_name}/
     ├── task/                    # Snapshot of the agent's working directory (post-cleanup)
     ├── final_model/             # Trained model checkpoint
     ├── system_monitor.log       # GPU/CPU/RAM samples from src/utils/system_monitor.sh
+    ├── memory_watchdog.log      # src/utils/memory_watchdog.py: its setup and every process it killed (agent phase)
     ├── agent_logs/              # Optional: the agent's own logs/state (~/agent_logs in the sandbox; opencode: its data dir with the session database)
     ├── judge_output_gpt5_4.{json,txt}   # data_contamination_judge raw + parsed trace
     ├── judgement_gpt5_4.json            # data_contamination_judge structured verdict (slot 1 of 3)

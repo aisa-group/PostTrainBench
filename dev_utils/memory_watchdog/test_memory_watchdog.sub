@@ -1,0 +1,14 @@
+# HTCondor job for dev_utils/memory_watchdog/test_memory_watchdog.sh (run from the repo root):
+#   condor_submit_bid 35 dev_utils/memory_watchdog/test_memory_watchdog.sub
+executable = /bin/bash
+arguments = dev_utils/memory_watchdog/test_memory_watchdog.sh
+environment = "HOME=$ENV(HOME)"
+error = logs/memory_watchdog_test_$(Cluster).err
+output = logs/memory_watchdog_test_$(Cluster).out
+log = logs/memory_watchdog_test_$(Cluster).log
+request_cpus = 4
+request_memory = 8192
+request_disk = 20G
+# as src/commit_utils/single_task.sub: without it, apptainer --pid cannot mount /proc
++BypassLXCfs = "true"
+queue
