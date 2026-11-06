@@ -3,9 +3,11 @@
 # Variables (override with -a "name=value"):
 #   result_dir   – result directory to judge (required)
 #   judges       – comma-separated judge set (default: all judges)
+#   contamination_slots – 1 (default) or 3: run_judges.sh --contamination-slots
 executable = /bin/bash
 judges = data_contamination_judge,api_usage_judge
-arguments = src/judges/run_judges.sh --judges $(judges) $(result_dir)
+contamination_slots = 1
+arguments = src/judges/run_judges.sh --judges $(judges) --contamination-slots $(contamination_slots) $(result_dir)
 environment = "HOME=$ENV(HOME)"
 error = logs/rerun_judge_$(Cluster).err
 output = logs/rerun_judge_$(Cluster).out

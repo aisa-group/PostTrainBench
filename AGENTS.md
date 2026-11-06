@@ -319,7 +319,11 @@ required.
 
 Reruns: `src/judges/rerun/` holds the batch-rerun pipeline. Rerun outputs
 always carry a `_rerun` suffix so original judge files produced during `run_task.sh` are
-preserved.
+preserved. A contamination rerun replaces only slot 1 by default; `run_judges.sh
+--contamination-slots 3` (`rerun_judges.sub`: `-a contamination_slots=3`) reruns all three slots, writing slots
+2/3 to `judgement_multi_runs/judgement_gpt5_4_run{2,3}_rerun.json`, and `resolve_judgement` then takes the
+majority of the three reruns (an incomplete three-slot rerun raises). Use it when the inline votes judged a
+trace that has changed since, e.g. a `solve_out.txt` rebuilt from opencode's database.
 
 The judge tooling itself lives in:
 - `src/judges/judge_lib.sh` — shared bash helpers used by both `run_task.sh` and
