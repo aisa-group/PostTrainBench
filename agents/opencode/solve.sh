@@ -98,8 +98,13 @@ with open(sys.argv[1], "wb") as out:
 # with a 403 SAFETY (content_policy_violation) from Google Vertex. So while time is left, a session that ended with a
 # provider error, or before final_model has any files, is resumed with a short note, at most MAX_RESUMES times.
 # --thinking adds the model's reasoning summaries to the JSON events (type "reasoning").
+# The loop uses absolute paths, enters the task dir anew each round and keeps its own copy of timer.sh: on 2026-11-06
+# unit tests that the agent executed deleted /home/ben/task, and the agent recreated it (timer.sh too).
 EVENTS="$HOME/opencode_events.jsonl"
 LAST_RUN="$HOME/opencode_last_run.jsonl"
+TASK_DIR=/home/ben/task
+TIMER="$HOME/solve_timer.sh"
+cp "$TASK_DIR/timer.sh" "$TIMER" || exit 1
 MAX_RESUMES=10
 
 printf '%s' "$PROMPT" | opencode run --model "$AGENT_CONFIG" --format json --thinking | copy_events "$LAST_RUN"
@@ -107,22 +112,27 @@ cat "$LAST_RUN" > "$EVENTS"
 SESSION_ID=$(grep -o -m1 '"sessionID":"ses_[A-Za-z0-9]*"' "$EVENTS" | head -n 1 | cut -d'"' -f4)
 
 for (( resume = 1; resume <= MAX_RESUMES; resume++ )); do
+    cd "$TASK_DIR" || { echo "ERROR: $TASK_DIR does not exist; not resuming" >&2; exit 1; }
     if tail -n 1 "$LAST_RUN" | grep -q '"type":"error"'; then
         ENDED="ended with an error from the model provider"
-    elif [ -z "$(ls -A final_model 2>/dev/null)" ]; then
+    elif [ -z "$(ls -A "$TASK_DIR/final_model" 2>/dev/null)" ]; then
         ENDED="ended"
     else
         break
     fi
-    TIMER_OUTPUT=$(bash timer.sh)
+    TIMER_OUTPUT=$(bash "$TIMER")
     echo "$TIMER_OUTPUT" | grep -q "expired" && break
     if [ -z "$SESSION_ID" ]; then
         echo "ERROR: opencode's session ${ENDED}, and its output has no session id to resume" >&2
         exit 1
     fi
     REMAINING=$(echo "$TIMER_OUTPUT" | tail -n 1)
+    if ! [[ "$REMAINING" =~ ^[0-9]+:[0-9][0-9]$ ]]; then
+        echo "ERROR: $TIMER printed no remaining time (H:MM): $TIMER_OUTPUT; not resuming" >&2
+        exit 1
+    fi
     MESSAGE="Your session ${ENDED}, but ${REMAINING%%:*}h ${REMAINING#*:}m of the time limit remain"
-    [ -n "$(ls -A final_model 2>/dev/null)" ] || MESSAGE+=" and /home/ben/task/final_model does not exist yet"
+    [ -n "$(ls -A "$TASK_DIR/final_model" 2>/dev/null)" ] || MESSAGE+=" and $TASK_DIR/final_model does not exist yet"
     MESSAGE+=". Continue working on the task."
     echo "=== solve.sh: resume ${resume}/${MAX_RESUMES} of opencode session ${SESSION_ID} with the message: ${MESSAGE}"
     printf '%s' "$MESSAGE" | opencode run --session "$SESSION_ID" --model "$AGENT_CONFIG" --format json --thinking | copy_events "$LAST_RUN"
