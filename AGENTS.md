@@ -152,6 +152,12 @@ alias in the CLI's `[models] default`.
 `OPENROUTER_API_KEY`). `solve.sh` configures `openrouter/google/gemini-4-argon` with `reasoning.effort: high` and
 pins it to OpenRouter's `google-vertex/global` endpoint (no fallbacks); verified on the wire on 2026-11-02. Gemini
 runs use opencode.
+`agent_config` can end in `:<variant>`, opencode's reasoning effort (`--variant`), e.g.
+`openrouter/meta/muse-wonder:xhigh`; keeping it in `agent_config` puts it in the result dir name. `solve.sh` checks
+the variant against the model's variants and fails if it is unknown, because opencode silently ignores an unknown one.
+For `openrouter/` models `solve.sh` first refreshes opencode's models.dev catalog: on a fresh `$HOME` opencode starts
+from the catalog bundled with its release and refreshes it only in the background, racing the model lookup. Meta's own
+harness (Muse Code) has no custom endpoint and so cannot run through OpenRouter.
 `opencode run` ends the session at the first model turn without a tool call and at an error from the model provider
 (Argon did both: a bare `}` after 17 minutes, a 403 `SAFETY` from Google Vertex after 3 hours), so `solve.sh` resumes
 the session (`opencode run --session <id>`, with a note on the time left) while time is left, if it ended with a provider

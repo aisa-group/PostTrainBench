@@ -155,8 +155,12 @@ parse_and_submit() {
             # opencode/gemini-3.1-pro, anthropic/claude-opus-4-5), but the dir
             # name encodes the slash as an underscore. Reverse the first `_`
             # back to `/`. Model tokens never contain `_` (they use hyphens),
-            # so this is unambiguous.
+            # so this is unambiguous. OpenRouter models carry a second slash
+            # (openrouter/meta/muse-wonder), so reverse two. An `_` left after
+            # that is the `:` of a reasoning variant (muse-wonder:xhigh).
             config="${config/_//}"
+            [[ $config == openrouter/* ]] && config="${config/_//}"
+            config="${config/_/:}"
             ;;
     esac
 
