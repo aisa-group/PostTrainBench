@@ -15,6 +15,7 @@ export CLAUDE_CODE_EFFORT_LEVEL="max"
 
 # claude-fable-5-1 (2026-08 release) requires claude-code 2.1.257 .
 # claude-opus-5-5   (2026-09 release) requires claude-code 2.1.280 .
+# claude-fable-5-2 (2026-11 release) requires claude-code 2.1.322 (2.1.312 does not know it).
 # These per-model pins override any CLAUDE_CLI_VERSION set in .env.
 # Other configs (opus-4-8, opus-5, fable-5) use CLAUDE_CLI_VERSION from .env if
 # set, else latest (or the container's baked version under the global
@@ -23,6 +24,8 @@ if [[ "${AGENT_CONFIG}" == claude-fable-5-1* ]]; then
     export CLAUDE_CLI_VERSION="2.1.257"
 elif [[ "${AGENT_CONFIG}" == claude-opus-5-5* ]]; then
     export CLAUDE_CLI_VERSION="2.1.280"
+elif [[ "${AGENT_CONFIG}" == claude-fable-5-2* ]]; then
+    export CLAUDE_CLI_VERSION="2.1.322"
 fi
 
 # Auto-update the CLI harness to the latest release and record its version.

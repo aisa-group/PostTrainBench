@@ -100,9 +100,16 @@ requires — into the `-c --cleanenv` sandbox; every other provider key is never
 unset inside the sandbox). A missing `api_keys.json` is a hard error. See "API Key Provisioning"
 below. With the allowlist in place there is **no** need to `unset`/blank keys inside `solve.sh`.
 
-Currently supported agents include: `claude`, `claude_non_api`, `claude_non_api_max`, `codex`,
-`codex_non_api` (and `_high`, `_xhigh`, `_reprompt`, ...), `codexhigh`, `codexlow`, `cursor_cli`,
+Currently supported agents include: `claude`, `claude_non_api`, `claude_non_api_max`, `claude_openrouter_max`,
+`codex`, `codex_non_api` (and `_high`, `_xhigh`, `_reprompt`, ...), `codexhigh`, `codexlow`, `cursor_cli`,
 `gemini`, `glm5`, `grok_cli`, `opencode`, `qwen3max`.
+
+`claude_openrouter_max` runs Claude Code at max effort, paid per token with `OPENROUTER_API_KEY` instead of a
+subscription: `ANTHROPIC_BASE_URL=https://openrouter.ai/api`, and `CLAUDE_CODE_EXTRA_BODY` pins every request to
+OpenRouter's `anthropic` endpoint without fallbacks. `agent_config` takes Anthropic's model IDs (e.g.
+`claude-fable-5-2[1m]`; OpenRouter maps them, also the Opus models of Claude Code's refusal fallback).
+`ENABLE_PROMPT_CACHING_1H=1` keeps the 1h cache TTL of subscription runs (an API key defaults to 5m). Verified on
+2026-11-10: OpenRouter's generation stats show `provider_name: Anthropic` and the CLI's cost equals OpenRouter's.
 
 `cursor_cli` uses the Cursor CLI (`agent`) with subscription auth: `solve.sh` installs the CLI
 via the official curl installer (`cursor.com/install`, drops `agent` + `cursor-agent` symlinks in
