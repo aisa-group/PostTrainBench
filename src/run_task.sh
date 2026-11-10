@@ -298,11 +298,21 @@ echo "================================"
 echo "========= RUNNING TASK ========="
 echo "================================"
 
+# Memory watchdog for the agent phase (src/utils/memory_watchdog.py). HTCondor holds a job whose memory passes 90% of
+# request_memory, and the whole run is lost; above 80% the watchdog kills the job process with the most private memory
+# first, so only that process dies (e.g. agent code that executes generated programs without a memory limit).
+python3 src/utils/memory_watchdog.py --check || exit 1
+python3 src/utils/memory_watchdog.py --log "${EVAL_DIR}/memory_watchdog.log" &
+MEMORY_WATCHDOG_PID=$!
+
 with_huggingface_overlay with_record_the_time solve_task
 SOLVE_EXIT=$?
 
+kill "$MEMORY_WATCHDOG_PID" || echo "ERROR: the memory watchdog had stopped before the end of the agent phase (see error.log)" >&2
+
 echo "--- SOLVE DIAGNOSTICS ---"
 echo "exit_code: $SOLVE_EXIT"
+echo "memory_watchdog_kills: $(grep -c ' killed pid ' "${EVAL_DIR}/memory_watchdog.log")"
 if [ $SOLVE_EXIT -eq 0 ]; then
     echo "status: exited normally"
 elif [ $SOLVE_EXIT -eq 124 ]; then
@@ -336,6 +346,12 @@ if [ -f "${JOB_DIR}/cli_version.txt" ]; then
     echo "--- END AGENT CLI VERSION ---"
 else
     echo "WARNING: ${JOB_DIR}/cli_version.txt not found (agent CLI version not recorded)" >&2
+fi
+
+# Logs and state that an agent's solve.sh keeps in ~/agent_logs (opencode: its data directory with the session
+# database), for analysing the run afterwards. Copied from outside the sandbox, so they survive the timeout.
+if [ -d "${JOB_DIR}/agent_logs" ]; then
+    cp -r "${JOB_DIR}/agent_logs" "${EVAL_DIR}/agent_logs"
 fi
 
 echo "============================================"

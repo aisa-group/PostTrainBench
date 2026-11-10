@@ -22,12 +22,22 @@
 # All outputs are always saved with the _rerun suffix so original judge
 # outputs produced by src/run_task.sh are preserved.
 #
-# Usage: run_judges.sh [--judges <name>[,<name>...]] <result_dir>
+# Usage: run_judges.sh [--judges <name>[,<name>...]] [--contamination-slots <n>] <result_dir>
 #
 # Options:
 #   --judges   Comma-separated subset of judges to run (default: all).
 #              e.g. --judges data_contamination_judge
 #                   --judges api_usage_judge
+#   --contamination-slots
+#              1 (default) or CONTAMINATION_JUDGE_SLOTS (3): run the
+#              contamination judge that many times, like the inline judge
+#              phase. Slots 2..n go to
+#              judgement_multi_runs/judgement_gpt5_4_run<n>_rerun.json, and
+#              scripts/utils.py::resolve_judgement then takes the majority of
+#              the three reruns instead of mixing a rerun with inline votes
+#              (e.g. after a trace was rebuilt, when the inline votes judged an
+#              incomplete trace). Every contamination rerun deletes earlier
+#              slot 2..n reruns, so a 1-slot rerun never mixes with them.
 
 set -e
 
@@ -37,15 +47,20 @@ source "$SCRIPT_DIR/judge_lib.sh"
 # Parse arguments
 JUDGES=()
 RESULT_DIR=""
+SLOTS=1
 while [[ $# -gt 0 ]]; do
     case $1 in
         --judges)
             IFS=',' read -r -a JUDGES <<< "$2"
             shift 2
             ;;
+        --contamination-slots)
+            SLOTS="$2"
+            shift 2
+            ;;
         -*)
             echo "Unknown option: $1" >&2
-            echo "Usage: $0 [--judges <name>[,<name>...]] <result_dir>" >&2
+            echo "Usage: $0 [--judges <name>[,<name>...]] [--contamination-slots <n>] <result_dir>" >&2
             exit 1
             ;;
         *)
@@ -60,7 +75,15 @@ if [ ${#JUDGES[@]} -eq 0 ]; then
 fi
 
 if [ -z "$RESULT_DIR" ]; then
-    echo "Usage: $0 [--judges <name>[,<name>...]] <result_dir>" >&2
+    echo "Usage: $0 [--judges <name>[,<name>...]] [--contamination-slots <n>] <result_dir>" >&2
+    exit 1
+fi
+
+# Contamination slots 2..n (inline and reruns), as in judge_lib.sh's run_contamination_judge_slot.
+MULTI_DIR="$RESULT_DIR/${MULTI_RUN_DIRNAME:-judgement_multi_runs}"
+
+if [ "$SLOTS" != "1" ] && [ "$SLOTS" != "$CONTAMINATION_JUDGE_SLOTS" ]; then
+    echo "Error: --contamination-slots must be 1 or $CONTAMINATION_JUDGE_SLOTS (the inline slot count), got: $SLOTS" >&2
     exit 1
 fi
 
@@ -109,7 +132,7 @@ AGENT_CONFIG=$(echo "$AGENT_AND_CONFIG" | sed -E 's/^[^_]+_(.*)$/\1/')
 
 echo "Running judges on: $RESULT_DIR"
 echo "  Benchmark: $BENCHMARK | Model: $MODEL_HF | Agent: $AGENT ($AGENT_CONFIG) | Trace: $TRACE_NAME"
-echo "  Judges: ${JUDGES[*]} (outputs suffixed with _rerun)"
+echo "  Judges: ${JUDGES[*]} (outputs suffixed with _rerun; contamination slots: $SLOTS)"
 
 # Create temporary working directory
 TMP_DIR=$(make_judge_tmp_dir)
@@ -144,6 +167,11 @@ setup_judge_codex_auth "$JOB_DIR"
 for JUDGE_NAME in "${JUDGES[@]}"; do
     load_judge_conf "$JUDGE_NAME"
     rm -f "$RESULT_DIR/judgement_${JUDGE_OUTPUT_ID}_rerun.json"
+    if [ "$JUDGE_NAME" = "data_contamination_judge" ]; then
+        for ((slot = 2; slot <= CONTAMINATION_JUDGE_SLOTS; slot++)); do
+            rm -f "$MULTI_DIR/judgement_${JUDGE_OUTPUT_ID}_run${slot}_rerun.json"
+        done
+    fi
 done
 
 JUDGE_EXTRA_APPTAINER_ARGS=()
@@ -164,6 +192,19 @@ for JUDGE_NAME in "${JUDGES[@]}"; do
     run_judge_exec "$JOB_DIR" "$JOB_TMP" "$RESULT_DIR/judge_output_${JUDGE_OUTPUT_ID}_rerun.json" "$JUDGE_PROMPT"
 
     collect_judge_output "$JOB_DIR" "$RESULT_DIR" "_rerun" 1
+
+    if [ "$JUDGE_NAME" = "data_contamination_judge" ] && [ "$SLOTS" -gt 1 ]; then
+        tag_judgement_meta "$RESULT_DIR/judgement_${JUDGE_OUTPUT_ID}_rerun.json" 1
+        mkdir -p "$MULTI_DIR"
+        for ((slot = 2; slot <= SLOTS; slot++)); do
+            echo "  --- slot ${slot} of ${SLOTS} ---"
+            rm -f "$JOB_DIR/task/judgement.json"
+            run_judge_exec "$JOB_DIR" "$JOB_TMP" \
+                "$MULTI_DIR/judge_output_${JUDGE_OUTPUT_ID}_run${slot}_rerun.json" "$JUDGE_PROMPT"
+            collect_judge_output "$JOB_DIR" "$MULTI_DIR" "_run${slot}_rerun" 1
+            tag_judgement_meta "$MULTI_DIR/judgement_${JUDGE_OUTPUT_ID}_run${slot}_rerun.json" "$slot"
+        done
+    fi
 done
 
 echo ""

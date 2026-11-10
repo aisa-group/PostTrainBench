@@ -106,6 +106,23 @@ def format_text(event: dict[str, Any], index: int) -> str:
     return "\n".join(lines)
 
 
+def format_reasoning(event: dict[str, Any], index: int) -> str:
+    """Format a reasoning event (the model's reasoning summary; `opencode run --thinking`)."""
+    part = event.get("part", {})
+    text = part.get("text", "")
+
+    timestamp = format_timestamp(event.get("timestamp"))
+    header = f"=== Event {index} | type: reasoning ==="
+    if timestamp:
+        header = f"=== Event {index} | type: reasoning | ts: {timestamp} ==="
+
+    lines = [header]
+    lines.append(indent("Reasoning:", 1))
+    lines.append(indent(text.rstrip(), 2))
+
+    return "\n".join(lines)
+
+
 def format_step_start(event: dict[str, Any], index: int) -> str:
     """Format a step_start event."""
     timestamp = format_timestamp(event.get("timestamp"))
@@ -190,6 +207,8 @@ def format_event(index: int, event: dict[str, Any]) -> str:
         return format_tool_use(event, index)
     elif event_type == "text":
         return format_text(event, index)
+    elif event_type == "reasoning":
+        return format_reasoning(event, index)
     elif event_type == "step_start":
         return format_step_start(event, index)
     elif event_type == "step_finish":

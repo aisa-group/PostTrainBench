@@ -558,14 +558,29 @@ def _try_write_majority_cache(final_path: str, verdict: dict) -> bool:
 
 
 def _multi_run_slot_paths(run_dir: str) -> tuple[str | None, str, str, str]:
-    """Return (slot1_path_or_None, slot2_path, slot3_path, final_path)."""
+    """Return (slot1_path_or_None, slot2_path, slot3_path, final_path).
+
+    Slots 2/3 are the ``_run{2,3}_rerun.json`` files when a three-slot rerun
+    (``src/judges/run_judges.sh --contamination-slots 3``) wrote them, else the
+    inline ``_run{2,3}.json``. A three-slot rerun always writes all three
+    slots, so finding only part of it (a failed rerun) raises instead of
+    mixing reruns with inline votes.
+    """
     multi_dir = os.path.join(run_dir, MULTI_RUN_DIRNAME)
-    return (
-        _slot1_judgement_path(run_dir),
-        os.path.join(multi_dir, "judgement_gpt5_4_run2.json"),
-        os.path.join(multi_dir, "judgement_gpt5_4_run3.json"),
-        os.path.join(multi_dir, "judgement_gpt5_4_final.json"),
-    )
+    slot1 = _slot1_judgement_path(run_dir)
+    reruns = [os.path.join(multi_dir, f"judgement_gpt5_4_run{n}_rerun.json") for n in (2, 3)]
+    present = [os.path.exists(path) for path in reruns]
+    if any(present):
+        if not all(present) or slot1 != os.path.join(run_dir, "judgement_gpt5_4_rerun.json"):
+            raise ValueError(
+                f"incomplete three-slot contamination rerun in {run_dir}: needs judgement_gpt5_4_rerun.json and "
+                f"{MULTI_RUN_DIRNAME}/judgement_gpt5_4_run{{2,3}}_rerun.json; rerun "
+                "src/judges/run_judges.sh --judges data_contamination_judge --contamination-slots 3"
+            )
+        slot2, slot3 = reruns
+    else:
+        slot2, slot3 = (os.path.join(multi_dir, f"judgement_gpt5_4_run{n}.json") for n in (2, 3))
+    return slot1, slot2, slot3, os.path.join(multi_dir, "judgement_gpt5_4_final.json")
 
 
 MANUAL_JUDGEMENT_FILENAME = "judgement_gpt5_4_manual.json"
@@ -666,7 +681,8 @@ def resolve_judgement(run_dir: str) -> tuple[str, dict] | None:
          output.
       2. Per-field majority of the three multi-run slots (slot 1 =
          ``_rerun.json`` else inline; slots 2/3 under
-         ``judgement_multi_runs/``), computed in memory. The ``_final.json``
+         ``judgement_multi_runs/``, their ``_rerun.json`` when a three-slot
+         rerun wrote them, see ``_multi_run_slot_paths``), computed in memory. The ``_final.json``
          cache is rewritten opportunistically for audit but never read.
       3. The single judge verdict: ``judgement_gpt5_4_rerun.json`` when
          present, else ``judgement_gpt5_4.json``.
