@@ -9,7 +9,10 @@ Layout produced per run:
         metrics.json                # if present
         metrics_averaged.json       # if present
         judgement_gpt5_4.json       # effective contamination verdict (manual > majority of 3 > rerun > inline; if present)
-        judge_output_gpt5_4.{json,txt} # GPT-5.4 contamination-judge trace (rerun preferred; if present)
+        judge_output_gpt5_4.{json,txt} # contamination-judge trace, slot 1 (rerun preferred; if present)
+        judgement_multi_runs/       # contamination-judge slots 2/3: verdicts + traces (if present)
+        metrics_averaged_exact_match.json # v1.2 score of aime2025/gsm8k (if present)
+        cli_version.txt             # agent CLI version (if present)
         error.log                   # if present
         time_taken.txt              # if present
         system_monitor.log          # if present
@@ -117,6 +120,10 @@ WORKSPACE_SKIP_DIRS = {
     "final_model", "sft_output", "sft_output_v2", "checkpoints",
     "__pycache__", ".git", "node_modules", "wandb",
     "huggingface_cache", ".cache",
+    # Compiler caches agents point TRITON_CACHE_DIR / TORCHINDUCTOR_CACHE_DIR /
+    # VLLM_CACHE_ROOT into task/ (tens of thousands of files per run).
+    "torch_compile_cache", "torchinductor", "torch_inductor", "inductor",
+    "triton", ".triton",
 }
 WORKSPACE_SKIP_EXTS = {
     ".bin", ".safetensors", ".pt", ".pth", ".ckpt", ".onnx",
@@ -127,6 +134,8 @@ WORKSPACE_SKIP_EXTS = {
     # after a wasted stat + 4 KB read on Lustre. Skip by extension to dodge
     # both ops; matters when task/ has many of these (training dumps).
     ".npy", ".npz", ".parquet", ".arrow", ".feather",
+    # Triton / CUDA compiler output, wherever the cache lives.
+    ".ttir", ".ttgir", ".llir", ".ptx", ".cubin", ".hsaco", ".amdgcn",
 }
 # Filename shapes that Hugging Face's dataset uploader rejects with
 # "Invalid filename ... cannot be an absolute, drive-relative or UNC path".
@@ -402,6 +411,38 @@ def get_latest_subdirs(input_dir: Path) -> list[Path]:
 # Cached at module load — used by the incremental-skip check.
 _SCRIPT_MTIME = Path(__file__).stat().st_mtime
 
+# Contamination-judge slots 2/3, under judgement_multi_runs/ in both the source
+# and the destination run dir. The `_final` majority cache is not listed: it is
+# rewritten on every extract (see copy_preferring_majority) and lands in the
+# destination as judgement_gpt5_4.json.
+MULTI_RUN_DIRNAME = "judgement_multi_runs"
+MULTI_RUN_FILES = (
+    "judgement_gpt5_4_run2.json",
+    "judgement_gpt5_4_run3.json",
+    "judge_output_gpt5_4_run2.json",
+    "judge_output_gpt5_4_run3.json",
+)
+
+
+def _newest_source_mtime(subdir: Path) -> float:
+    """Newest mtime among the run's top-level files and its judge slots 2/3.
+
+    Judges, judge reruns and final-eval reruns add files to a run dir long
+    after its solve_out.txt was written, so the cache check must look at them
+    too, not only at the trace."""
+    newest = 0.0
+    for d, names in ((subdir, None), (subdir / MULTI_RUN_DIRNAME, MULTI_RUN_FILES)):
+        try:
+            entries = list(os.scandir(d))
+        except FileNotFoundError:
+            continue
+        for entry in entries:
+            if names is not None and entry.name not in names:
+                continue
+            if entry.is_file():
+                newest = max(newest, entry.stat().st_mtime)
+    return newest
+
 # Set per-process by `_pool_init` (also set by main() for the serial path).
 _WORKER_API_KEYS: list[str] = []
 
@@ -428,14 +469,15 @@ def _process_subdir(subdir_str: str, dest_dir_str: str, force: bool) -> dict:
     if not src_file.exists():
         return {"status": "missing", "name": subdir.name}
 
-    # Incremental skip: if dest/solve_out.txt is newer than both the source
-    # and this script, the cached extract is still valid. --force overrides.
+    # Incremental skip: if dest/solve_out.txt is newer than every source file
+    # (see _newest_source_mtime) and this script, the cached extract is still
+    # valid. --force overrides.
     if not force:
         dest_solve = dest_dir / "solve_out.txt"
         if dest_solve.exists():
             try:
                 dest_mtime = dest_solve.stat().st_mtime
-                src_mtime = src_file.stat().st_mtime
+                src_mtime = _newest_source_mtime(subdir)
                 if dest_mtime >= src_mtime and dest_mtime >= _SCRIPT_MTIME:
                     return {"status": "skipped", "name": subdir.name}
             except OSError:
@@ -457,13 +499,18 @@ def _process_subdir(subdir_str: str, dest_dir_str: str, force: bool) -> dict:
     # parsing and verdict detection).
     # NB: solve_parsed.txt is also shipped for direct human reading;
     # the viewer ignores it, but it's a useful escape hatch.
+    # metrics_averaged_exact_match.json is the v1.2 score of aime2025/gsm8k
+    # (scripts/utils.py::METRICS_FILE_PREFERENCE); build.py applies the same
+    # precedence.
     for fname in (
         'solve_parsed.txt',
         'metrics.json',
         'metrics_averaged.json',
+        'metrics_averaged_exact_match.json',
         'error.log',
         'time_taken.txt',
         'system_monitor.log',
+        'cli_version.txt',
     ):
         copy_other_files(subdir, dest_dir, fname, api_keys=_WORKER_API_KEYS, optional=True)
 
@@ -478,6 +525,11 @@ def _process_subdir(subdir_str: str, dest_dir_str: str, force: bool) -> dict:
     copy_preferring_majority(subdir, dest_dir, 'judgement_gpt5_4.json', api_keys=_WORKER_API_KEYS)
     copy_preferring_rerun(subdir, dest_dir, 'judge_output_gpt5_4.json', api_keys=_WORKER_API_KEYS)
     copy_preferring_rerun(subdir, dest_dir, 'judge_output_gpt5_4.txt',  api_keys=_WORKER_API_KEYS)
+    # Contamination-judge slots 2/3 (v1.2 majority vote): their verdicts and
+    # traces, so the viewer can show each vote next to the majority.
+    for fname in MULTI_RUN_FILES:
+        copy_other_files(subdir / MULTI_RUN_DIRNAME, dest_dir / MULTI_RUN_DIRNAME, fname,
+                         api_keys=_WORKER_API_KEYS, optional=True)
 
     # API-usage judge (disallowed_api_usage schema) and PTB-lookup judge
     # (disallowed_ptb_lookup schema). Both flag directly into scoring in
@@ -701,6 +753,7 @@ def copy_other_files(subdir, dest_dir, filename, dest_filename=None, api_keys=No
     src = prefer_sanitized(subdir / filename)
     dest = dest_dir / dest_filename
     if src.exists():
+        dest.parent.mkdir(parents=True, exist_ok=True)
         copy_file_sanitized(src, dest, api_keys)
     elif not optional:
         # Hard-required missing — surface it, but don't fabricate content.
@@ -803,6 +856,17 @@ def copy_workspace(src_root: Path, dest_root: Path, api_keys: list[str]) -> int:
     count = 0
     src_root_str = str(src_root)
     for dirpath, dirnames, filenames in os.walk(src_root_str):
+        # A directory holding `*.dist-info` is a package install (pip
+        # --target, vendor/, site-packages/): third-party code, not the
+        # agent's. One holding CACHEDIR.TAG is a tool cache (uv, ...), see
+        # https://bford.info/cachedir/. A subdirectory holding .git is a cloned
+        # repository (one humaneval run cloned all of OpenJDK, 90k files).
+        # Skip each whole, files included.
+        if ("CACHEDIR.TAG" in filenames
+                or (".git" in dirnames and dirpath != src_root_str)
+                or any(d.endswith((".dist-info", ".egg-info")) for d in dirnames)):
+            dirnames[:] = []
+            continue
         # Mutate in place — os.walk respects this for descent.
         dirnames[:] = [d for d in dirnames if d not in WORKSPACE_SKIP_DIRS]
         for fn in filenames:

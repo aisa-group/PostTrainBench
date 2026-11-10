@@ -73,6 +73,38 @@ ln -s "$HOME/agent_logs/opencode" "$HOME/.local/share/opencode"
 # Auto-update the CLI harness to the latest release and record its version.
 bash /home/ben/update_agent_cli.sh opencode || exit 1
 
+# AGENT_CONFIG is <provider>/<model>[:<variant>]; the variant is opencode's reasoning effort (--variant), e.g.
+# openrouter/meta/muse-wonder:xhigh. Keeping it in AGENT_CONFIG puts it in the result dir name.
+MODEL="${AGENT_CONFIG%%:*}"
+VARIANT=""
+[[ "$AGENT_CONFIG" == *:* ]] && VARIANT="${AGENT_CONFIG#*:}"
+
+# On a fresh $HOME opencode starts from the models.dev catalog bundled with its release (1.17.18's predates
+# meta/muse-wonder) and refreshes it only in the background, racing the model lookup. Refresh it first; the variant
+# check below then fails fast if the model is still unknown.
+[[ "$MODEL" == openrouter/* ]] && opencode models --refresh > /dev/null
+
+VARIANT_ARGS=()
+if [ -n "$VARIANT" ]; then
+    # opencode ignores an unknown --variant, so check it against the model's variants rather than run at the default
+    # effort under a dir name that says otherwise.
+    if ! opencode models "${MODEL%%/*}" --verbose | python3 -c '
+import json, sys
+model, variant = sys.argv[1], sys.argv[2]
+text = "\n" + sys.stdin.read()
+start = text.find("\n" + model + "\n")
+if start < 0:
+    sys.exit(f"ERROR: {model} not in opencode model catalog")
+info, _ = json.JSONDecoder().raw_decode(text[start + len(model) + 2:])
+variants = sorted(info.get("variants") or {})
+if variant not in variants:
+    sys.exit(f"ERROR: {model} has no reasoning variant {variant!r}; available: {variants}")
+' "$MODEL" "$VARIANT"; then
+        exit 1
+    fi
+    VARIANT_ARGS=(--variant "$VARIANT")
+fi
+
 # Copies opencode's JSON events to stdout and to the file $1, like `tee "$1"`. Not tee: opencode makes its stderr pipe
 # non-blocking, and that is the pipe behind solve.sh's stdout too, so tee's writes fail with EAGAIN whenever the pipe is
 # full, and tee then stops copying to stdout (solve_out.txt lost the rest of a session in 3 runs on 2026-11-03/04). This
@@ -107,7 +139,7 @@ TIMER="$HOME/solve_timer.sh"
 cp "$TASK_DIR/timer.sh" "$TIMER" || exit 1
 MAX_RESUMES=10
 
-printf '%s' "$PROMPT" | opencode run --model "$AGENT_CONFIG" --format json --thinking | copy_events "$LAST_RUN"
+printf '%s' "$PROMPT" | opencode run --model "$MODEL" "${VARIANT_ARGS[@]}" --format json --thinking | copy_events "$LAST_RUN"
 cat "$LAST_RUN" > "$EVENTS"
 SESSION_ID=$(grep -o -m1 '"sessionID":"ses_[A-Za-z0-9]*"' "$EVENTS" | head -n 1 | cut -d'"' -f4)
 
@@ -135,6 +167,6 @@ for (( resume = 1; resume <= MAX_RESUMES; resume++ )); do
     [ -n "$(ls -A "$TASK_DIR/final_model" 2>/dev/null)" ] || MESSAGE+=" and $TASK_DIR/final_model does not exist yet"
     MESSAGE+=". Continue working on the task."
     echo "=== solve.sh: resume ${resume}/${MAX_RESUMES} of opencode session ${SESSION_ID} with the message: ${MESSAGE}"
-    printf '%s' "$MESSAGE" | opencode run --session "$SESSION_ID" --model "$AGENT_CONFIG" --format json --thinking | copy_events "$LAST_RUN"
+    printf '%s' "$MESSAGE" | opencode run --session "$SESSION_ID" --model "$MODEL" "${VARIANT_ARGS[@]}" --format json --thinking | copy_events "$LAST_RUN"
     cat "$LAST_RUN" >> "$EVENTS"
 done

@@ -146,6 +146,14 @@ HARDCODED_AGENT_MAP = {
         "codex_non_api_max_gpt-6-astra_10h_run1",
         "codex_non_api_max_gpt-6-astra_10h_run2",
     ],
+    "GPT-6.1-Sol": [
+        "codex_non_api_max_gpt-6.1-sol_10h_run1",
+        "codex_non_api_max_gpt-6.1-sol_10h_run2",
+    ],
+    "Muse Wonder (xhigh)": [
+        "opencode_openrouter_meta_muse-wonder_xhigh_10h_run1",
+        "opencode_openrouter_meta_muse-wonder_xhigh_10h_run2",
+    ],
 }
 
 # bfcl is excluded from scoring: nearly every agent saturates it, so its
