@@ -103,7 +103,9 @@ make_judge_tmp_dir() {
 # Files the judges never read (they inspect scripts, data and logs as text) but
 # that can make a task/ snapshot hundreds of GB: weights, optimizer/training
 # state and package caches. final_model's config.json reaches the judge
-# separately via prepare_judge_sandbox.
+# separately via prepare_judge_sandbox. run_task.sh also writes the results
+# task/ snapshot through copy_task_for_judge, so these never reach the results
+# dir either.
 JUDGE_TASK_COPY_EXCLUDES=(
     '*.pt' '*.pth' '*.safetensors' '*.bin' '*.ckpt' '*.gguf' '*.onnx'
     'uv_cache' '.cache' 'huggingface_cache' '__pycache__' '*.pyc'
@@ -122,7 +124,7 @@ copy_task_for_judge() {
     mkdir -p "$dst"
     ( set -o pipefail
       tar -C "$src" "${excludes[@]}" -cf - . | tar -C "$dst" -xf - )
-    echo "  copied task/ for judge ($(du -sh "$dst" 2>/dev/null | cut -f1), excluding weights/optimizer state/caches)"
+    echo "  copied task/ to $dst ($(du -sh "$dst" 2>/dev/null | cut -f1), excluding weights/optimizer state/caches)"
 }
 
 # prepare_judge_sandbox <job_dir> <benchmark_id> <final_model_config_src>
