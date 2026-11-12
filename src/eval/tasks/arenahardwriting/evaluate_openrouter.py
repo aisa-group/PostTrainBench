@@ -320,6 +320,8 @@ def generate_answers(args) -> tuple:
     output_path = output_dir / f"{args.model_alias}.jsonl"
 
     questions = get_questions(args)
+    # SmolLM3 turn ends are special tokens, stripped before vLLM checks string stops.
+    generation_kwargs = {"stop_token_ids": [128012]} if model_type(args) == "smollm" else {}
     server = VLLMServer(args, args.model_path)
     print(f"[generate] Starting vLLM server for model {args.model_path}.")
 
@@ -340,6 +342,7 @@ def generate_answers(args) -> tuple:
                     {"role": "user", "content": question["prompt"]},
                 ],
                 "max_tokens": args.max_new_tokens,
+                **generation_kwargs,
             }
 
             answer_text: Optional[str] = None
