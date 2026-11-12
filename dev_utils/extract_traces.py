@@ -17,9 +17,13 @@ Layout produced per run:
         time_taken.txt              # if present
         system_monitor.log          # if present
         task/                       # workspace, text-only, weights/caches stripped
+        task_omitted.json           # what the task/ caps cut (500 entries per folder, 5000 files per run), if anything
             ...
 """
 import argparse
+import errno
+import json
+import mmap
 import os
 import re
 import shutil
@@ -151,6 +155,16 @@ WORKSPACE_SKIP_NAME_RE = re.compile(r'^(?:[A-Za-z]:[\\/]|\\\\)')
 # still list these in the viewer as "too_large" if you leave them on
 # disk, but it's not worth sanitizing 10+ MB through regex.
 WORKSPACE_MAX_BYTES = 2 * 1024 * 1024
+# Caps on what is copied from task/. Agents sometimes write one folder per test
+# case: one GPT-6 Astra run wrote 615k files, 74k case_*/ folders in a single
+# directory. A typical run has ~700 files. A folder keeps its first
+# WORKSPACE_MAX_ENTRIES_PER_FOLDER entries (files + subfolders) by name, and the
+# walk (in name order) stops after WORKSPACE_MAX_FILES_PER_RUN copied files.
+# What was cut is recorded in TASK_OMITTED_FILENAME, next to task/ in the
+# output; the viewer's Workspace tab shows it.
+WORKSPACE_MAX_ENTRIES_PER_FOLDER = 500
+WORKSPACE_MAX_FILES_PER_RUN = 5000
+TASK_OMITTED_FILENAME = "task_omitted.json"
 
 
 def load_sanitization_secrets(dotenv: dict[str, str]) -> list[str]:
@@ -352,6 +366,45 @@ def prefer_sanitized(src: Path) -> Path:
     return sanitized if sanitized.exists() else src
 
 
+_DIRECT_IO_ALIGN = 4096
+
+
+def write_text_direct(path: Path, text: str) -> None:
+    """Write a text file with O_DIRECT, bypassing the page cache.
+
+    The compute nodes cap unwritten page-cache data at 100 MB for the whole
+    node (vm.dirty_bytes), and Lustre drains it slowly, so a normal write
+    blocks in balance_dirty_pages: 64 MB to /fast took 128 s buffered and
+    0.2 s with O_DIRECT. O_DIRECT needs a block-aligned buffer and length, so
+    the data is padded to a whole block in an mmap buffer (page-aligned) and
+    the file is truncated back to its real size. Falls back to a normal write
+    where O_DIRECT is not supported (EINVAL, e.g. tmpfs).
+
+    An existing file is deleted first: it can be read-only, because the
+    copies keep the source's permissions (copystat) and agents sometimes
+    make their files read-only. Deleting needs write access to the folder
+    only."""
+    data = text.encode("utf-8")
+    n = len(data)
+    size = max(_DIRECT_IO_ALIGN, -(-n // _DIRECT_IO_ALIGN) * _DIRECT_IO_ALIGN)
+    path.unlink(missing_ok=True)
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_DIRECT, 0o644)
+    except OSError as e:
+        if e.errno != errno.EINVAL:
+            raise
+        path.write_bytes(data)
+        return
+    buf = mmap.mmap(-1, size)
+    try:
+        buf[:n] = data
+        os.write(fd, buf)
+        os.ftruncate(fd, n)
+    finally:
+        buf.close()
+        os.close(fd)
+
+
 def copy_file_sanitized(src: Path, dest: Path, api_keys: list[str],
                         preserve_mtime: bool = True) -> bool:
     """Copy a file, sanitizing API keys from its content.
@@ -364,7 +417,7 @@ def copy_file_sanitized(src: Path, dest: Path, api_keys: list[str],
     """
     content = src.read_text(encoding="utf-8")
     sanitized = sanitize_content(content, api_keys, src_path=str(src))
-    dest.write_text(sanitized, encoding="utf-8")
+    write_text_direct(dest, sanitized)
     if preserve_mtime:
         shutil.copystat(src, dest)
     return content != sanitized
@@ -412,9 +465,9 @@ def get_latest_subdirs(input_dir: Path) -> list[Path]:
 _SCRIPT_MTIME = Path(__file__).stat().st_mtime
 
 # Contamination-judge slots 2/3, under judgement_multi_runs/ in both the source
-# and the destination run dir. The `_final` majority cache is not listed: it is
-# rewritten on every extract (see copy_preferring_majority) and lands in the
-# destination as judgement_gpt5_4.json.
+# and the destination run dir (their `_rerun` variants preferred). The `_final`
+# majority cache is not listed: it is rewritten on every extract (see
+# copy_preferring_majority) and lands in the destination as judgement_gpt5_4.json.
 MULTI_RUN_DIRNAME = "judgement_multi_runs"
 MULTI_RUN_FILES = (
     "judgement_gpt5_4_run2.json",
@@ -431,13 +484,15 @@ def _newest_source_mtime(subdir: Path) -> float:
     after its solve_out.txt was written, so the cache check must look at them
     too, not only at the trace."""
     newest = 0.0
-    for d, names in ((subdir, None), (subdir / MULTI_RUN_DIRNAME, MULTI_RUN_FILES)):
+    for d in (subdir, subdir / MULTI_RUN_DIRNAME):
         try:
             entries = list(os.scandir(d))
         except FileNotFoundError:
             continue
         for entry in entries:
-            if names is not None and entry.name not in names:
+            # The `_final` majority cache is rewritten by every extract, so it
+            # would make every cached extract look stale.
+            if "_final" in entry.name:
                 continue
             if entry.is_file():
                 newest = max(newest, entry.stat().st_mtime)
@@ -527,9 +582,12 @@ def _process_subdir(subdir_str: str, dest_dir_str: str, force: bool) -> dict:
     copy_preferring_rerun(subdir, dest_dir, 'judge_output_gpt5_4.txt',  api_keys=_WORKER_API_KEYS)
     # Contamination-judge slots 2/3 (v1.2 majority vote): their verdicts and
     # traces, so the viewer can show each vote next to the majority.
+    # A three-slot rerun (run_judges.sh --contamination-slots 3) writes
+    # `_rerun` files for slots 2/3 too, and the majority is then taken over
+    # the reruns, so the rerun traces are the ones that match the votes.
     for fname in MULTI_RUN_FILES:
-        copy_other_files(subdir / MULTI_RUN_DIRNAME, dest_dir / MULTI_RUN_DIRNAME, fname,
-                         api_keys=_WORKER_API_KEYS, optional=True)
+        copy_preferring_rerun(subdir / MULTI_RUN_DIRNAME, dest_dir / MULTI_RUN_DIRNAME, fname,
+                              api_keys=_WORKER_API_KEYS)
 
     # API-usage judge (disallowed_api_usage schema) and PTB-lookup judge
     # (disallowed_ptb_lookup schema). Both flag directly into scoring in
@@ -553,7 +611,21 @@ def _process_subdir(subdir_str: str, dest_dir_str: str, force: bool) -> dict:
     copy_preferring_rerun(subdir, dest_dir, 'judge_output.json',              api_keys=_WORKER_API_KEYS)
 
     # Workspace — copy text files only, skip weights/checkpoints/caches.
-    ws_count = copy_workspace(subdir / "task", dest_dir / "task", _WORKER_API_KEYS)
+    # Cleared first: files of an earlier extract that the current skip lists
+    # or caps leave out would otherwise stay in the output (and on HF).
+    shutil.rmtree(dest_dir / "task", ignore_errors=True)
+    ws_count, omitted, stopped_at = copy_workspace(subdir / "task", dest_dir / "task", _WORKER_API_KEYS)
+    omitted_file = dest_dir / TASK_OMITTED_FILENAME
+    if omitted or stopped_at is not None:
+        write_text_direct(omitted_file, json.dumps({
+            "max_entries_per_folder": WORKSPACE_MAX_ENTRIES_PER_FOLDER,
+            "max_files_per_run": WORKSPACE_MAX_FILES_PER_RUN,
+            "folders": omitted,
+            "run_limit_reached_in": stopped_at,
+        }, indent=2) + "\n")
+    else:
+        # A list from an earlier extract would no longer be true.
+        omitted_file.unlink(missing_ok=True)
 
     return {
         "status": "ok",
@@ -661,11 +733,16 @@ def main():
     # Build the full task list up front. One task = one task subdir; the pool
     # then parallelises across subdirs (NOT just across experiments), so a
     # single big experiment doesn't dominate the wall clock.
+    # Explicit input_dirs are also looked up in POST_TRAIN_BENCH_EXTRA_RESULTS_DIRS
+    # (read-only roots that collect.py unions with the primary one), so runs
+    # stored elsewhere (e.g. Gemini 4 Argon) can be extracted by name.
+    extra_roots = [Path(p) for p in dotenv.get("POST_TRAIN_BENCH_EXTRA_RESULTS_DIRS", "").split(":") if p]
     tasks: list[tuple[str, str, str]] = []     # (subdir_str, dest_dir_str, experiment_name)
     for input_dir_name in input_dir_names:
-        input_dir = results_base / input_dir_name
-        if not input_dir.is_dir():
-            print(f"  SKIP: {input_dir} does not exist")
+        candidates = [root / input_dir_name for root in [results_base, *extra_roots]]
+        input_dir = next((c for c in candidates if c.is_dir()), None)
+        if input_dir is None:
+            print(f"  SKIP: {input_dir_name} not found in {', '.join(str(r) for r in [results_base, *extra_roots])}")
             continue
         model_dir = output_base / extract_model_name(input_dir_name)
         model_dir.mkdir(parents=True, exist_ok=True)
@@ -711,15 +788,35 @@ def main():
         # under buffering (tee, nohup, etc.).
         print(f"  [{done}/{total}] [{exp_name}] {line.lstrip()}", flush=True)
 
+    failed: list[str] = []
+
+    def _fail(dest_s: str, exp_name: str, error: BaseException) -> None:
+        """A run that raised: report it and carry on with the others. Its
+        output is incomplete, so its solve_out.txt (the cache anchor, written
+        first) is removed: the next extract then redoes the run instead of
+        taking it for a cache hit."""
+        nonlocal done
+        name = Path(dest_s).name
+        (Path(dest_s) / "solve_out.txt").unlink(missing_ok=True)
+        failed.append(f"{exp_name}/{name}: {type(error).__name__}: {error}")
+        done += 1
+        print(f"  [{done}/{total}] [{exp_name}] FAIL: {name} ({type(error).__name__}: {error})",
+              flush=True)
+
     if args.jobs <= 1:
         # Serial path — same code, no pool overhead. Useful for debugging.
         for subdir_s, dest_s, exp_name in tasks:
-            _consume(_process_subdir(subdir_s, dest_s, args.force), exp_name)
+            try:
+                result = _process_subdir(subdir_s, dest_s, args.force)
+            except Exception as e:
+                _fail(dest_s, exp_name, e)
+                continue
+            _consume(result, exp_name)
     else:
         with ProcessPoolExecutor(max_workers=args.jobs, initializer=_pool_init,
                                  initargs=(api_keys,)) as pool:
             futs = {
-                pool.submit(_process_subdir, s, d, args.force): exp
+                pool.submit(_process_subdir, s, d, args.force): (d, exp)
                 for s, d, exp in tasks
             }
             # Heartbeat between header and first completion. On cold Lustre
@@ -728,11 +825,18 @@ def main():
             print(f"  queued {len(futs)} tasks, waiting for first completion…",
                   flush=True)
             for fut in as_completed(futs):
-                _consume(fut.result(), futs[fut])
+                dest_s, exp_name = futs[fut]
+                try:
+                    result = fut.result()
+                except Exception as e:
+                    _fail(dest_s, exp_name, e)
+                    continue
+                _consume(result, exp_name)
 
     # Summary
     print(f"{'='*60}")
-    print(f"Done: {copied} copied, {sanitized} sanitized, {skipped} cache-hit, {missing} missing")
+    print(f"Done: {copied} copied, {sanitized} sanitized, {skipped} cache-hit, "
+          f"{missing} missing, {len(failed)} failed")
     print(f"Output: {output_base}")
 
     if all_warnings:
@@ -740,6 +844,12 @@ def main():
         for w in all_warnings:
             print(f"  [{w['pattern']}] {w['file']}")
             print(f"    ...{w['context']}...")
+
+    if failed:
+        print(f"\n--- {len(failed)} failed runs (rerun the extract to redo them) ---")
+        for f in failed:
+            print(f"  {f}")
+        sys.exit(1)
 
 def copy_other_files(subdir, dest_dir, filename, dest_filename=None, api_keys=None, optional=False):
     """Copy a file with sanitization. Missing files are simply skipped —
@@ -819,6 +929,7 @@ def copy_preferring_rerun(subdir, dest_dir, base_filename, api_keys):
     for candidate in (subdir / rerun_filename, subdir / base_filename):
         src = prefer_sanitized(candidate)
         if src.exists():
+            dest_dir.mkdir(parents=True, exist_ok=True)
             copy_file_sanitized(src, dest_dir / base_filename, api_keys)
             return
 
@@ -836,10 +947,17 @@ def _is_text_bytes(head: bytes) -> bool:
     return printable / len(sample) > 0.85
 
 
-def copy_workspace(src_root: Path, dest_root: Path, api_keys: list[str]) -> int:
+def copy_workspace(src_root: Path, dest_root: Path,
+                   api_keys: list[str]) -> tuple[int, list[dict], str | None]:
     """Mirror `task/` into the output, copying only text files and skipping
     known-binary extensions / weight or cache directories. Each text file
-    is API-key-sanitized. Returns the number of files copied.
+    is API-key-sanitized. A folder with more than
+    WORKSPACE_MAX_ENTRIES_PER_FOLDER entries keeps only the first ones by
+    name, and the walk (in name order) stops after
+    WORKSPACE_MAX_FILES_PER_RUN copied files. Returns the number of files
+    copied, the folders that were cut (`{"path", "entries", "kept"}`, path
+    relative to task/), and the folder the walk stopped in (None if it
+    finished).
 
     Uses os.walk with in-place dirname pruning so we never *descend* into
     weight/cache trees (e.g. final_model/, sft_output/) — rglob walks them
@@ -852,8 +970,10 @@ def copy_workspace(src_root: Path, dest_root: Path, api_keys: list[str]) -> int:
     by far the dominant cost when task/ has hundreds of small files.
     """
     if not src_root.is_dir():
-        return 0
+        return 0, [], None
     count = 0
+    omitted: list[dict] = []
+    stopped_at: str | None = None
     src_root_str = str(src_root)
     for dirpath, dirnames, filenames in os.walk(src_root_str):
         # A directory holding `*.dist-info` is a package install (pip
@@ -868,8 +988,22 @@ def copy_workspace(src_root: Path, dest_root: Path, api_keys: list[str]) -> int:
             dirnames[:] = []
             continue
         # Mutate in place — os.walk respects this for descent.
-        dirnames[:] = [d for d in dirnames if d not in WORKSPACE_SKIP_DIRS]
+        # Sorted in place, so the walk (and with it what the caps keep) is
+        # the same on every extract.
+        dirnames[:] = sorted(d for d in dirnames if d not in WORKSPACE_SKIP_DIRS)
+        filenames = sorted(filenames)
+        rel_dir = Path(dirpath).relative_to(src_root).as_posix()
+        entries = len(dirnames) + len(filenames)
+        if entries > WORKSPACE_MAX_ENTRIES_PER_FOLDER:
+            kept = set(sorted(dirnames + filenames)[:WORKSPACE_MAX_ENTRIES_PER_FOLDER])
+            dirnames[:] = [d for d in dirnames if d in kept]
+            filenames = [f for f in filenames if f in kept]
+            omitted.append({"path": rel_dir, "entries": entries,
+                            "kept": WORKSPACE_MAX_ENTRIES_PER_FOLDER})
         for fn in filenames:
+            if count >= WORKSPACE_MAX_FILES_PER_RUN:
+                stopped_at = rel_dir
+                break
             src = Path(dirpath) / fn
             if src.suffix.lower() in WORKSPACE_SKIP_EXTS:
                 continue
@@ -904,12 +1038,15 @@ def copy_workspace(src_root: Path, dest_root: Path, api_keys: list[str]) -> int:
             dest = dest_root / rel
             dest.parent.mkdir(parents=True, exist_ok=True)
             try:
-                dest.write_text(sanitized, encoding="utf-8")
+                write_text_direct(dest, sanitized)
                 shutil.copystat(src, dest)
                 count += 1
             except OSError as e:
                 print(f"  WARN: could not write {rel} ({e})")
-    return count
+        if stopped_at is not None:
+            break
+    omitted.sort(key=lambda o: o["path"])
+    return count, omitted, stopped_at
 
 
 if __name__ == "__main__":
