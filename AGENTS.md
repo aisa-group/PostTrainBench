@@ -81,7 +81,8 @@ PostTrainBench/
    (`update: skipped`). To install an exact version instead of latest, set
    `CLAUDE_CLI_VERSION` / `CODEX_CLI_VERSION` / `GEMINI_CLI_VERSION` / `OPENCODE_CLI_VERSION` / `QWEN_CLI_VERSION`
    in `.env` (`run_task.sh` forwards them into the sandbox). Per-model pins hardcoded in a
-   `solve.sh` (`claude_non_api_max`, `glmx`, `codex_openrouter_max`) override the `.env` value; `qwen_code` pins 0.27.4 unless `.env` sets one. A pin is strict: it overrides
+   `solve.sh` (`claude_non_api_max`, `glmx`, `codex_openrouter_max`, `codex_non_api_max` for the GPT-6.2 models)
+   override the `.env` value; `qwen_code` pins 0.27.4 unless `.env` sets one. A pin is strict: it overrides
    `POST_TRAIN_BENCH_SKIP_CLI_UPDATE`, and a failed install aborts
    `solve.sh` (every `solve.sh` calls the helper with `|| exit 1`). A new CLI in the helper's
    mapping also needs its `<BIN>_CLI_VERSION` added to the forwarding loop in `run_task.sh`.
