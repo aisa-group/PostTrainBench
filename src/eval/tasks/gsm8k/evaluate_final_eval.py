@@ -114,6 +114,9 @@ def main() -> None:
         task,
         model=f"vllm/{args.model_path}",
         model_args=model_args,
+        # SmolLM3 uses <|im_end|> (128012) for turns, distinct from base EOS (128001).
+        # A string stop cannot match this special token with vLLM's default decoding.
+        extra_body={"stop_token_ids": [128012]} if model_type(args) == "smollm" else None,
         score_display=False,
         log_realtime=False,
         log_format='json',
