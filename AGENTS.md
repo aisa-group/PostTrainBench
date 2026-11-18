@@ -218,7 +218,7 @@ to `~/agent_logs/qwen_projects`; `qwen_code_parser.py` reuses the Claude Code fo
      id's from its name, because matching the whole result path gave the qwen_code grid (`agent_config`
      `qwen/qwen4-max`) the qwen3 template for gemma and SmolLM3. The agent-facing scripts keep the whole-path match, so
      the sandbox stays as in earlier grids; the agent runs them on local paths (`final_model`), which also end at
-     `config.json`. Test: `dev_utils/template_selection/test_model_type.py`.
+     `config.json`.
      A task with an `evaluate_openrouter.py` also needs
      `evaluate_openrouter_final_eval.py`, the same variant of that file, which `run_final_eval.sh` runs
      when grading goes through OpenRouter. A new task also needs its max-tokens retry cascade in
