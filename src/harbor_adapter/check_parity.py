@@ -284,6 +284,8 @@ def check_judges() -> None:
 
 # claude flags harbor's claude-code agent always passes itself.
 HARBOR_BUILTIN_CLAUDE_FLAGS = {"--print", "--verbose", "--model", "--output-format", "--dangerously-skip-permissions"}
+# Agent CLIs that only condor runs: Harbor has no agent for them (README "Differences from condor").
+CONDOR_ONLY_CLI_PKGS = {"@qwen-code/qwen-code"}
 
 
 def check_launch() -> None:
@@ -313,7 +315,7 @@ def check_launch() -> None:
             fail("launch", f"{rel(CLAUDE_SOLVE)} passes {tok}, which has no Harbor mapping — "
                            f"add it to run_modal_task.sh and to this check")
 
-    condor_pkgs = set(re.findall(r'\)\s+PKG="([^"]+)"', UPDATE_CLI.read_text()))
+    condor_pkgs = set(re.findall(r'\)\s+PKG="([^"]+)"', UPDATE_CLI.read_text())) - CONDOR_ONLY_CLI_PKGS
     harbor_pkgs = set(re.findall(r'CLI_PKG="([^"]+)"', wrapper)) - {""}
     expect_equal("launch", "agent CLI npm packages", condor_pkgs, harbor_pkgs, rel(UPDATE_CLI), rel(WRAPPER))
 

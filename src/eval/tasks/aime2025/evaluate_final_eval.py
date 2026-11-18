@@ -140,14 +140,25 @@ def main() -> None:
             json.dump(metrics, f, indent=2)
 
 def model_type(args) -> str:
-    if 'qwen' in args.model_path.lower():
-        return 'qwen'
-    if 'llama' in args.model_path.lower():
-        return 'llama'
-    if 'gemma' in args.model_path.lower():
-        return 'gemma'
-    if 'smollm' in args.model_path.lower():
-        return 'smollm'
+    """The model family whose chat template is used: from config.json for a local model dir, else from the name.
+
+    A local dir (the final evaluation's final_model) goes by the `architectures` in its config.json, as the agent's own
+    evaluate.py call on final_model does. Only a Hugging Face id (e.g. Qwen/Qwen3-4B-Base) goes by its name. Matching
+    the whole local path gave the qwen_code grid (agent_config qwen/qwen4-max is part of the result path) the qwen3
+    template for every gemma and SmolLM3 cell (2026-11-17). vLLM cannot load a dir without config.json or
+    `architectures` either, so requiring them here loses no submission.
+    """
+    if not os.path.isdir(args.model_path):
+        name = args.model_path.lower()
+        if 'qwen' in name:
+            return 'qwen'
+        if 'llama' in name:
+            return 'llama'
+        if 'gemma' in name:
+            return 'gemma'
+        if 'smollm' in name:
+            return 'smollm'
+        raise ValueError(f"{args.model_path!r} is no local model dir and names no known model family")
 
     with open(os.path.join(args.model_path, "config.json"), 'r') as f:
         config = json.load(f)

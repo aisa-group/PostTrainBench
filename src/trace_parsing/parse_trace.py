@@ -1,7 +1,7 @@
 """Parse an agent or judge trace into a human-readable transcript.
 
 Picks the right per-agent parser by substring-matching the agent name against
-{claude, codex, cursor, gemini, opencode}. If the name matches zero keys, the
+{claude, codex, cursor, gemini, opencode, qwen_code}. If the name matches zero keys, the
 input is copied verbatim (preserves the historical fallback for agents like
 glm5 and qwen3max that don't produce a structured trace). If the name matches
 more than one key, the script errors out instead of guessing.
@@ -22,6 +22,7 @@ import codex_parser
 import cursor_parser
 import gemini_parser
 import opencode_parser
+import qwen_code_parser
 import sanitize_trace
 
 PARSERS = {
@@ -30,6 +31,7 @@ PARSERS = {
     "cursor": cursor_parser.parse,
     "gemini": gemini_parser.parse,
     "opencode": opencode_parser.parse,
+    "qwen_code": qwen_code_parser.parse,
 }
 
 

@@ -74,8 +74,10 @@ def load_dotenv() -> dict[str, str]:
 
 
 # Which .env entries are secrets: every variable whose name ends in one of these
-# suffixes (the same rule as src/trace_parsing/sanitize_trace.py for *_API_KEY,
-# widened to tokens: HF_TOKEN, CLAUDE_CODE_OAUTH_TOKEN, ...). Their literal values
+# suffixes, or contains _API_KEY_ (a second key with a suffix, e.g.
+# OPENROUTER_API_KEY_QWEN_4_MAX); the same rule as
+# src/trace_parsing/sanitize_trace.py (is_secret_name): API keys and tokens
+# (HF_TOKEN, CLAUDE_CODE_OAUTH_TOKEN, ...). Their literal values
 # are redacted from copied traces, supplemented at runtime by the secrets file
 # pointed to by POST_TRAIN_BENCH_SANITIZATION_SECRETS (see get_api_keys).
 SECRET_NAME_SUFFIXES = ("_API_KEY", "_TOKEN")
@@ -205,7 +207,7 @@ def get_api_keys(dotenv: dict[str, str]) -> list[str]:
     """Collect the literal secret strings to redact from copied traces.
 
     Two sources, both resolved from .env (never the ambient environment):
-      1. Every .env variable named *_API_KEY or *_TOKEN (SECRET_NAME_SUFFIXES)
+      1. Every .env variable named *_API_KEY, *_API_KEY_* or *_TOKEN
          with a real value; placeholders and values shorter than MIN_SECRET_LEN
          are skipped (reported, not silently dropped).
       2. The newline-delimited file named by POST_TRAIN_BENCH_SANITIZATION_SECRETS.
@@ -213,7 +215,7 @@ def get_api_keys(dotenv: dict[str, str]) -> list[str]:
     keys: list[str] = []
     present, skipped = [], []
     for var, value in dotenv.items():
-        if not var.endswith(SECRET_NAME_SUFFIXES):
+        if not (var.endswith(SECRET_NAME_SUFFIXES) or "_API_KEY_" in var):
             continue
         if not value or value.startswith(PLACEHOLDER_PREFIX) or len(value) < MIN_SECRET_LEN:
             skipped.append(var)

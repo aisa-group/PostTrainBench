@@ -191,6 +191,7 @@ differences below are intended; the check allows exactly these.
 | Judge auth | ChatGPT subscription auth.json in gpt_5_5.sif | OPENAI_API_KEY, directly in the verifier image (JUDGE_RUNTIME=local) |
 | Judge confinement | codex in a --containall apptainer sandbox that only sees its judge dir | codex as nobody (setpriv) in the verifier container: it can write only its judge dir; /logs, the baked ptb tree and the model volume's files stay root-owned |
 | CLI pins | also per-model pins in agents/claude_non_api_max, agents/glmx solve.sh | not mirrored |
+| Agent CLIs | also Qwen Code (@qwen-code/qwen-code, agents/qwen_code) | not installed: Harbor has no agent for it (CONDOR_ONLY_CLI_PKGS in check_parity.py) |
 | Code the judges see | the whole task/ dir, minus every dir that looks like a HF model (containers/delete_hf_models.py) | a snapshot: files <= 512 MiB, <= 2 GiB total, smallest first, no weight formats or caches |
 | Record of what was dropped | output.log | .ptb_workspace_sizes.txt in the snapshot |
 
