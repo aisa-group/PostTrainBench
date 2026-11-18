@@ -90,7 +90,18 @@ def build_agent_harness_clause(agent: str | None, agent_config: str | None) -> s
     family = (agent or "").lower()
     model = agent_config or "the configured model"
 
-    if family.startswith("codex"):
+    if family == "codex_openrouter_max":
+        body = (
+            f"the **codex** CLI on OpenAI model **{model}**, paid through OpenRouter (`openai/{model}`). The "
+            f"harness starts a local relay for it (`python3 /home/ben/.codex_relay/or_relay.py`, a `127.0.0.1` port "
+            f"and bearer token in `~/.codex_openrouter/config.toml`, log `~/agent_logs/or_relay.log`) that sends the "
+            f"CLI's own model turns to OpenRouter and its web searches to the ChatGPT backend (`chatgpt.com`). The "
+            f"relay process, its log and config, the `codex --model {model}` process, and reported token/cost usage "
+            f"are the harness, not agent-made calls. But agent-written code or commands that send requests to the "
+            f"relay's port are calls to the hosted model {model}, not local inference, even though they go to "
+            f"`127.0.0.1`."
+        )
+    elif family.startswith("codex"):
         body = (
             f"the **codex** CLI on OpenAI model **{model}**. Its banner "
             f"(`provider: openai / model: {model}`), `node …/codex --model {model}` "
