@@ -233,7 +233,7 @@ solve_task() {
     CLI_UPDATE_ENV=()
     [ -n "${POST_TRAIN_BENCH_SKIP_CLI_UPDATE:-}" ] && CLI_UPDATE_ENV+=(--env "POST_TRAIN_BENCH_SKIP_CLI_UPDATE=${POST_TRAIN_BENCH_SKIP_CLI_UPDATE}")
     # Forward exact CLI version pins (<BIN>_CLI_VERSION from .env); unset ⇒ latest.
-    for _v in CLAUDE_CLI_VERSION CODEX_CLI_VERSION GEMINI_CLI_VERSION OPENCODE_CLI_VERSION; do
+    for _v in CLAUDE_CLI_VERSION CODEX_CLI_VERSION GEMINI_CLI_VERSION OPENCODE_CLI_VERSION QWEN_CLI_VERSION; do
         [ -n "${!_v:-}" ] && CLI_UPDATE_ENV+=(--env "${_v}=${!_v}")
     done
     timeout --signal=TERM --kill-after=30s "$((NUM_HOURS * 60 + 5))m" \

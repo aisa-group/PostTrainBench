@@ -8,7 +8,7 @@
 #   e.g. update_agent_cli.sh claude
 #
 # Version pin: set <BIN-uppercase>_CLI_VERSION (e.g. CLAUDE_CLI_VERSION,
-# CODEX_CLI_VERSION, GEMINI_CLI_VERSION, OPENCODE_CLI_VERSION) to install that
+# CODEX_CLI_VERSION, GEMINI_CLI_VERSION, OPENCODE_CLI_VERSION, QWEN_CLI_VERSION) to install that
 # exact npm version instead of `latest`. run_task.sh forwards these from .env
 # into the sandbox. Example:
 #     CLAUDE_CLI_VERSION=2.1.207 update_agent_cli.sh claude
@@ -40,6 +40,7 @@ case "$BIN" in
     codex)    PKG="@openai/codex" ;;
     gemini)   PKG="@google/gemini-cli" ;;
     opencode) PKG="opencode-ai" ;;
+    qwen)     PKG="@qwen-code/qwen-code" ;;
     *)
         echo "[update_agent_cli] ERROR: no npm package mapping for binary '$BIN'" >&2
         exit 1

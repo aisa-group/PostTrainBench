@@ -74,14 +74,14 @@ PostTrainBench/
    the harness to the latest npm release and writes its version to `cli_version.txt` (surfaced in
    the result dir). The helper (`src/utils/update_agent_cli.sh`, copied into the sandbox by
    `run_task.sh`) holds the binary→npm-package mapping; add a `case` entry there if the agent uses
-   a CLI not already covered (`claude`, `codex`, `gemini`, `opencode`). Without a pin the update is best-effort —
+   a CLI not already covered (`claude`, `codex`, `gemini`, `opencode`, `qwen`). Without a pin the update is best-effort —
    a failure falls back to the container's pinned version and still records what actually ran.
    Set `POST_TRAIN_BENCH_SKIP_CLI_UPDATE=1` in `.env` to disable the update globally and pin CLI
    versions to whatever the container ships; `cli_version.txt` still records what ran
    (`update: skipped`). To install an exact version instead of latest, set
-   `CLAUDE_CLI_VERSION` / `CODEX_CLI_VERSION` / `GEMINI_CLI_VERSION` / `OPENCODE_CLI_VERSION`
+   `CLAUDE_CLI_VERSION` / `CODEX_CLI_VERSION` / `GEMINI_CLI_VERSION` / `OPENCODE_CLI_VERSION` / `QWEN_CLI_VERSION`
    in `.env` (`run_task.sh` forwards them into the sandbox). Per-model pins hardcoded in a
-   `solve.sh` (`claude_non_api_max`, `glmx`) override the `.env` value. A pin is strict: it overrides
+   `solve.sh` (`claude_non_api_max`, `glmx`) override the `.env` value; `qwen_code` pins 0.27.4 unless `.env` sets one. A pin is strict: it overrides
    `POST_TRAIN_BENCH_SKIP_CLI_UPDATE`, and a failed install aborts
    `solve.sh` (every `solve.sh` calls the helper with `|| exit 1`). A new CLI in the helper's
    mapping also needs its `<BIN>_CLI_VERSION` added to the forwarding loop in `run_task.sh`.
@@ -102,7 +102,7 @@ below. With the allowlist in place there is **no** need to `unset`/blank keys in
 
 Currently supported agents include: `claude`, `claude_non_api`, `claude_non_api_max`, `claude_openrouter_max`,
 `codex`, `codex_non_api` (and `_high`, `_xhigh`, `_reprompt`, ...), `codexhigh`, `codexlow`, `cursor_cli`,
-`gemini`, `glm5`, `grok_cli`, `opencode`, `qwen3max`.
+`gemini`, `glm5`, `grok_cli`, `opencode`, `qwen3max`, `qwen_code`.
 
 `claude_openrouter_max` runs Claude Code at max effort, paid per token with `OPENROUTER_API_KEY` instead of a
 subscription: `ANTHROPIC_BASE_URL=https://openrouter.ai/api`, and `CLAUDE_CODE_EXTRA_BODY` pins every request to
@@ -167,6 +167,25 @@ shown by `opencode_parser.py`), and keeps opencode's data directory (`~/.local/s
 with every message, tool call and reasoning summary, and opencode's log) in `~/agent_logs/opencode`. `solve_out.txt`
 can miss events: once opencode's stdout stalled at a 64 KB event, and 12 minutes of a session never reached it;
 `dev_utils/opencode_trace_rebuild/rebuild_solve_out.py` rebuilds such a trace from that database.
+
+`qwen_code` runs Qwen Code (`qwen`, npm `@qwen-code/qwen-code`, pinned to 0.27.4) headless (`--yolo --output-format
+stream-json`) on an OpenRouter model: `agent_config` is `<OpenRouter model id>[:<reasoning effort>]`, e.g.
+`qwen/qwen4-max:xhigh`. `solve.sh` writes `~/.qwen/settings.json`: requests carry `reasoning.effort` and are pinned to
+OpenRouter's `alibaba` endpoint without fallbacks (both in `extra_body`, sent verbatim), with the key
+`OPENROUTER_API_KEY_QWEN_4_MAX`; no per-turn tool-call cap (the default ends a turn after 1000 calls, and a headless run
+is one turn), no managed memory, no usage statistics. It checks the effort against OpenRouter's model list. Shell
+commands (checked on 0.27.4): a foreground command times out after 2 minutes (its own `timeout`: at most 10), and its
+process group is killed; `is_background` commands are not waited for and are killed when the session ends; `nohup ... &`
+processes live on. So a hung command cannot stall the run as with antigravity's agy. A headless run ends at the first
+model turn without a tool call, so `solve.sh` resumes the session (`qwen --resume <id>`, note on stdin) like opencode's
+(error or empty `final_model/`, time left, at most 10 times). The prompt goes in on stdin, never as `-p`: in qwen's
+argv it made the agent's `pgrep -f evaluate.py` / `kill` match and kill qwen itself. OpenRouter's alibaba endpoint rejects every reply with a tool
+call once the history ends in rounds of the same tool call ("Repetitive tool calls detected in the conversation
+history"), so a plain resume fails at once (one run lost its last 10 resumes and 5h46m that way); after this error
+`solve.sh` runs `/compress` on the session before resuming. Test: `git_ignored/2026-11-17/qwen_solve_compress_test.sh`
+(fake qwen). Qwen Code's own sleep guard rejects `sleep N; cmd` (a standalone `sleep N # intentional-sleep: <reason>` of
+at most 10 minutes passes) and points to background waits, which headless mode never reports back. Session records (`~/.qwen/projects/*/chats/*.jsonl`) go
+to `~/agent_logs/qwen_projects`; `qwen_code_parser.py` reuses the Claude Code formatter (same stream-json shape).
 
 ## Adding a New Evaluation Task
 

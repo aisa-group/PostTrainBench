@@ -1,6 +1,6 @@
 """Redact API key values (sourced from .env) out of a trace file.
 
-Picks up every `*_API_KEY` and `*_TOKEN` entry (SECRET_NAME_SUFFIXES) in the
+Picks up every `*_API_KEY*` and `*_TOKEN` entry (is_secret_name) in the
 repo's .env file and replaces every occurrence of its value in the trace text
 with `[REDACTED:<NAME>]`: both the literal in the file and, when it differs,
 the value exported in the live environment.
@@ -21,6 +21,12 @@ MIN_VALUE_LEN = 8
 SECRET_NAME_SUFFIXES = ("_API_KEY", "_TOKEN")
 
 
+def is_secret_name(name: str) -> bool:
+    """An API key or token name: *_API_KEY, *_TOKEN, or an API key with a suffix
+    such as OPENROUTER_API_KEY_QWEN_4_MAX (a second key for the same provider)."""
+    return name.endswith(SECRET_NAME_SUFFIXES) or "_API_KEY_" in name
+
+
 def _strip_quotes(value: str) -> str:
     if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
         return value[1:-1]
@@ -28,7 +34,7 @@ def _strip_quotes(value: str) -> str:
 
 
 def load_api_key_secrets(env_path: Path = DEFAULT_ENV_PATH) -> list[tuple[str, str]]:
-    """Return (name, value) pairs for every *_API_KEY / *_TOKEN entry in .env.
+    """Return (name, value) pairs for every API key / token entry in .env (is_secret_name).
 
     Both the literal value written in .env and the live environment value are
     returned when they differ: which one a run actually used depends on the
@@ -46,7 +52,7 @@ def load_api_key_secrets(env_path: Path = DEFAULT_ENV_PATH) -> list[tuple[str, s
             continue
         name, _, file_value = stripped.partition("=")
         name = name.strip()
-        if not name.endswith(SECRET_NAME_SUFFIXES):
+        if not is_secret_name(name):
             continue
         for value in (_strip_quotes(file_value.strip()), os.environ.get(name, "")):
             if not value or value.startswith(PLACEHOLDER_PREFIX) or len(value) < MIN_VALUE_LEN:
