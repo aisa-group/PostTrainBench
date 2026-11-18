@@ -127,8 +127,23 @@ MODEL_HF=$(echo "$MODEL_PART" | sed 's/_/\//')
 # Format: {agent}_{agent_config}_{num_hours}h[_{num_gpus}gpu][{experiment_name}]
 METHOD_DIR=$(basename "$(dirname "$RESULT_DIR")")
 AGENT_AND_CONFIG=$(echo "$METHOD_DIR" | sed -E 's/_[0-9]+h.*$//')
-AGENT=$(echo "$AGENT_AND_CONFIG" | sed -E 's/^([^_]+)_.*/\1/')
-AGENT_CONFIG=$(echo "$AGENT_AND_CONFIG" | sed -E 's/^[^_]+_(.*)$/\1/')
+# Agent names contain underscores (codex_non_api_max, codex_openrouter_max): the agent is the longest agents/<name>
+# that the method dir starts with (the judges' harness clause depends on the full name).
+AGENT=""
+for _agent_dir in "$JUDGES_REPO_ROOT"/agents/*/; do
+    _name=$(basename "$_agent_dir")
+    if [[ "$AGENT_AND_CONFIG" == "${_name}_"* ]] && [ "${#_name}" -gt "${#AGENT}" ]; then
+        AGENT="$_name"
+    fi
+done
+if [ -n "$AGENT" ]; then
+    AGENT_CONFIG="${AGENT_AND_CONFIG#"${AGENT}_"}"
+else
+    # An agent that is no longer in agents/: the text before the first underscore, as before.
+    AGENT=$(echo "$AGENT_AND_CONFIG" | sed -E 's/^([^_]+)_.*/\1/')
+    AGENT_CONFIG=$(echo "$AGENT_AND_CONFIG" | sed -E 's/^[^_]+_(.*)$/\1/')
+    echo "WARNING: no agents/<name> matches the method dir $METHOD_DIR; using agent '$AGENT', config '$AGENT_CONFIG'" >&2
+fi
 
 echo "Running judges on: $RESULT_DIR"
 echo "  Benchmark: $BENCHMARK | Model: $MODEL_HF | Agent: $AGENT ($AGENT_CONFIG) | Trace: $TRACE_NAME"

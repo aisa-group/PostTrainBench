@@ -6,19 +6,21 @@
 # codex talks only to a local relay (or_relay.py, written below), configured as its model provider. The relay holds
 # both credentials and sends each upstream only its own:
 # - model turns (POST /responses) go to OpenRouter, with OpenRouter's provider routing added to the body (codex cannot
-#   add body fields): only OpenAI's own endpoint, no fallbacks. OpenRouter also serves these models from Azure and
-#   Bedrock, and codex's encrypted reasoning items and encrypted search results only decrypt at OpenAI.
+#   add body fields): only OpenAI's own standard endpoint, no fallbacks. OpenRouter also serves these models from Azure
+#   and Bedrock, and codex's encrypted reasoning items and encrypted search results only decrypt at OpenAI; OpenAI's
+#   "fast" endpoint (twice the price) would otherwise also match "openai", so it is ignored explicitly.
 # - web searches (POST /alpha/search: codex's "standalone" web search, the only one codex offers for the GPT-6
 #   models; OpenRouter has no such endpoint) go to the ChatGPT backend with the subscription's access token. The token
 #   comes from agents/codex_non_api/auth.json (the judges' subscription; the auth.json symlink in this directory makes
 #   run_task.sh bind-mount it at ~/.codex/auth.json). The relay reads it for every search and never refreshes it:
 #   other jobs and the judges rotate it, and a second refresher would race them.
 # The sandbox shares the node's network with other jobs, so the relay listens on a random free port and accepts only
-# requests with a random per-run token, which codex sends as its bearer token.
+# requests with a random per-run token, which codex sends as its bearer token. The port range 21000-28999 avoids the
+# ephemeral range and common defaults of training tools (torch.distributed 29400/29500, SGLang 30000).
 # codex runs with its own CODEX_HOME (no subscription token there) and without the OpenRouter key in its environment,
 # so neither credential is in the environment of the agent's commands. Both stay readable for a determined agent (the
-# key in /proc/<pid>/environ of the processes that started solve.sh, as for every agent; the token in
-# ~/.codex/auth.json, as for the codex_non_api agents).
+# key in /proc/<pid>/environ of solve.sh, its relay loop and the processes that started it, as for every agent; the
+# token in ~/.codex/auth.json, as for the codex_non_api agents).
 
 set -u
 
@@ -44,13 +46,28 @@ export CODEX_HOME="/home/ben/.codex_openrouter"
 mkdir -p "$RELAY_DIR" /home/ben/agent_logs/codex_sessions "$CODEX_HOME"
 
 # The model must exist on OpenRouter with reasoning effort max and an endpoint of OpenAI itself.
-python3 - "$OPENROUTER_MODEL" <<'EOF' || exit 1
+python3 -I - "$OPENROUTER_MODEL" <<'EOF' || exit 1
 import json
 import sys
+import time
 import urllib.request
 
+
+def get(url: str) -> dict:
+    for attempt in (1, 2, 3):
+        try:
+            with urllib.request.urlopen(url, timeout=60) as response:
+                return json.load(response)
+        except (OSError, json.JSONDecodeError) as e:
+            if attempt == 3:
+                raise
+            print(f"OpenRouter check: {url} failed ({e!r}), retrying in 20 s")
+            time.sleep(20)
+    raise AssertionError("unreachable")
+
+
 model = sys.argv[1]
-models = json.load(urllib.request.urlopen("https://openrouter.ai/api/v1/models", timeout=60))["data"]
+models = get("https://openrouter.ai/api/v1/models")["data"]
 matches = [m for m in models if m["id"] == model]
 if not matches:
     sys.exit(f"ERROR: OpenRouter has no model {model}")
@@ -58,7 +75,7 @@ efforts = (matches[0].get("reasoning") or {}).get("supported_efforts") or []
 if "max" not in efforts:
     sys.exit(f"ERROR: OpenRouter's {model} does not support reasoning effort max (supported: {efforts})")
 url = f"https://openrouter.ai/api/v1/models/{model}/endpoints"
-tags = [e.get("tag") for e in json.load(urllib.request.urlopen(url, timeout=60))["data"]["endpoints"]]
+tags = [e.get("tag") for e in get(url)["data"]["endpoints"]]
 if "openai" not in tags:
     sys.exit(f"ERROR: OpenRouter's {model} has no endpoint of OpenAI itself (endpoints: {tags})")
 print(f"OpenRouter {model}: reasoning efforts {efforts}, endpoints {tags}")
@@ -100,7 +117,9 @@ import time
 import traceback
 import urllib.parse
 
-PROVIDER = {"order": ["openai"], "allow_fallbacks": False}
+# "openai" alone also matches OpenAI's "fast" endpoint (twice the price): OpenRouter's routing report for a request with
+# order ["openai/fast"] showed it removed by the ignore filter only (2026-11-18).
+PROVIDER = {"order": ["openai"], "allow_fallbacks": False, "ignore": ["openai/fast", "openai/ultrafast"]}
 # route name -> (upstream host, upstream path, socket timeout in seconds)
 UPSTREAMS = {
     "openrouter": ("openrouter.ai", "/api/v1/responses", 1800),
@@ -138,8 +157,13 @@ COUNTER = itertools.count(1)
 
 
 def log(msg: str) -> None:
-    with LOG_LOCK, open(LOG_FILE, "a") as f:
-        f.write(f"{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())} {msg}\n")
+    # A log that cannot be written (full disk, deleted ~/agent_logs) must not stop the relay: without it, codex cannot
+    # reach the model, and the agent cannot clean up.
+    try:
+        with LOG_LOCK, open(LOG_FILE, "a") as f:
+            f.write(f"{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())} {msg}\n")
+    except OSError:
+        pass
 
 
 def upstream_connection(host: str, timeout: int) -> http.client.HTTPSConnection:
@@ -360,16 +384,16 @@ if __name__ == "__main__":
     server.serve_forever()
 PYEOF
 
-# A random token (the relay rejects requests without it) and a random free port below Linux's ephemeral port range
-# (32768-60999), so that outgoing connections do not take it while the relay restarts.
-RELAY_TOKEN=$(python3 -c 'import secrets; print(secrets.token_hex(24))') || exit 1
-RELAY_PORT=$(python3 - <<'EOF'
+# A random token (the relay rejects requests without it) and a random free port (see the top of this file).
+RELAY_TOKEN=$(python3 -I -c 'import secrets; print(secrets.token_hex(24))') || exit 1
+pick_port() {
+    python3 -I - <<'EOF'
 import random
 import socket
 import sys
 
 for _ in range(200):
-    port = random.randrange(20000, 32000)
+    port = random.randrange(21000, 29000)
     with socket.socket() as s:
         try:
             s.bind(("127.0.0.1", port))
@@ -377,39 +401,52 @@ for _ in range(200):
             continue
     print(port)
     sys.exit(0)
-sys.exit("ERROR: no free port found in 20000-31999")
+sys.exit("ERROR: no free port found in 21000-28999")
 EOF
-) || exit 1
+}
 
 # If the relay dies (e.g. the agent kills python processes), the loop restarts it and codex retries the request.
 relay_loop() {
     while true; do
-        printf '%s\n%s\n' "$OPENROUTER_KEY" "$RELAY_TOKEN" | python3 "$RELAY_DIR/or_relay.py" "$RELAY_PORT" \
+        printf '%s\n%s\n' "$OPENROUTER_KEY" "$RELAY_TOKEN" | python3 -I "$RELAY_DIR/or_relay.py" "$RELAY_PORT" \
             "$AGENT_CONFIG" "$OPENROUTER_MODEL" "$AUTH_JSON" "$RELAY_LOG"
         relay_status=$?
         echo "$(date -u +%FT%TZ) or_relay exited with status ${relay_status}, restarting in 2 s"
         sleep 2
     done
 }
-# The loop writes only to the relay log, so it never holds solve.sh's stdout open.
-relay_loop >> "$RELAY_LOG" 2>&1 &
-RELAY_LOOP_PID=$!
-trap 'kill "$RELAY_LOOP_PID" 2>/dev/null; pkill -f "$RELAY_DIR/or_relay.py"' EXIT
-relay_up=0
-for _ in $(seq 30); do
-    # The token goes on stdin, not into a command line.
-    if printf '%s' "$RELAY_TOKEN" | python3 -c '
+# Readiness: only this run's relay answers the health check with this token (the token goes on stdin, not into a
+# command line).
+relay_answers() {
+    printf '%s' "$RELAY_TOKEN" | python3 -I -c '
 import sys, urllib.request
 token = sys.stdin.read()
 request = urllib.request.Request(f"http://127.0.0.1:{sys.argv[1]}/relay/health", headers={"Authorization": f"Bearer {token}"})
-urllib.request.urlopen(request, timeout=2)' "$RELAY_PORT" 2>/dev/null; then
-        relay_up=1
-        break
-    fi
-    sleep 1
+urllib.request.urlopen(request, timeout=2)' "$RELAY_PORT" 2>/dev/null
+}
+RELAY_LOOP_PID=""
+trap '[ -n "$RELAY_LOOP_PID" ] && kill "$RELAY_LOOP_PID" 2>/dev/null; pkill -f "$RELAY_DIR/or_relay.py"' EXIT
+relay_up=0
+# A port can be taken between the check and the relay's bind: then try again with another port.
+for attempt in 1 2 3; do
+    RELAY_PORT=$(pick_port) || exit 1
+    # The loop writes only to the relay log, so it never holds solve.sh's stdout open.
+    relay_loop >> "$RELAY_LOG" 2>&1 &
+    RELAY_LOOP_PID=$!
+    for _ in $(seq 30); do
+        if relay_answers; then
+            relay_up=1
+            break
+        fi
+        sleep 1
+    done
+    [ "$relay_up" = 1 ] && break
+    echo "or_relay did not answer on port ${RELAY_PORT} (attempt ${attempt}/3)"
+    kill "$RELAY_LOOP_PID"
+    pkill -f "$RELAY_DIR/or_relay.py"
 done
 if [ "$relay_up" != 1 ]; then
-    echo "ERROR: or_relay did not answer on port ${RELAY_PORT}; its log:"
+    echo "ERROR: or_relay did not start; its log:"
     cat "$RELAY_LOG"
     exit 1
 fi
@@ -438,26 +475,44 @@ EOF
 ln -s /home/ben/agent_logs/codex_sessions "$CODEX_HOME/sessions"
 
 # A codex session that ends with an error (e.g. an OpenAI outage longer than codex's retries; there are no fallback
-# providers) is resumed with a short note while time is left, at most MAX_RESUMES times. A session that ends normally
-# is not resumed, as for the other codex agents. The loop uses absolute paths and its own copy of timer.sh: on
-# 2026-11-06 an opencode agent's tests deleted /home/ben/task.
+# providers) is resumed with a short note while time is left. Before each resume the loop waits, 1, 2, 4, ... minutes
+# (at most 30), so that 10 resumes in a row span about 3 hours of outage; a session that ran for 30 minutes or more
+# made progress, and the count starts again. A session that ends normally is not resumed, as for the other codex
+# agents. The loop uses absolute paths and its own copy of timer.sh: on 2026-11-06 an opencode agent's tests deleted
+# /home/ben/task.
 TIMER="$HOME/solve_timer.sh"
 cp "$TASK_DIR/timer.sh" "$TIMER" || exit 1
 LAST_RUN="$HOME/codex_last_run.jsonl"
 MAX_RESUMES=10
 CODEX_ARGS=(--json -c model_reasoning_summary=detailed --skip-git-repo-check --model "$AGENT_CONFIG")
 
+START=$(date +%s)
 printf '%s' "$PROMPT" | codex --search exec "${CODEX_ARGS[@]}" --yolo | tee "$LAST_RUN"
 CODEX_EXIT=${PIPESTATUS[1]}
-THREAD_ID=$(python3 -c '
+RUN_SECONDS=$(( $(date +%s) - START ))
+THREAD_ID=$(python3 -I -c '
 import json, sys
 for line in open(sys.argv[1]):
     if line.startswith("{\"type\":\"thread.started\""):
         print(json.loads(line)["thread_id"])
         break' "$LAST_RUN")
 
-for (( resume = 1; resume <= MAX_RESUMES; resume++ )); do
-    [ "$CODEX_EXIT" -ne 0 ] || break
+resumes=0
+while [ "$CODEX_EXIT" -ne 0 ]; do
+    [ "$RUN_SECONDS" -ge 1800 ] && resumes=0
+    resumes=$((resumes + 1))
+    if [ "$resumes" -gt "$MAX_RESUMES" ]; then
+        echo "=== solve.sh: ${MAX_RESUMES} resumes in a row ended with an error within 30 minutes; not resuming again"
+        break
+    fi
+    if [ -z "$THREAD_ID" ]; then
+        echo "ERROR: codex exited with status ${CODEX_EXIT}, and its output has no thread id to resume"
+        exit 1
+    fi
+    WAIT_MINUTES=$(( 1 << (resumes - 1) ))
+    [ "$WAIT_MINUTES" -gt 30 ] && WAIT_MINUTES=30
+    echo "=== solve.sh: codex exited with status ${CODEX_EXIT}; resume ${resumes}/${MAX_RESUMES} in ${WAIT_MINUTES} min"
+    sleep "$((WAIT_MINUTES * 60))"
     TIMER_OUTPUT=$(bash "$TIMER")
     echo "$TIMER_OUTPUT" | grep -q "expired" && break
     REMAINING=$(echo "$TIMER_OUTPUT" | tail -n 1)
@@ -465,17 +520,15 @@ for (( resume = 1; resume <= MAX_RESUMES; resume++ )); do
         echo "ERROR: $TIMER printed no remaining time (H:MM): $TIMER_OUTPUT; not resuming"
         exit 1
     fi
-    if [ -z "$THREAD_ID" ]; then
-        echo "ERROR: codex exited with status ${CODEX_EXIT}, and its output has no thread id to resume"
-        exit 1
-    fi
     cd "$TASK_DIR" || { echo "ERROR: $TASK_DIR does not exist; not resuming"; exit 1; }
     MESSAGE="Your session ended with an error (codex exit status ${CODEX_EXIT}), but ${REMAINING%%:*}h ${REMAINING#*:}m"
     MESSAGE+=" of the time limit remain. Processes that codex ran for you may have been stopped when the session ended;"
     MESSAGE+=" check what is still running. Continue working on the task."
-    echo "=== solve.sh: resume ${resume}/${MAX_RESUMES} of codex thread ${THREAD_ID} with the message: ${MESSAGE}"
+    echo "=== solve.sh: resume ${resumes}/${MAX_RESUMES} of codex thread ${THREAD_ID} with the message: ${MESSAGE}"
+    START=$(date +%s)
     printf '%s' "$MESSAGE" | codex --search exec resume "${CODEX_ARGS[@]}" --dangerously-bypass-approvals-and-sandbox \
         "$THREAD_ID" - | tee "$LAST_RUN"
     CODEX_EXIT=${PIPESTATUS[1]}
+    RUN_SECONDS=$(( $(date +%s) - START ))
 done
 exit "$CODEX_EXIT"

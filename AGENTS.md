@@ -117,19 +117,23 @@ with `OPENROUTER_API_KEY_OPENAI`, and does its web searches through the ChatGPT 
 (`agents/codex_non_api/auth.json`; its `auth.json` symlink makes `run_task.sh` bind-mount that file). `agent_config` is
 codex's model slug (e.g. `gpt-6.2-astra`, so codex uses its own model metadata); the OpenRouter model is
 `openai/<agent_config>`. codex talks only to a local relay that `solve.sh` writes and starts (`or_relay.py`, restarted if
-it dies): model turns go to OpenRouter with `provider: {order: ["openai"], allow_fallbacks: false}` added to the body
-(codex cannot add body fields; its encrypted reasoning items and encrypted search results only decrypt at OpenAI), and
+it dies): model turns go to OpenRouter with `provider: {order: ["openai"], allow_fallbacks: false, ignore:
+["openai/fast", "openai/ultrafast"]}` added to the body (codex cannot add body fields; its encrypted reasoning items and
+encrypted search results only decrypt at OpenAI; without the `ignore`, `"openai"` also matches OpenAI's 2x-priced fast
+endpoint), and
 codex's standalone web search (`/alpha/search`, the only search codex offers for the GPT-6 models; OpenRouter has no
 such endpoint) goes to `chatgpt.com/backend-api/codex/alpha/search` with the subscription's access token, read for every
 search and never refreshed by the relay (the judges and other jobs rotate it). The sandbox shares the node's network,
-so the relay listens on a random free port and accepts only requests with a random per-run token (codex's
-`experimental_bearer_token`). Each upstream gets only its own credential. codex runs with its own `CODEX_HOME` and
+so the relay listens on a random free port (21000-28999) and accepts only requests with a random per-run token
+(codex's `experimental_bearer_token`). Each upstream gets only its own credential. codex runs with its own `CODEX_HOME` and
 without the OpenRouter key in its environment, so neither credential is in the environment of the agent's commands;
-a determined agent can still read both (the key in `/proc/<pid>/environ` of the processes that started `solve.sh`, as
-for every agent; the token in `~/.codex/auth.json`, as for the `codex_non_api` agents). The judges get an agent-specific
-harness clause (`get_judge_prompt.py`): the relay is the harness, but agent code that calls the relay's port is a call
-to the hosted model. A codex session that ends with an error (e.g. an OpenAI outage longer than codex's retries) is
-resumed (`codex exec resume <thread> -`) while time is left, at most 10 times; a normal end is not resumed.
+a determined agent can still read both (the key in `/proc/<pid>/environ` of `solve.sh`, its relay loop and the
+processes that started it, as for every agent; the token in `~/.codex/auth.json`, as for the `codex_non_api` agents). The judges get an agent-specific
+harness clause (`get_judge_prompt.py`; `run_judges.sh` takes the agent as the longest `agents/<name>` prefix of the
+method dir): the relay is the harness, but agent code that calls the relay with its token is a call to the hosted
+model. A codex session that ends with an error (e.g. an OpenAI outage longer than codex's retries) is resumed (`codex
+exec resume <thread> -`) while time is left, after a wait of 1, 2, 4, ... (at most 30) minutes, at most 10 times in a
+row (a session that ran 30 minutes resets the count); a normal end is not resumed.
 `~/agent_logs` keeps `or_relay.log` (one line per request: generation id, tokens, cost, search queries) and codex's
 session rollouts (`codex_sessions/`). Verified on 2026-11-18 with test prompts: OpenRouter's generation stats show
 `provider_name: OpenAI`, searches return results, context compaction goes through the relay. Test:
