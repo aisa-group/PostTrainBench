@@ -213,7 +213,13 @@ to `~/agent_logs/qwen_projects`; `qwen_code_parser.py` reuses the Claude Code fo
      counts for 11, and gsm8k's negative and thousands-separator targets as text, issue #44; a last number upstream
      cannot parse, such as `35²13` from `3*5²*13`, crashes its scorer and so the attempt, and is wrong here;
      `scripts/rescore_exact_match.py` rescores finished reruns from their inspect logs). Keep it in sync
-     with `evaluate.py` otherwise. A task with an `evaluate_openrouter.py` also needs
+     with `evaluate.py` otherwise, except for `model_type()` (the chat template): the final-eval scripts take a local
+     model dir's family from the `architectures` in its `config.json` (which vLLM needs anyway) and only a Hugging Face
+     id's from its name, because matching the whole result path gave the qwen_code grid (`agent_config`
+     `qwen/qwen4-max`) the qwen3 template for gemma and SmolLM3. The agent-facing scripts keep the whole-path match, so
+     the sandbox stays as in earlier grids; the agent runs them on local paths (`final_model`), which also end at
+     `config.json`. Test: `dev_utils/template_selection/test_model_type.py`.
+     A task with an `evaluate_openrouter.py` also needs
      `evaluate_openrouter_final_eval.py`, the same variant of that file, which `run_final_eval.sh` runs
      when grading goes through OpenRouter. A new task also needs its max-tokens retry cascade in
      `run_final_eval.sh`.
