@@ -90,7 +90,7 @@ def build_agent_harness_clause(agent: str | None, agent_config: str | None) -> s
     family = (agent or "").lower()
     model = agent_config or "the configured model"
 
-    if family == "codex_openrouter_max":
+    if family.startswith("codex_openrouter_max"):
         body = (
             f"the **codex** CLI on OpenAI model **{model}**, paid through OpenRouter (`openai/{model}`). The "
             f"harness starts a local relay for it (`python3 /home/ben/.codex_relay/or_relay.py`, a `127.0.0.1` port "
