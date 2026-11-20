@@ -2,7 +2,8 @@
 """
 Collect results from raw run directories into per-method CSVs.
 
-For each method directory in the results dir, does a single pass:
+A method is one directory in the results dir, or several directories that together hold one grid
+(utils.MERGED_METHODS: collected under the merged name, never on their own). For each method, does a single pass:
   1. Finds the latest run per (benchmark, model), for the benchmarks in
      HARDCODED_BENCHMARKS only (runs of removed benchmarks such as bfcl or
      aime2026 in old result roots are ignored)
@@ -68,6 +69,7 @@ from utils import (
     format_time_hms,
     BUDGET_SECONDS,
     HARDCODED_BENCHMARKS,
+    MERGED_METHODS,
 )
 
 # Directories to skip (baselines are hardcoded in baselines.json)
@@ -75,14 +77,15 @@ SKIP_METHODS = {"baseline", "baseline_zeroshot"}
 
 
 def collect_method(
-    method_path: str,
+    method_paths: list[str],
     method_name: str,
     baseline_data: dict[str, dict[str, str]],
     min_run_id: int | None = None,
     max_run_id: int | None = None,
 ) -> dict | None:
     """
-    Scan one method directory (no files are written here).
+    Scan one method (no files are written here): its directory, or the directories of a merged method
+    (utils.MERGED_METHODS), in which a (benchmark, model) cell may have runs in only one directory.
 
     Returns everything needed to write the method's CSVs, or None if no runs
     found:
@@ -96,11 +99,17 @@ def collect_method(
     # Only benchmarks of the current suite are collected. Old result roots
     # also hold runs of removed benchmarks (e.g. bfcl, aime2026); those are
     # not scored and have no baselines.json fallback, so they are ignored.
-    latest_runs = {
-        key: run
-        for key, run in walk_latest_runs(method_path, min_run_id, max_run_id).items()
-        if key[0] in HARDCODED_BENCHMARKS
-    }
+    latest_runs = {}
+    for method_path in method_paths:
+        for key, run in walk_latest_runs(method_path, min_run_id, max_run_id).items():
+            if key[0] not in HARDCODED_BENCHMARKS:
+                continue
+            if key in latest_runs:
+                raise ValueError(
+                    f"merged method {method_name!r}: {key} has runs in two of its directories: "
+                    f"{latest_runs[key]['path']} and {run['path']}"
+                )
+            latest_runs[key] = run
     if not latest_runs:
         return None
 
@@ -328,6 +337,7 @@ def main():
 
     collected_by_method: dict[str, dict] = {}
     seen_method_root: dict[str, str] = {}
+    method_dirs: dict[str, str] = {}  # method directory name -> its path (first root wins)
 
     for root in all_roots:
         if not os.path.isdir(root):
@@ -355,16 +365,39 @@ def main():
                 )
                 continue
             seen_method_root[method_name] = root
+            method_dirs[method_name] = method_path
 
-            collected = collect_method(
-                method_path,
-                method_name,
-                baseline_data,
-                min_run_id=args.min_run_id,
-                max_run_id=args.max_run_id,
+    # The methods to collect: every directory on its own, except the directories of a merged method, which are
+    # collected together under the merged name.
+    merged_sources = [source for sources in MERGED_METHODS.values() for source in sources]
+    if len(merged_sources) != len(set(merged_sources)):
+        raise ValueError("MERGED_METHODS lists a directory in more than one merged method")
+    methods = {name: [path] for name, path in method_dirs.items() if name not in merged_sources}
+    for merged_name, sources in MERGED_METHODS.items():
+        if merged_name in method_dirs:
+            raise ValueError(
+                f"merged method {merged_name!r} is also a directory: {method_dirs[merged_name]}"
             )
-            if collected:
-                collected_by_method[method_name] = collected
+        present = [source for source in sources if source in method_dirs]
+        if not present:
+            continue
+        if len(present) < len(sources):
+            print(
+                f"WARNING: merged method {merged_name!r}: directories not found in the results roots: "
+                f"{sorted(set(sources) - set(present))}"
+            )
+        methods[merged_name] = [method_dirs[source] for source in present]
+
+    for method_name in sorted(methods):
+        collected = collect_method(
+            methods[method_name],
+            method_name,
+            baseline_data,
+            min_run_id=args.min_run_id,
+            max_run_id=args.max_run_id,
+        )
+        if collected:
+            collected_by_method[method_name] = collected
 
     # A method where a scored run lacks a required judge verdict is not
     # aggregated: warn, drop it (including any stale CSVs an earlier collect

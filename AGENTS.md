@@ -140,6 +140,11 @@ session rollouts (`codex_sessions/`). Verified on 2026-11-18 with test prompts: 
 `provider_name: OpenAI`, searches return results, context compaction goes through the relay. Test:
 `dev_utils/codex_openrouter/smoke_test.sub`.
 
+The GPT-6.2 Astra grids (2026-11) are split over two method directories each: cells on a ChatGPT subscription
+(`codex_non_api_max`, which for `gpt-6.2-*` pins codex 0.170.0 and has the same resume loop after an error exit) and
+cells through OpenRouter (`codex_openrouter_max`). `scripts/collect.py` collects such a grid as one method
+(`MERGED_METHODS` in `scripts/utils.py`).
+
 `cursor_cli` uses the Cursor CLI (`agent`) with subscription auth: `solve.sh` installs the CLI
 via the official curl installer (`cursor.com/install`, drops `agent` + `cursor-agent` symlinks in
 `$HOME/.local/bin` pointing at `$HOME/.local/share/cursor-agent/versions/<v>/cursor-agent`) and
