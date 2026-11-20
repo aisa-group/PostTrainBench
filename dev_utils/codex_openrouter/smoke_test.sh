@@ -7,7 +7,7 @@
 # /proc/*/environ, the relay without its token), relay restart after the agent kills it, the resume loop after the
 # agent kills codex, ~/agent_logs (relay log, codex sessions), trace parsing, and that the key is in no output file.
 # Run on a compute node (smoke_test.sub) from the repo root. Costs about $0.50 on the OpenRouter key.
-# Output: /fast/brank/auto-posttrain/smoke/codex_openrouter_<run id>
+# Output: <parent of POST_TRAIN_BENCH_RESULTS_DIR>/smoke/codex_openrouter_<run id>
 # Usage: bash dev_utils/codex_openrouter/smoke_test.sh <run id> [agent_config]
 set -euo pipefail
 RUN_ID="${1:?usage: smoke_test.sh <run id> [agent_config]}"
@@ -20,7 +20,9 @@ CONTAINERS_DIR="$(bash -c 'set -a; source <(grep "^POST_TRAIN_BENCH_CONTAINERS_D
 CONTAINER_NAME="$(bash -c 'set -a; source <(grep "^POST_TRAIN_BENCH_CONTAINER_NAME=" .env); printf %s "$POST_TRAIN_BENCH_CONTAINER_NAME"')"
 AUTH_SRC="$(readlink -f agents/codex_openrouter_max/auth.json)"
 [ -s "$AUTH_SRC" ] || { echo "ERROR: agents/codex_openrouter_max/auth.json does not resolve to a file" >&2; exit 1; }
-OUT="/fast/brank/auto-posttrain/smoke/codex_openrouter_${RUN_ID}"
+RESULTS_DIR="$(bash -c 'set -a; source <(grep "^POST_TRAIN_BENCH_RESULTS_DIR=" .env); printf %s "$POST_TRAIN_BENCH_RESULTS_DIR"')"
+[ -n "$RESULTS_DIR" ] || { echo "ERROR: no POST_TRAIN_BENCH_RESULTS_DIR in .env" >&2; exit 1; }
+OUT="$(dirname "$RESULTS_DIR")/smoke/codex_openrouter_${RUN_ID}"
 mkdir -p "$OUT"
 
 JOB_DIR="$(mktemp -d /tmp/codex_openrouter_smoke.XXXXXX)"
