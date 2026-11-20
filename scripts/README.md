@@ -46,6 +46,14 @@ python scripts/aggregate.py
 `aggregate.py` skips agents whose run CSVs aren't present in this results
 dir, so it's safe to run against a partial tree.
 
+A grid whose cells ran in more than one method directory is listed in
+`MERGED_METHODS` (`utils.py`): `collect.py` collects those directories together
+under the merged name (e.g. `final_codex_max_gpt-6.2-astra_10h_run1.csv`) and
+never on their own, and stops if a cell has runs in two of them.
+`HARDCODED_AGENT_MAP` then lists the merged names. GPT-6.2 Astra uses this: some
+cells ran through OpenRouter (`codex_openrouter_max`), the others on a ChatGPT
+subscription (`codex_non_api_max`).
+
 ### `collect.py` flags
 
 ```bash
