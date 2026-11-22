@@ -82,7 +82,7 @@ PostTrainBench/
    `CLAUDE_CLI_VERSION` / `CODEX_CLI_VERSION` / `GEMINI_CLI_VERSION` / `OPENCODE_CLI_VERSION` / `QWEN_CLI_VERSION`
    in `.env` (`run_task.sh` forwards them into the sandbox). Per-model pins hardcoded in a
    `solve.sh` (`claude_non_api_max`, `glmx`, `codex_openrouter_max`, `codex_non_api_max` for the GPT-6.2 models)
-   override the `.env` value; `qwen_code` pins 0.27.4 unless `.env` sets one. A pin is strict: it overrides
+   override the `.env` value; `qwen_code` pins 0.27.4 and `opencode_neon` 1.19.6 unless `.env` sets one. A pin is strict: it overrides
    `POST_TRAIN_BENCH_SKIP_CLI_UPDATE`, and a failed install aborts
    `solve.sh` (every `solve.sh` calls the helper with `|| exit 1`). A new CLI in the helper's
    mapping also needs its `<BIN>_CLI_VERSION` added to the forwarding loop in `run_task.sh`.
@@ -104,7 +104,7 @@ below. With the allowlist in place there is **no** need to `unset`/blank keys in
 Currently supported agents include: `claude`, `claude_non_api`, `claude_non_api_max`, `claude_openrouter_max`,
 `codex`, `codex_non_api` (and `_high`, `_xhigh`, `_reprompt`, ...), `codex_openrouter_max`, `codexhigh`, `codexlow`,
 `cursor_cli`,
-`gemini`, `glm5`, `grok_cli`, `opencode`, `qwen3max`, `qwen_code`.
+`gemini`, `glm5`, `grok_cli`, `opencode`, `opencode_neon`, `qwen3max`, `qwen_code`.
 
 `claude_openrouter_max` runs Claude Code at max effort, paid per token with `OPENROUTER_API_KEY` instead of a
 subscription: `ANTHROPIC_BASE_URL=https://openrouter.ai/api`, and `CLAUDE_CODE_EXTRA_BODY` pins every request to
@@ -201,6 +201,17 @@ shown by `opencode_parser.py`), and keeps opencode's data directory (`~/.local/s
 with every message, tool call and reasoning summary, and opencode's log) in `~/agent_logs/opencode`. `solve_out.txt`
 can miss events: once opencode's stdout stalled at a 64 KB event, and 12 minutes of a session never reached it;
 `dev_utils/opencode_trace_rebuild/rebuild_solve_out.py` rebuilds such a trace from that database.
+
+`opencode_neon` is `opencode` on Gemini 4 Neon with its own OpenRouter key `OPENROUTER_API_KEY_GEMINI_NEON`
+(`agent_config` `openrouter/google/gemini-4-neon:xhigh`; no other model is accepted). Its `solve.sh` is a copy of
+`agents/opencode/solve.sh` (keep the two in step) with its own `opencode.json`: only the `openrouter` provider, its key
+from `OPENROUTER_API_KEY_GEMINI_NEON`, Neon pinned to `google-vertex/global` without fallbacks; the `xhigh` variant sends
+`reasoning.effort: xhigh`. opencode is pinned to 1.19.6 (`OPENCODE_CLI_VERSION` in `.env` overrides it). On the two
+writing benchmarks the sandbox also holds `OPENROUTER_API_KEY` for grading; opencode does not use it (the config's
+`apiKey` wins). Verified on the wire on 2026-11-19 (a logging proxy in front of OpenRouter, with a decoy
+`OPENROUTER_API_KEY` in the environment). opencode's title model (`google/gemini-nano-banana-2.1`) also goes through
+this key. Do not name an agent with both `opencode` and `gemini` in it: `parse_trace.py` refuses a name that matches two
+parsers. Test: `dev_utils/opencode_neon/smoke_test.sub`.
 
 `qwen_code` runs Qwen Code (`qwen`, npm `@qwen-code/qwen-code`, pinned to 0.27.4) headless (`--yolo --output-format
 stream-json`) on an OpenRouter model: `agent_config` is `<OpenRouter model id>[:<reasoning effort>]`, e.g.

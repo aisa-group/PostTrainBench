@@ -1,0 +1,13 @@
+# Smoke test of agents/opencode_neon (see smoke_test.sh). CPU only. Submit from the repo root:
+#   condor_submit_bid 15 -a "run_id=1" dev_utils/opencode_neon/smoke_test.sub
+executable = /bin/bash
+arguments = dev_utils/opencode_neon/smoke_test.sh $(run_id)
+environment = "HOME=$ENV(HOME)"
+error = logs/opencode_neon_smoke_$(Cluster).err
+output = logs/opencode_neon_smoke_$(Cluster).out
+log = logs/opencode_neon_smoke_$(Cluster).log
+request_cpus = 2
+request_memory = 16384
+request_disk = 20G
++BypassLXCfs = "true"
+queue
