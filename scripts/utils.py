@@ -158,6 +158,10 @@ HARDCODED_AGENT_MAP = {
         "opencode_openrouter_meta_muse-wonder_xhigh_10h_run1",
         "opencode_openrouter_meta_muse-wonder_xhigh_10h_run2",
     ],
+    "Qwen4 Max (xhigh)": [
+        "qwen_code_qwen_qwen4-max_xhigh_10h_run1",
+        "qwen_code_qwen_qwen4-max_xhigh_10h_run2",
+    ],
 }
 
 # A grid whose cells ran in more than one method directory is collected as ONE method, under the key's name:

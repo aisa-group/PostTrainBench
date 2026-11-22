@@ -11,7 +11,7 @@ request_memory = 131072
 request_cpus = 16
 request_gpus = 1
 # Both H100 variants (80GB HBM3 and the 94 GB NVL, same Hopper architecture); i104/i205 excluded as in rerun_eval.sub.
-requirements = (TARGET.CUDADeviceName == "NVIDIA H100 80GB HBM3" || TARGET.CUDADeviceName == "NVIDIA H100") && Machine != "i104.internal.cluster.is.localnet" && Machine != "i205.internal.cluster.is.localnet"
+requirements = (TARGET.CUDADeviceName == "NVIDIA H100 80GB HBM3" || TARGET.CUDADeviceName == "NVIDIA H100") && Machine != "i104.internal.cluster.is.localnet" && Machine != "i205.internal.cluster.is.localnet" && Machine != "i207.internal.cluster.is.localnet" && Machine != "i203.internal.cluster.is.localnet" && Machine != "i201.internal.cluster.is.localnet"
 request_disk = 100G
 +BypassLXCfs = "true"
 +PtbRerunCell = "$(cell_dir)"
