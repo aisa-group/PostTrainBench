@@ -35,7 +35,7 @@ PostTrainBench/
 
 | File | Purpose |
 |------|---------|
-| `src/run_task.sh` | Main task execution orchestrator (runs agent, then 4 judges, then evaluation; stops before the judges if the sandbox's CUDA check failed) |
+| `src/run_task.sh` | Main task execution orchestrator (runs agent, then 4 judges, then evaluation; stops before the judges if the sandbox's CUDA check failed; `POST_TRAIN_BENCH_DEFER_JUDGES=1` skips the judges) |
 | `src/eval/run_final_eval.sh` | The final evaluation (seeds, max-tokens retry cascade, mean into `metrics.json`); used by `run_task.sh`, `dev_utils/test_evaluation/run_only_evaluation.sh` and `scripts/rerun_eval_n_times.sh`; `--single-seed` runs one seed (`scripts/rerun_final_eval_parallel.py`) |
 | `scripts/rerun_final_eval_parallel.py` | Reruns the final evaluation of many result dirs, one GPU job per (run, seed); submit/status/retry |
 | `src/commit_utils/commit.sh` | Batch job submission across agents × benchmarks × models |
@@ -554,6 +554,18 @@ Common ones (defined in `.env`; also sourced via `src/commit_utils/set_env_vars.
 - `POST_TRAIN_BENCH_EXPERIMENT_NAME` — suffix added to the result directory name
 - `POST_TRAIN_BENCH_JOB_SCHEDULER` — controls which scheduler branch in `commit.sh` runs
 - `HF_HOME` — host-side Hugging Face cache that gets overlay-mounted into the sandbox
+- `POST_TRAIN_BENCH_DEFER_JUDGES` — `1` makes `run_task.sh` skip the judge OAuth precheck and the inline judges
+  (the task/ snapshot and the final evaluation still run), for runs whose judges must not use the ChatGPT subscription
+  now. Judge such runs later with `src/judges/run_judges.sh --contamination-slots 3 <result dir>` (or
+  `rerun_judges.sub` with `-a judges=data_contamination_judge,api_usage_judge,ptb_lookup_judge,general_judge` and
+  `-a contamination_slots=3`: its default runs only two judges); its `*_rerun` verdicts are what `scripts/collect.py`
+  reads. Until then `collect.py` skips the method (no verdicts). Check that all three contamination slots were written:
+  after a failed slot 2/3, a later partial rerun leaves `resolve_judgement` with the single slot-1 vote and no error.
+  Deferred judges see less than inline ones: only the `task/` snapshot and the trace, not the agent's home, its `/tmp`
+  or the HF cache overlay of the job, so data the agent kept there cannot be opened (agents often train from HF
+  datasets they downloaded during the run, and keep work in `/tmp`). `gate:<absolute path>` decides at the judge
+  phase instead: inline judges if the file exists then, else deferred (the auth precheck runs at the start). Set it
+  in the `.env` of a separate checkout to defer the judges of only the jobs submitted from there.
 - `POST_TRAIN_BENCH_USERS_ACCESS` — colon-separated users (e.g. `brank:hbhatnagar`) who get read/write ACL access to
   every result dir: `run_task.sh` runs `src/utils/grant_access.py` on its result dir when it exits, and so do
   `run_judges.sh`, `scripts/rerun_eval_n_times.sh` and `run_only_evaluation.sh`. It keeps everyone else's access as it

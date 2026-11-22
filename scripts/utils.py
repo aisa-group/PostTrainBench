@@ -162,6 +162,10 @@ HARDCODED_AGENT_MAP = {
         "qwen_code_qwen_qwen4-max_xhigh_10h_run1",
         "qwen_code_qwen_qwen4-max_xhigh_10h_run2",
     ],
+    "Gemini-4-Neon (xhigh)": [
+        "opencode_neon_openrouter_google_gemini-4-neon_xhigh_10h_run1",
+        "opencode_neon_openrouter_google_gemini-4-neon_xhigh_10h_run2",
+    ],
 }
 
 # A grid whose cells ran in more than one method directory is collected as ONE method, under the key's name:
