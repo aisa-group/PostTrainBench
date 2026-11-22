@@ -81,7 +81,8 @@ PostTrainBench/
    (`update: skipped`). To install an exact version instead of latest, set
    `CLAUDE_CLI_VERSION` / `CODEX_CLI_VERSION` / `GEMINI_CLI_VERSION` / `OPENCODE_CLI_VERSION` / `QWEN_CLI_VERSION`
    in `.env` (`run_task.sh` forwards them into the sandbox). Per-model pins hardcoded in a
-   `solve.sh` (`claude_non_api_max`, `glmx`) override the `.env` value; `qwen_code` pins 0.27.4 unless `.env` sets one. A pin is strict: it overrides
+   `solve.sh` (`claude_non_api_max`, `glmx`, `codex_openrouter_max`, `codex_non_api_max` for the GPT-6.2 models)
+   override the `.env` value; `qwen_code` pins 0.27.4 unless `.env` sets one. A pin is strict: it overrides
    `POST_TRAIN_BENCH_SKIP_CLI_UPDATE`, and a failed install aborts
    `solve.sh` (every `solve.sh` calls the helper with `|| exit 1`). A new CLI in the helper's
    mapping also needs its `<BIN>_CLI_VERSION` added to the forwarding loop in `run_task.sh`.
@@ -101,7 +102,8 @@ unset inside the sandbox). A missing `api_keys.json` is a hard error. See "API K
 below. With the allowlist in place there is **no** need to `unset`/blank keys inside `solve.sh`.
 
 Currently supported agents include: `claude`, `claude_non_api`, `claude_non_api_max`, `claude_openrouter_max`,
-`codex`, `codex_non_api` (and `_high`, `_xhigh`, `_reprompt`, ...), `codexhigh`, `codexlow`, `cursor_cli`,
+`codex`, `codex_non_api` (and `_high`, `_xhigh`, `_reprompt`, ...), `codex_openrouter_max`, `codexhigh`, `codexlow`,
+`cursor_cli`,
 `gemini`, `glm5`, `grok_cli`, `opencode`, `qwen3max`, `qwen_code`.
 
 `claude_openrouter_max` runs Claude Code at max effort, paid per token with `OPENROUTER_API_KEY` instead of a
@@ -110,6 +112,38 @@ OpenRouter's `anthropic` endpoint without fallbacks. `agent_config` takes Anthro
 `claude-fable-5-2[1m]`; OpenRouter maps them, also the Opus models of Claude Code's refusal fallback).
 `ENABLE_PROMPT_CACHING_1H=1` keeps the 1h cache TTL of subscription runs (an API key defaults to 5m). Verified on
 2026-11-10: OpenRouter's generation stats show `provider_name: Anthropic` and the CLI's cost equals OpenRouter's.
+
+`codex_openrouter_max` runs the codex CLI (pinned in `solve.sh`, 0.170.0) at max effort on an OpenAI model, paid per token
+with `OPENROUTER_API_KEY_OPENAI`, and does its web searches through the ChatGPT subscription of the judges
+(`agents/codex_non_api/auth.json`; its `auth.json` symlink makes `run_task.sh` bind-mount that file). `agent_config` is
+codex's model slug (e.g. `gpt-6.2-astra`, so codex uses its own model metadata); the OpenRouter model is
+`openai/<agent_config>`. codex talks only to a local relay that `solve.sh` writes and starts (`or_relay.py`, restarted if
+it dies): model turns go to OpenRouter with `provider: {order: ["openai"], allow_fallbacks: false, ignore:
+["openai/fast", "openai/ultrafast"]}` added to the body (codex cannot add body fields; its encrypted reasoning items and
+encrypted search results only decrypt at OpenAI; without the `ignore`, `"openai"` also matches OpenAI's 2x-priced fast
+endpoint), and
+codex's standalone web search (`/alpha/search`, the only search codex offers for the GPT-6 models; OpenRouter has no
+such endpoint) goes to `chatgpt.com/backend-api/codex/alpha/search` with the subscription's access token, read for every
+search and never refreshed by the relay (the judges and other jobs rotate it). The sandbox shares the node's network,
+so the relay listens on a random free port (21000-28999) and accepts only requests with a random per-run token
+(codex's `experimental_bearer_token`). Each upstream gets only its own credential. codex runs with its own `CODEX_HOME` and
+without the OpenRouter key in its environment, so neither credential is in the environment of the agent's commands;
+a determined agent can still read both (the key in `/proc/<pid>/environ` of `solve.sh`, its relay loop and the
+processes that started it, as for every agent; the token in `~/.codex/auth.json`, as for the `codex_non_api` agents). The judges get an agent-specific
+harness clause (`get_judge_prompt.py`; `run_judges.sh` takes the agent as the longest `agents/<name>` prefix of the
+method dir): the relay is the harness, but agent code that calls the relay with its token is a call to the hosted
+model. A codex session that ends with an error (e.g. an OpenAI outage longer than codex's retries) is resumed (`codex
+exec resume <thread> -`) while time is left, after a wait of 1, 2, 4, ... (at most 30) minutes, at most 10 times in a
+row (a session that ran 30 minutes resets the count); a normal end is not resumed.
+`~/agent_logs` keeps `or_relay.log` (one line per request: generation id, tokens, cost, search queries) and codex's
+session rollouts (`codex_sessions/`). Verified on 2026-11-18 with test prompts: OpenRouter's generation stats show
+`provider_name: OpenAI`, searches return results, context compaction goes through the relay. Test:
+`dev_utils/codex_openrouter/smoke_test.sub`.
+
+The GPT-6.2 Astra grids (2026-11) are split over two method directories each: cells on a ChatGPT subscription
+(`codex_non_api_max`, which for `gpt-6.2-*` pins codex 0.170.0 and has the same resume loop after an error exit) and
+cells through OpenRouter (`codex_openrouter_max`). `scripts/collect.py` collects such a grid as one method
+(`MERGED_METHODS` in `scripts/utils.py`).
 
 `cursor_cli` uses the Cursor CLI (`agent`) with subscription auth: `solve.sh` installs the CLI
 via the official curl installer (`cursor.com/install`, drops `agent` + `cursor-agent` symlinks in

@@ -150,9 +150,33 @@ HARDCODED_AGENT_MAP = {
         "codex_non_api_max_gpt-6.1-sol_10h_run1",
         "codex_non_api_max_gpt-6.1-sol_10h_run2",
     ],
+    "GPT-6.2-Astra": [
+        "codex_max_gpt-6.2-astra_10h_run1",
+        "codex_max_gpt-6.2-astra_10h_run2",
+    ],
     "Muse Wonder (xhigh)": [
         "opencode_openrouter_meta_muse-wonder_xhigh_10h_run1",
         "opencode_openrouter_meta_muse-wonder_xhigh_10h_run2",
+    ],
+    "Qwen4 Max (xhigh)": [
+        "qwen_code_qwen_qwen4-max_xhigh_10h_run1",
+        "qwen_code_qwen_qwen4-max_xhigh_10h_run2",
+    ],
+}
+
+# A grid whose cells ran in more than one method directory is collected as ONE method, under the key's name:
+# collect.py merges the latest runs of the listed directories and does not collect those directories on their own.
+# A (benchmark, model) cell may be in only one of them.
+# GPT-6.2 Astra (2026-11): the same codex CLI at max effort in every cell; some cells were paid per token through
+# OpenRouter (codex_openrouter_max), the others ran on a ChatGPT subscription (codex_non_api_max).
+MERGED_METHODS = {
+    "codex_max_gpt-6.2-astra_10h_run1": [
+        "codex_non_api_max_gpt-6.2-astra_10h_run1",
+        "codex_openrouter_max_gpt-6.2-astra_10h_run1",
+    ],
+    "codex_max_gpt-6.2-astra_10h_run2": [
+        "codex_non_api_max_gpt-6.2-astra_10h_run2",
+        "codex_openrouter_max_gpt-6.2-astra_10h_run2",
     ],
 }
 
