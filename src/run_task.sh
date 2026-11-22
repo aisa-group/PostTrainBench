@@ -271,10 +271,30 @@ solve_task() {
 # the judge phase. One curl to a lightweight ChatGPT endpoint tells us the
 # state: it uses the already-issued access token, no refresh path, so it
 # doesn't rotate anything or race parallel job starts.
+#
+# POST_TRAIN_BENCH_DEFER_JUDGES=1 (e.g. in .env) skips this precheck and the inline judges, for runs whose judges
+# must not use the subscription now (other runs need its weekly limit). The job still copies the task/ snapshot and
+# runs the final evaluation; judge the run later with
+#   src/judges/run_judges.sh --contamination-slots 3 <result dir>
+# (or src/judges/rerun/rerun_judges.sub with all four judges and contamination_slots=3), which writes the *_rerun
+# verdicts that scripts/collect.py reads. Deferred judges see only the task/ snapshot and the trace (see AGENTS.md).
+# POST_TRAIN_BENCH_DEFER_JUDGES=gate:<absolute path> decides at the judge phase: the judges run inline if <path>
+# exists then, else they are deferred (the precheck runs, since the judges may run). Create the file once the
+# subscription may be used, e.g. hours after the jobs were submitted.
+JUDGES_GATE=""
+case "${POST_TRAIN_BENCH_DEFER_JUDGES:-}" in
+    1|true) DEFER_JUDGES=1 ;;
+    ""|0|false) DEFER_JUDGES=0 ;;
+    gate:/*) DEFER_JUDGES=0; JUDGES_GATE="${POST_TRAIN_BENCH_DEFER_JUDGES#gate:}" ;;
+    *) echo "ERROR: POST_TRAIN_BENCH_DEFER_JUDGES must be 1/true, 0/false/empty or gate:<absolute path>, not '${POST_TRAIN_BENCH_DEFER_JUDGES}'" >&2; exit 1 ;;
+esac
 
 echo "================================"
 echo "======= JUDGE AUTH CHECK ======="
 echo "================================"
+if [ "$DEFER_JUDGES" = 1 ]; then
+    echo "Judges deferred (POST_TRAIN_BENCH_DEFER_JUDGES=${POST_TRAIN_BENCH_DEFER_JUDGES}): no judge auth check"
+else
 JUDGE_AUTH="agents/codex_non_api/auth.json"
 if [ ! -f "$JUDGE_AUTH" ]; then
     echo "ERROR: judge auth file missing at $JUDGE_AUTH" >&2
@@ -293,6 +313,7 @@ if [ "$JUDGE_HTTP" != "200" ]; then
     exit 1
 fi
 echo "Judge OAuth OK (HTTP 200)"
+fi
 
 echo "================================"
 echo "========= RUNNING TASK ========="
@@ -394,6 +415,17 @@ echo "========================================="
 echo "=== RUNNING REWARD-HACKING JUDGES ==="
 echo "========================================="
 
+if [ -n "$JUDGES_GATE" ]; then
+    if [ -e "$JUDGES_GATE" ]; then
+        echo "Judge gate $JUDGES_GATE exists: running the judges inline"
+    else
+        echo "Judge gate $JUDGES_GATE does not exist: deferring the judges"
+        DEFER_JUDGES=1
+    fi
+fi
+if [ "$DEFER_JUDGES" = 1 ]; then
+    echo "Judges deferred (POST_TRAIN_BENCH_DEFER_JUDGES): run src/judges/run_judges.sh --contamination-slots 3 ${EVAL_DIR} later"
+else
 # Make judge helper tooling and benchmark metadata available inside the judge
 # sandbox. The final_model config comes from EVAL_DIR because delete_hf_models
 # has already run on JOB_DIR/task during cleanup.
@@ -418,6 +450,7 @@ JUDGE_EXTRA_APPTAINER_ARGS=(
 JUDGE_EXEC_WRAPPER=(with_huggingface_overlay)
 run_all_judges "${JOB_DIR}" "${JOB_TMP}" "${EVAL_DIR}" \
     "${EVALUATION_TASK}" "${MODEL_TO_TRAIN}" "${AGENT}" "${AGENT_CONFIG}" || exit 1
+fi
 
 echo "================================"
 echo "========= EVALUATING ==========="

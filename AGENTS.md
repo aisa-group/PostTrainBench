@@ -35,7 +35,7 @@ PostTrainBench/
 
 | File | Purpose |
 |------|---------|
-| `src/run_task.sh` | Main task execution orchestrator (runs agent, then 4 judges, then evaluation; stops before the judges if the sandbox's CUDA check failed) |
+| `src/run_task.sh` | Main task execution orchestrator (runs agent, then 4 judges, then evaluation; stops before the judges if the sandbox's CUDA check failed; `POST_TRAIN_BENCH_DEFER_JUDGES=1` skips the judges) |
 | `src/eval/run_final_eval.sh` | The final evaluation (seeds, max-tokens retry cascade, mean into `metrics.json`); used by `run_task.sh`, `dev_utils/test_evaluation/run_only_evaluation.sh` and `scripts/rerun_eval_n_times.sh`; `--single-seed` runs one seed (`scripts/rerun_final_eval_parallel.py`) |
 | `scripts/rerun_final_eval_parallel.py` | Reruns the final evaluation of many result dirs, one GPU job per (run, seed); submit/status/retry |
 | `src/commit_utils/commit.sh` | Batch job submission across agents × benchmarks × models |
@@ -82,7 +82,7 @@ PostTrainBench/
    `CLAUDE_CLI_VERSION` / `CODEX_CLI_VERSION` / `GEMINI_CLI_VERSION` / `OPENCODE_CLI_VERSION` / `QWEN_CLI_VERSION`
    in `.env` (`run_task.sh` forwards them into the sandbox). Per-model pins hardcoded in a
    `solve.sh` (`claude_non_api_max`, `glmx`, `codex_openrouter_max`, `codex_non_api_max` for the GPT-6.2 models)
-   override the `.env` value; `qwen_code` pins 0.27.4 unless `.env` sets one. A pin is strict: it overrides
+   override the `.env` value; `qwen_code` pins 0.27.4 and `opencode_neon` 1.19.6 unless `.env` sets one. A pin is strict: it overrides
    `POST_TRAIN_BENCH_SKIP_CLI_UPDATE`, and a failed install aborts
    `solve.sh` (every `solve.sh` calls the helper with `|| exit 1`). A new CLI in the helper's
    mapping also needs its `<BIN>_CLI_VERSION` added to the forwarding loop in `run_task.sh`.
@@ -104,7 +104,7 @@ below. With the allowlist in place there is **no** need to `unset`/blank keys in
 Currently supported agents include: `claude`, `claude_non_api`, `claude_non_api_max`, `claude_openrouter_max`,
 `codex`, `codex_non_api` (and `_high`, `_xhigh`, `_reprompt`, ...), `codex_openrouter_max`, `codexhigh`, `codexlow`,
 `cursor_cli`,
-`gemini`, `glm5`, `grok_cli`, `opencode`, `qwen3max`, `qwen_code`.
+`gemini`, `glm5`, `grok_cli`, `opencode`, `opencode_neon`, `qwen3max`, `qwen_code`.
 
 `claude_openrouter_max` runs Claude Code at max effort, paid per token with `OPENROUTER_API_KEY` instead of a
 subscription: `ANTHROPIC_BASE_URL=https://openrouter.ai/api`, and `CLAUDE_CODE_EXTRA_BODY` pins every request to
@@ -201,6 +201,17 @@ shown by `opencode_parser.py`), and keeps opencode's data directory (`~/.local/s
 with every message, tool call and reasoning summary, and opencode's log) in `~/agent_logs/opencode`. `solve_out.txt`
 can miss events: once opencode's stdout stalled at a 64 KB event, and 12 minutes of a session never reached it;
 `dev_utils/opencode_trace_rebuild/rebuild_solve_out.py` rebuilds such a trace from that database.
+
+`opencode_neon` is `opencode` on Gemini 4 Neon with its own OpenRouter key `OPENROUTER_API_KEY_GEMINI_NEON`
+(`agent_config` `openrouter/google/gemini-4-neon:xhigh`; no other model is accepted). Its `solve.sh` is a copy of
+`agents/opencode/solve.sh` (keep the two in step) with its own `opencode.json`: only the `openrouter` provider, its key
+from `OPENROUTER_API_KEY_GEMINI_NEON`, Neon pinned to `google-vertex/global` without fallbacks; the `xhigh` variant sends
+`reasoning.effort: xhigh`. opencode is pinned to 1.19.6 (`OPENCODE_CLI_VERSION` in `.env` overrides it). On the two
+writing benchmarks the sandbox also holds `OPENROUTER_API_KEY` for grading; opencode does not use it (the config's
+`apiKey` wins). Verified on the wire on 2026-11-19 (a logging proxy in front of OpenRouter, with a decoy
+`OPENROUTER_API_KEY` in the environment). opencode's title model (`google/gemini-nano-banana-2.1`) also goes through
+this key. Do not name an agent with both `opencode` and `gemini` in it: `parse_trace.py` refuses a name that matches two
+parsers. Test: `dev_utils/opencode_neon/smoke_test.sub`.
 
 `qwen_code` runs Qwen Code (`qwen`, npm `@qwen-code/qwen-code`, pinned to 0.27.4) headless (`--yolo --output-format
 stream-json`) on an OpenRouter model: `agent_config` is `<OpenRouter model id>[:<reasoning effort>]`, e.g.
@@ -554,6 +565,18 @@ Common ones (defined in `.env`; also sourced via `src/commit_utils/set_env_vars.
 - `POST_TRAIN_BENCH_EXPERIMENT_NAME` — suffix added to the result directory name
 - `POST_TRAIN_BENCH_JOB_SCHEDULER` — controls which scheduler branch in `commit.sh` runs
 - `HF_HOME` — host-side Hugging Face cache that gets overlay-mounted into the sandbox
+- `POST_TRAIN_BENCH_DEFER_JUDGES` — `1` makes `run_task.sh` skip the judge OAuth precheck and the inline judges
+  (the task/ snapshot and the final evaluation still run), for runs whose judges must not use the ChatGPT subscription
+  now. Judge such runs later with `src/judges/run_judges.sh --contamination-slots 3 <result dir>` (or
+  `rerun_judges.sub` with `-a judges=data_contamination_judge,api_usage_judge,ptb_lookup_judge,general_judge` and
+  `-a contamination_slots=3`: its default runs only two judges); its `*_rerun` verdicts are what `scripts/collect.py`
+  reads. Until then `collect.py` skips the method (no verdicts). Check that all three contamination slots were written:
+  after a failed slot 2/3, a later partial rerun leaves `resolve_judgement` with the single slot-1 vote and no error.
+  Deferred judges see less than inline ones: only the `task/` snapshot and the trace, not the agent's home, its `/tmp`
+  or the HF cache overlay of the job, so data the agent kept there cannot be opened (agents often train from HF
+  datasets they downloaded during the run, and keep work in `/tmp`). `gate:<absolute path>` decides at the judge
+  phase instead: inline judges if the file exists then, else deferred (the auth precheck runs at the start). Set it
+  in the `.env` of a separate checkout to defer the judges of only the jobs submitted from there.
 - `POST_TRAIN_BENCH_USERS_ACCESS` — colon-separated users (e.g. `brank:hbhatnagar`) who get read/write ACL access to
   every result dir: `run_task.sh` runs `src/utils/grant_access.py` on its result dir when it exits, and so do
   `run_judges.sh`, `scripts/rerun_eval_n_times.sh` and `run_only_evaluation.sh`. It keeps everyone else's access as it
