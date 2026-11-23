@@ -150,7 +150,7 @@ def chat_completion_openai(model, messages, temperature, max_tokens, api_dict=No
         except openai.BadRequestError as e:
             print(messages)
             print(type(e), e)
-        except KeyError:
+        except KeyError as e:
             print(type(e), e)
             break
     
@@ -186,7 +186,7 @@ def chat_completion_openai_thinking(model, messages, api_dict=None, **kwargs):
         except openai.BadRequestError as e:
             print(messages)
             print(type(e), e)
-        except KeyError:
+        except KeyError as e:
             print(type(e), e)
             break
     
